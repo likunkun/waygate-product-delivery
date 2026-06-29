@@ -900,3 +900,6 @@
 - `codex plugin list` after installation showed only `waygate-product-delivery@repo-local` from this marketplace, version `1.0.8+codex.20260629025828`.
 - Final generated plugin display metadata now uses `Waygate Product Delivery Maintainers`; no current-facing package, skill path, marketplace entry, or install command uses `product-delivery-agent`.
 - Current installed version after final name cleanup is `1.0.8+codex.20260629030902`.
+- The GitHub repository already had a `main` branch containing only `.gitignore`; local work was committed on top of that remote commit and pushed as a fast-forward update.
+- HTTPS push was unavailable in this environment, but SSH authentication to GitHub succeeded for `likunkun`.
+- The repository remote now uses `git@github.com:likunkun/waygate-product-delivery.git`.

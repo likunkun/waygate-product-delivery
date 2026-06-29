@@ -607,10 +607,10 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 - [x] Add full Chinese documentation at `README.zh-CN.md`.
 - [x] Add MIT `LICENSE`.
 - [x] Align docs index naming with `Waygate Product Delivery`.
-- [ ] Run README/link checks, unit tests, compile, and plugin validation.
-- [ ] Commit the repository.
-- [ ] Push to `https://github.com/likunkun/waygate-product-delivery.git`.
-- **Status:** in progress.
+- [x] Run README/link checks, unit tests, compile, and plugin validation.
+- [x] Commit the repository.
+- [x] Push to `https://github.com/likunkun/waygate-product-delivery.git`.
+- **Status:** complete; pushed commit `16f8a65` to `main`.
 
 ## Out Of Scope For V0.1
 

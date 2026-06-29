@@ -2384,4 +2384,16 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - `README.zh-CN.md` provides equivalent Chinese documentation.
   - `LICENSE` adds the MIT license referenced by the plugin manifest and README badge.
 - Updated `docs/README.md` to use `Waygate Product Delivery` rather than the older project label.
-- Verification and push are still in progress.
+- Verification:
+  - local README links exist;
+  - current-facing files have no stale `product-delivery-agent@repo-local` / `plugins/product-delivery-agent` references;
+  - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 132 tests;
+  - `python3 -m py_compile src/product_delivery_agent/*.py` passed;
+  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed;
+  - installed-cache validator smoke passed with `PYTHONPATH` unset.
+- GitHub push:
+  - initial HTTPS push failed because no interactive GitHub credential prompt was available;
+  - SSH auth succeeded for `likunkun`;
+  - remote was updated to `git@github.com:likunkun/waygate-product-delivery.git`;
+  - commit `16f8a65` was pushed to `origin/main`.
+- **Status:** complete.
