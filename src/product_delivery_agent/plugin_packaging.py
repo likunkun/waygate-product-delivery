@@ -1,0 +1,566 @@
+"""Codex plugin package assembly helpers."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import tarfile
+from pathlib import Path
+from typing import Any
+
+from product_delivery_agent.gatekeeper import (
+    CANONICAL_SCHEMA_VERSION,
+    CANONICAL_VALIDATOR,
+    PLUGIN_VERSION,
+)
+
+PLUGIN_NAME = "waygate-product-delivery"
+LEGACY_PLUGIN_NAMES = ("product-delivery-agent",)
+
+
+def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
+    """Create a repo-local Codex plugin package for the product workflow."""
+    root = Path(repo_root)
+    _remove_legacy_plugin_packages(root)
+    plugin_root = root / "plugins" / PLUGIN_NAME
+    manifest_dir = plugin_root / ".codex-plugin"
+    skills_dir = plugin_root / "skills" / PLUGIN_NAME
+    hooks_dir = plugin_root / "hooks"
+    templates_dir = plugin_root / "templates"
+    scripts_dir = plugin_root / "scripts"
+    policies_dir = plugin_root / "policies"
+    runtime_dir = plugin_root / "runtime" / "product_delivery_agent"
+
+    for directory in (
+        manifest_dir,
+        skills_dir,
+        hooks_dir,
+        templates_dir,
+        scripts_dir,
+        policies_dir,
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    _copy_runtime_package(runtime_dir)
+
+    _write_json(manifest_dir / "plugin.json", _plugin_manifest())
+    (skills_dir / "SKILL.md").write_text(_skill_markdown(), encoding="utf-8")
+    (hooks_dir / "README.md").write_text(_hooks_readme(), encoding="utf-8")
+    _write_templates(templates_dir)
+    validator_path = scripts_dir / "validate-closure-artifact.py"
+    validator_path.write_text(
+        _validation_script(),
+        encoding="utf-8",
+    )
+    validator_path.chmod(0o755)
+    (scripts_dir / "formal-gate-validation-plan.md").write_text(
+        _formal_gate_plan(),
+        encoding="utf-8",
+    )
+    _write_json(policies_dir / "lifecycle.json", _lifecycle_policy())
+    (policies_dir / "upgrade-retention.md").write_text(
+        _upgrade_policy(),
+        encoding="utf-8",
+    )
+    (policies_dir / "waygate-controller-readonly.md").write_text(
+        _readonly_policy(),
+        encoding="utf-8",
+    )
+    marketplace_path = root / ".agents" / "plugins" / "marketplace.json"
+    marketplace_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(marketplace_path, _marketplace())
+    return {
+        "plugin_root": plugin_root,
+        "manifest_path": manifest_dir / "plugin.json",
+        "marketplace_path": marketplace_path,
+    }
+
+
+def build_codex_plugin_distribution(repo_root: str | Path) -> Path:
+    """Build a compressed distribution archive for the installable plugin."""
+    root = Path(repo_root)
+    package = package_codex_plugin(root)
+    plugin_root = package["plugin_root"]
+    dist_dir = root / "dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = dist_dir / f"{PLUGIN_NAME}-{PLUGIN_VERSION}.tar.gz"
+    if archive_path.exists():
+        archive_path.unlink()
+    with tarfile.open(archive_path, "w:gz") as archive:
+        archive.add(plugin_root, arcname=PLUGIN_NAME)
+        archive.add(package["marketplace_path"], arcname=".agents/plugins/marketplace.json")
+    return archive_path
+
+
+def _plugin_manifest() -> dict[str, Any]:
+    return {
+        "name": PLUGIN_NAME,
+        "version": PLUGIN_VERSION,
+        "description": "Codex-native product delivery workflow plugin.",
+        "author": {
+            "name": "Waygate Product Delivery Maintainers",
+            "email": "maintainers@example.com",
+            "url": "https://example.com/waygate-product-delivery",
+        },
+        "homepage": "https://example.com/waygate-product-delivery",
+        "repository": "https://example.com/waygate-product-delivery.git",
+        "license": "MIT",
+        "keywords": [
+            "product-delivery",
+            "open-spec",
+            "codex",
+            "feature-closure",
+        ],
+        "skills": "./skills/",
+        "interface": {
+            "displayName": "Waygate Product Delivery",
+            "shortDescription": "Waygate-guided product delivery workflow for Codex.",
+            "longDescription": (
+                "A dormant-by-default workflow plugin for product briefs, "
+                "scope confirmation, UI/non-UI gates, coverage audit, "
+                "Codex handoff, and feature closure evidence."
+            ),
+            "developerName": "Waygate Product Delivery Maintainers",
+            "category": "Productivity",
+            "capabilities": ["Write", "Review"],
+            "websiteURL": "https://example.com/waygate-product-delivery",
+            "privacyPolicyURL": "https://example.com/privacy",
+            "termsOfServiceURL": "https://example.com/terms",
+            "defaultPrompt": [
+                "启动交付",
+                "启动交付，允许多Agent评审",
+                "查看状态",
+                "验证闭包",
+                "停止交付",
+            ],
+            "brandColor": "#2563EB",
+        },
+    }
+
+
+def _marketplace() -> dict[str, Any]:
+    return {
+        "name": "repo-local",
+        "interface": {
+            "displayName": "Repo Local",
+        },
+        "plugins": [
+            {
+                "name": PLUGIN_NAME,
+                "source": {
+                    "source": "local",
+                    "path": f"./plugins/{PLUGIN_NAME}",
+                },
+                "policy": {
+                    "installation": "AVAILABLE",
+                    "authentication": "ON_INSTALL",
+                },
+                "category": "Productivity",
+            }
+        ],
+    }
+
+
+def _write_templates(templates_dir: Path) -> None:
+    templates = {
+        "product-brief.md": "# Product Brief\n\nStatus: Draft\n",
+        "version-scope.md": "# Version Scope\n\nStatus: Draft\n",
+        "ui-prototype-review.md": "# UI Prototype Review\n\nStatus: Draft\n",
+        "non-ui-behavior-contract.md": "# Non-UI Behavior Contract\n\nStatus: Draft\n",
+        "test-coverage-audit.md": "# Test Coverage Audit\n\nStatus: Draft\n",
+        "handoff.md": "# Codex Goal Handoff\n\nStatus: Draft\n",
+        "closure-artifact-template.json": json.dumps(
+            {
+                "status": "passed",
+                "passed": True,
+                "canonical_validator": CANONICAL_VALIDATOR,
+                "canonical_schema_version": CANONICAL_SCHEMA_VERSION,
+                "plugin_version": PLUGIN_VERSION,
+                "closure_flag": "version-feature-closure-passed",
+                "latest_test_case": "TC-V008-001",
+                "matrix_range": "TC-V008-001..TC-V008-001",
+                "e2e_covered_tc": [],
+                "covered_user_stories": [],
+                "covered_journeys": [],
+                "artifact_root": ".product-delivery/artifacts",
+                "artifact_generation_command": "product-delivery formal-closure",
+                "e2e_evidence_paths": [],
+                "high_risk_gate_subresults": {},
+                "negative_scope_guard_result": "passed",
+                "required_commands": [
+                    {
+                        "command": "PYTHONPATH=src python3 -m unittest discover -s tests",
+                        "exit_code": 0,
+                        "output": "Ran tests successfully",
+                    }
+                ],
+                "supporting_validators": [
+                    {
+                        "name": "target-specific validator",
+                        "status": "supporting_only",
+                        "result_artifact": "",
+                    }
+                ],
+                "secret_values_recorded": False,
+                "controller_session_modified": False,
+                "created_fake_controller_state": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        "coverage-matrix-template.json": json.dumps(
+            {
+                "matrix_range": "TC-V008-001..TC-V008-001",
+                "latest_test_case": "TC-V008-001",
+                "rows": [],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        "negative-scope-guard-checklist.md": (
+            "# Negative Scope Guard Checklist\n\n"
+            "- Confirm out-of-scope navigation is absent.\n"
+            "- Confirm future-version actions are absent.\n"
+            "- Confirm unsupported behavior is rejected.\n"
+        ),
+        "startup-checklist.md": (
+            "# Product Delivery Startup Checklist\n\n"
+            "- Invoke `superpowers:using-superpowers` before any task action.\n"
+            "- Invoke `planning-with-files` and run its session catchup.\n"
+            "- Read or create `task_plan.md`, `findings.md`, and `progress.md`.\n"
+            "- Create or recover `.product-delivery/state.json`.\n"
+            "- Record the current feature slug and blocked gates in state.\n"
+        ),
+        "required-skills-checklist.md": (
+            "# Required Skills Checklist\n\n"
+            "| Gate | Required skills |\n"
+            "| --- | --- |\n"
+            "| Active startup | `superpowers:using-superpowers`, `planning-with-files`, `waygate-product-delivery` |\n"
+            "| Product blueprint | `superpowers:brainstorming` |\n"
+            "| Version and implementation plan | `superpowers:writing-plans` |\n"
+            "| Open Spec package | `open-spec` |\n"
+            "| Test coverage audit | `test-strategy` or `testing-strategy` |\n"
+            "| UI prototype | `ui-ux-pro-max` |\n"
+            "| Browser verification | `webapp-testing` |\n"
+            "| Feature closure | `open-spec-feature-closure`, `superpowers:verification-before-completion` |\n"
+            "| File-specific work | `pdf`, `docx`, or `pptx` when those files appear |\n"
+        ),
+        "open-spec-gate.md": (
+            "# Open Spec Gate\n\n"
+            "- The current feature must have `docs/open-spec/<feature-slug>/`.\n"
+            "- The package must contain `00-change-request.md` through `08-stage-handoff.md`.\n"
+            "- Older feature packages do not satisfy the current feature gate.\n"
+            "- Implementation is blocked until this gate passes.\n"
+        ),
+        "ui-prototype-gate.md": (
+            "# UI Prototype Gate\n\n"
+            "- UI projects require a local 1:1 HTML prototype for the current feature.\n"
+            "- Expected path: `docs/prototypes/<feature-slug>-prototype.html`.\n"
+            "- Alternative path: `.product-delivery/artifacts/<feature-slug>-prototype.html`.\n"
+            "- Use `ui-ux-pro-max` for prototype review and `webapp-testing` for browser verification.\n"
+            "- Implementation is blocked until the user explicitly confirms the prototype through `confirm_ui_prototype`.\n"
+        ),
+        "scope-scenario-matrix.md": (
+            "# Scope Scenario Matrix\n\n"
+            "`scope` means version boundary and scenario mapping. It does not mean "
+            "the proxy-collector run had a demand-boundary-control failure.\n\n"
+            "| scenario_id | role | user_story | journey | path_type | risk_level | blocking_level | review_status | negative_boundary | planned_e2e_case |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        ),
+        "multi-agent-scenario-review.md": (
+            "# Multi-Agent Scenario Review\n\n"
+            "- review_type: scenario\n"
+            "- review_mode: spawned_subagents | role_simulation | blocked_with_reason\n"
+            "- role_simulation_user_accepted: false\n"
+            "- status: draft\n"
+            "- reviewers: product intent, UI/UX scenario, negative boundary\n"
+            "- independent_positions: []\n"
+            "- cross_challenges: []\n"
+            "- revisions: []\n"
+            "- final_adjudication:\n"
+            "- blocking_findings: []\n"
+        ),
+        "multi-agent-test-review.md": (
+            "# Multi-Agent Test Review\n\n"
+            "- review_type: test\n"
+            "- review_mode: spawned_subagents | role_simulation | blocked_with_reason\n"
+            "- role_simulation_user_accepted: false\n"
+            "- status: draft\n"
+            "- reviewers: test strategy, UI E2E, negative boundary\n"
+            "- independent_positions: []\n"
+            "- cross_challenges: []\n"
+            "- revisions: []\n"
+            "- final_adjudication:\n"
+            "- blocking_findings: []\n"
+        ),
+        "user-confirmation.md": (
+            "# User Confirmation\n\n"
+            "- confirmation_id:\n"
+            "- target:\n"
+            "- artifact_path:\n"
+            "- artifact_version:\n"
+            "- artifact_hash:\n"
+            "- confirmed_by: user\n"
+            "- confirmation_source: chat_user_reply\n"
+            "- confirmed_at:\n"
+            "- decision: approved\n"
+            "- user_message:\n"
+        ),
+        "planned-e2e-obligations.md": (
+            "# Planned E2E Obligations\n\n"
+            "- feature_slug:\n"
+            "- artifact_version:\n"
+            "- generated_at:\n\n"
+            "| obligation_id | scenario_id | test_id | user_story | journey | visible_exception | test_layer | semantic_assertions | exemption_status |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        ),
+        "executed-browser-evidence.md": (
+            "# Executed Browser Evidence\n\n"
+            "- feature_slug:\n"
+            "- artifact_version:\n"
+            "- generated_at:\n\n"
+            "| test_id | obligation_id | command | exit_code | evidence_path | evidence_sha256 |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+        ),
+        "closure-validator-result.md": (
+            "# Closure Validator Result\n\n"
+            "- status: not_run\n"
+            "- validator: product_delivery_agent.finalization\n"
+            "- canonical_schema_version: v0.10\n"
+            f"- plugin_version: {PLUGIN_VERSION}\n"
+            "- feature_slug:\n"
+            "- errors: []\n"
+        ),
+        "implementation-goal.md": (
+            "# Implementation Goal\n\n"
+            "- status: active\n"
+            "- objective:\n"
+            "- current_task_cursor:\n\n"
+            "## Stop Rules\n\n"
+            "- 不要在 TASK 未完成时停止。\n"
+            "- closure validator 未通过时不要 complete goal。\n"
+            "- closure 失败时 goal 保持 active，下一步是修复 closure evidence。\n"
+        ),
+        "implementation-launch-authorization.md": (
+            "# Implementation Launch Authorization\n\n"
+            "- status: draft\n"
+            "- feature_slug:\n"
+            "- launch_package_hash:\n"
+            "- nonce:\n"
+            "- required_user_phrase: 确认按当前交付包开始实现\n"
+            "- review_modes:\n"
+            "- prototype_hash:\n"
+            "- planned_e2e_hash:\n"
+            "- task_queue_hash:\n"
+            "- required_commands_hash:\n\n"
+            "Only canonical implementation_launch_authorization can enter implementation. "
+            "A custom artifact can support review, but cannot authorize implementation.\n"
+        ),
+        "task-queue.md": (
+            "# Task Queue\n\n"
+            "| task_id | title | verification | status |\n"
+            "| --- | --- | --- | --- |\n"
+        ),
+        "stop-guard-result.md": (
+            "# Stop Guard Result\n\n"
+            "- status: not_run\n"
+            "- reason:\n"
+            "- remaining_tasks:\n"
+            "  - None\n"
+        ),
+    }
+    for filename, content in templates.items():
+        (templates_dir / filename).write_text(content, encoding="utf-8")
+
+
+def _skill_markdown() -> str:
+    return (
+        "---\n"
+        f"name: {PLUGIN_NAME}\n"
+        "description: Codex-native product delivery workflow.\n"
+        "---\n\n"
+        "# Product Delivery Agent\n\n"
+        "默认休眠。说 `启动交付` 激活当前项目的产品交付模式；"
+        "说 `启动交付，允许多Agent评审` 激活并授权当前 feature 使用真实 spawned subagents "
+        "完成 scenario/test coverage review；"
+        "说 `停止交付` 或使用 `stop` 退出干预。底层命令仍保留 "
+        "`start` / `stop`。\n\n"
+        "## Active Mode Hard Rules\n\n"
+        "启动后必须创建或恢复 `.product-delivery/state.json`，并把它作为当前项目的权威状态。"
+        "聊天总结、旧版本文档和 `progress.md` 都不能替代 gate evidence。\n\n"
+        "active mode 下必须先使用这些 baseline skills："
+        "`superpowers:using-superpowers`、`planning-with-files`、`waygate-product-delivery`。"
+        "`planning-with-files` 必须执行 session catchup，并读取或创建 "
+        "`task_plan.md`、`findings.md`、`progress.md`。\n\n"
+        "## Blocking Gates\n\n"
+        "禁止实现，直到以下门禁全部满足：\n\n"
+        "1. 当前 feature slug 已写入 `.product-delivery/state.json`。\n"
+        "2. 当前 feature 已使用 `open-spec` 生成 `docs/open-spec/<feature-slug>/`，"
+        "包含 `00-change-request.md` 到 `08-stage-handoff.md`。\n"
+        "3. 项目类型已经确认。UI 项目必须进入本地 1:1 HTML 原型 gate；"
+        "非 UI 项目必须进入 behavior contract gate。\n"
+        "4. UI 项目必须使用 `ui-ux-pro-max` 评审原型，并使用 `webapp-testing` "
+        "做浏览器验证；没有当前 feature 的 HTML 原型确认前禁止实现。\n"
+        "5. 测试覆盖审计必须使用 `test-strategy` 或 `testing-strategy`。\n"
+        "6. closure 必须使用 `open-spec-feature-closure` 和 "
+        "`superpowers:verification-before-completion`。\n\n"
+        "禁止实现的条件：未完成 user-confirmed freeze、未确认 prototype、"
+        "未冻结 planned E2E obligations、或 closure validator 未通过。"
+        "实现前只能冻结 planned E2E，真实 browser evidence 必须在实现后落盘并校验。\n\n"
+        "V1.0.3 强制两道状态机出口：pre-handoff gate 和 pre-closure gate。"
+        "pre-handoff 通过前禁止开始实现；pre-closure 和 closure validator "
+        "通过前禁止声明完成。\n\n"
+        "UI 项目未显式确认本地 1:1 HTML prototype 前禁止实现。"
+        "截图、Playwright evidence、static review 只能作为辅助证据，不能替代用户确认；"
+        "必须通过 `confirm_ui_prototype` 写入 `ui_prototype.confirmed_by_user=true` "
+        "和 user confirmation artifact。prototype 每次修订后都必须重新确认；"
+        "用户反馈导致 prototype 文件、截图或 review evidence 变化时，旧 confirmation 自动失效。"
+        "`confirm_ui_prototype` 只能确认当前 pending confirmation 的 artifact hash、"
+        "prototype revision 和 nonce；裸 `继续` 不能替代当前版本确认。\n\n"
+        "多 agent scenario/test review 必须落成结构化 artifact，包含 independent positions、"
+        "cross challenges、revisions、final adjudication 和 blocking findings。"
+        "session log、Open Spec 摘要、quick review 不能替代这些 artifact。\n\n"
+        "planned E2E、executed browser evidence、coverage audit 和 closure artifact "
+        "必须按 `scenario_id`、`obligation_id`、`test_id`、user story、journey 对账；"
+        "supporting evidence 不能替代 UI journey browser E2E。\n\n"
+        "## Goal-Driven Closure\n\n"
+        "pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，"
+        "目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。"
+        "不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。"
+        "如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。"
+        "closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，"
+        "下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。\n\n"
+        "final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py "
+        "--project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，"
+        "并写入 `.product-delivery/artifacts/closure-validator-result.md`。"
+        "V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 "
+        "`closure_validation.validator=product_delivery_agent.finalization`、"
+        "`canonical_schema_version=v0.10`、`plugin_version=1.0.8`、"
+        "`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。"
+        "target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、"
+        "Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，"
+        "不能解除 closure blocker。"
+        "任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、"
+        "`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，"
+        "都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、"
+        "`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。"
+        "missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。\n\n"
+        "V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。"
+        "handoff、TASK completion、executed browser evidence、closure validation、goal complete "
+        "都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、"
+        "旧 feature closure result 或 docs 领先状态必须 fail closed。\n\n"
+        "multi-agent review 必须记录 `review_mode`。`spawned_subagents` 是强证据；"
+        "`role_simulation` 是弱证据，必须记录用户接受；`blocked_with_reason` 不能通过 handoff。\n\n"
+        "原型确认、review 接受、实现授权是三个不同 gate。进入实现前必须记录 "
+        "`implementation_launch_authorization`，用户确认语必须是 `确认按当前交付包开始实现`，"
+        "并且授权要绑定当前 `feature_slug`、review mode、prototype hash、planned E2E、"
+        "TASK queue、required commands 和 nonce/hash。scope、TASK、review mode、prototype "
+        "或 planned E2E 改变后旧授权失效。\n\n"
+        "custom artifact 可以作为 supporting evidence，但不能授权实现。"
+        "自定义 `*-pre-handoff-gate.json`、Open Spec 总结、task artifact、prototype screenshot "
+        "或磁盘 E2E JSON 都不能替代 canonical handoff、delivery goal、"
+        "implementation launch authorization、executed browser evidence 或 closure validation。\n\n"
+        "其他技能只能辅助，不能替代 Product Delivery 主流程。项目 `AGENTS.md`、"
+        "Waygate/controller 规则仍要遵守，但不得绕过 Product Delivery 的 Open Spec、"
+        "UI/非 UI gate、测试覆盖和 closure evidence。\n\n"
+        "## Current Feature Evidence\n\n"
+        "检查 Open Spec 或原型时必须按当前 feature slug 匹配。旧版本 "
+        "`docs/open-spec/`、旧 prototype、聊天总结、`progress.md` 都不能替代当前 feature gate evidence。\n"
+    )
+
+
+def _hooks_readme() -> str:
+    return (
+        "# Hooks\n\n"
+        "V1.0 packages hook assets for future binding. Hook behavior must "
+        "remain silent while inactive and must read `.product-delivery/state.json` "
+        "as the source of truth when active.\n"
+    )
+
+
+def _validation_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        "\"\"\"Validate and record Product Delivery formal closure.\"\"\"\n\n"
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "# Canonical validator identity: product_delivery_agent.finalization\n"
+        "from product_delivery_agent.finalization import run_finalize_cli\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(run_finalize_cli())\n"
+    )
+
+
+def _formal_gate_plan() -> str:
+    return (
+        "# Formal Gate Validation Plan\n\n"
+        "- Read V0.9 handoff expectations from local state.\n"
+        "- Validate closure artifact fields with `validate_feature_closure`.\n"
+        "- Require command output evidence for all handoff-required commands.\n"
+        "- Reject summary-only closure evidence.\n"
+    )
+
+
+def _lifecycle_policy() -> dict[str, Any]:
+    return {
+        "dormant_by_default": True,
+        "activation_command": "start",
+        "deactivation_command": "stop",
+        "current_project_only": True,
+        "artifact_root": ".product-delivery/",
+    }
+
+
+def _upgrade_policy() -> str:
+    return (
+        "# Upgrade Retention Policy\n\n"
+        "Plugin upgrades must not delete `.product-delivery/` artifacts, "
+        "state, templates, handoff files, or closure evidence. Migrations "
+        "must be additive or provide an explicit rollback path.\n"
+    )
+
+
+def _readonly_policy() -> str:
+    return (
+        "# Waygate And Controller Read-Only Boundary\n\n"
+        "Packaged workflow assets may read external Waygate/controller evidence "
+        "when explicitly supplied, but the boundary is read-only and they "
+        "must not mutate Waygate state, "
+        "controller session files, or acceptance artifacts.\n"
+    )
+
+
+def _write_json(path: Path, value: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _copy_runtime_package(runtime_dir: Path) -> None:
+    source_dir = Path(__file__).resolve().parent
+    if runtime_dir.exists():
+        shutil.rmtree(runtime_dir)
+    shutil.copytree(
+        source_dir,
+        runtime_dir,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+
+
+def _remove_legacy_plugin_packages(root: Path) -> None:
+    plugins_dir = root / "plugins"
+    for plugin_name in LEGACY_PLUGIN_NAMES:
+        plugin_root = plugins_dir / plugin_name
+        manifest_path = plugin_root / ".codex-plugin" / "plugin.json"
+        if not manifest_path.is_file():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if manifest.get("name") == plugin_name:
+            shutil.rmtree(plugin_root)

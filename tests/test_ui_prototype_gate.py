@@ -1,0 +1,161 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
+from product_delivery_agent.ui_prototype import UI_PROTOTYPE_TAXONOMY
+from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+
+
+def complete_review_payload():
+    return {
+        "prototype_path": "prototype/index.html",
+        "pages": ["dashboard", "settings"],
+        "states": ["empty", "loading", "error", "success"],
+        "journeys": ["create classroom", "review classroom"],
+        "taxonomy": {
+            "roles": ["teacher", "admin"],
+            "main_paths": ["teacher creates classroom"],
+            "exceptions": ["duplicate classroom name"],
+            "recovery": ["retry after network failure"],
+            "permissions": ["teacher cannot access admin settings"],
+            "long_tasks": ["bulk import progress"],
+            "mobile": ["375px layout"],
+            "keyboard": ["tab through primary actions"],
+            "negative_scope_boundaries": ["student billing is absent"],
+        },
+        "limitations": ["prototype uses static fixture data"],
+        "browser_e2e_candidates": [
+            "teacher creates classroom",
+            "duplicate classroom name",
+        ],
+        "negative_scope_guard_candidates": ["student billing is absent"],
+    }
+
+
+class UIPrototypeGateTests(unittest.TestCase):
+    @staticmethod
+    def _write_prototype(project_root):
+        prototype = project_root / "prototype" / "index.html"
+        prototype.parent.mkdir(parents=True, exist_ok=True)
+        prototype.write_text("<html>prototype</html>", encoding="utf-8")
+
+    def test_ui_project_records_complete_prototype_review_and_downstream_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            self._write_prototype(project_root)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start()
+            workflow.select_project_type("ui")
+
+            result = workflow.record_ui_prototype_review(complete_review_payload())
+
+            self.assertEqual(result["stage"], "ui_prototype_review_ready")
+            review = result["ui_prototype_review"]
+            self.assertEqual(review["prototype_path"], "prototype/index.html")
+            self.assertEqual(set(review["taxonomy"]), set(UI_PROTOTYPE_TAXONOMY))
+            self.assertEqual(
+                result["downstream_inputs"]["browser_e2e_candidates"],
+                ["teacher creates classroom", "duplicate classroom name"],
+            )
+            self.assertEqual(
+                result["downstream_inputs"]["negative_scope_guard_candidates"],
+                ["student billing is absent"],
+            )
+            artifact = (
+                project_root
+                / ARTIFACT_ROOT
+                / "artifacts"
+                / "ui-prototype-review.md"
+            )
+            self.assertTrue(artifact.is_file())
+            self.assertIn("teacher creates classroom", artifact.read_text("utf-8"))
+
+    def test_non_ui_project_cannot_enter_ui_prototype_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+            workflow.start()
+            workflow.select_project_type("non_ui")
+
+            with self.assertRaises(WorkflowError):
+                workflow.record_ui_prototype_review(complete_review_payload())
+
+    def test_missing_taxonomy_blocks_prototype_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+            workflow.start()
+            workflow.select_project_type("ui")
+            payload = complete_review_payload()
+            payload["taxonomy"].pop("keyboard")
+
+            with self.assertRaises(WorkflowError) as caught:
+                workflow.record_ui_prototype_review(payload)
+
+            self.assertIn("taxonomy:keyboard", str(caught.exception))
+
+    def test_missing_permissions_or_long_tasks_block_prototype_confirmation(self):
+        for taxonomy_field in ("permissions", "long_tasks"):
+            with self.subTest(taxonomy_field=taxonomy_field):
+                with tempfile.TemporaryDirectory() as tmp:
+                    workflow = ProductDeliveryWorkflow(Path(tmp))
+                    workflow.start()
+                    workflow.select_project_type("ui")
+                    payload = complete_review_payload()
+                    payload["taxonomy"].pop(taxonomy_field)
+
+                    with self.assertRaises(WorkflowError) as caught:
+                        workflow.record_ui_prototype_review(payload)
+
+                    self.assertIn(f"taxonomy:{taxonomy_field}", str(caught.exception))
+
+    def test_audit_and_handoff_block_until_ui_prototype_review_is_confirmed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            self._write_prototype(project_root)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start()
+            workflow.select_project_type("ui")
+            workflow.confirm("product_brief")
+            workflow.confirm("version_scope")
+
+            with self.assertRaises(WorkflowError):
+                workflow.prepare_audit_and_handoff_drafts()
+
+            state = workflow.record_ui_prototype_review(complete_review_payload())
+            pending = state["pending_confirmations"]["ui_prototype"]
+            workflow.confirm_ui_prototype(
+                "确认本地 HTML 原型符合预期",
+                "prototype/index.html",
+                nonce=pending["nonce"],
+            )
+            status = workflow.prepare_audit_and_handoff_drafts()
+
+            self.assertEqual(status["stage"], "handoff_draft_ready")
+
+    def test_limitations_are_carried_in_state_for_later_audit_handoff_and_closure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            self._write_prototype(project_root)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start()
+            workflow.select_project_type("ui")
+            workflow.record_ui_prototype_review(complete_review_payload())
+
+            state = load_state(project_root)
+
+            self.assertEqual(
+                state["prototype_limitations"],
+                ["prototype uses static fixture data"],
+            )
+            self.assertEqual(
+                state["closure_inputs"]["ui_prototype_limitations"],
+                ["prototype uses static fixture data"],
+            )
+            self.assertEqual(
+                state["handoff_inputs"]["ui_prototype_limitations"],
+                ["prototype uses static fixture data"],
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

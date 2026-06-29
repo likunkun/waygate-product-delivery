@@ -1,0 +1,20 @@
+{
+  "interface": {
+    "displayName": "Repo Local"
+  },
+  "name": "repo-local",
+  "plugins": [
+    {
+      "category": "Productivity",
+      "name": "waygate-product-delivery",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "path": "./plugins/waygate-product-delivery",
+        "source": "local"
+      }
+    }
+  ]
+}

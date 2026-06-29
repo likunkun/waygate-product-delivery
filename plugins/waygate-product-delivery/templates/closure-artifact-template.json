@@ -1,0 +1,35 @@
+{
+  "artifact_generation_command": "product-delivery formal-closure",
+  "artifact_root": ".product-delivery/artifacts",
+  "canonical_schema_version": "v0.10",
+  "canonical_validator": "product_delivery_agent.finalization",
+  "closure_flag": "version-feature-closure-passed",
+  "controller_session_modified": false,
+  "covered_journeys": [],
+  "covered_user_stories": [],
+  "created_fake_controller_state": false,
+  "e2e_covered_tc": [],
+  "e2e_evidence_paths": [],
+  "high_risk_gate_subresults": {},
+  "latest_test_case": "TC-V008-001",
+  "matrix_range": "TC-V008-001..TC-V008-001",
+  "negative_scope_guard_result": "passed",
+  "passed": true,
+  "plugin_version": "1.0.8",
+  "required_commands": [
+    {
+      "command": "PYTHONPATH=src python3 -m unittest discover -s tests",
+      "exit_code": 0,
+      "output": "Ran tests successfully"
+    }
+  ],
+  "secret_values_recorded": false,
+  "status": "passed",
+  "supporting_validators": [
+    {
+      "name": "target-specific validator",
+      "result_artifact": "",
+      "status": "supporting_only"
+    }
+  ]
+}

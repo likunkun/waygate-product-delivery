@@ -1,0 +1,42 @@
+{
+  "author": {
+    "email": "maintainers@example.com",
+    "name": "Waygate Product Delivery Maintainers",
+    "url": "https://example.com/waygate-product-delivery"
+  },
+  "description": "Codex-native product delivery workflow plugin.",
+  "homepage": "https://example.com/waygate-product-delivery",
+  "interface": {
+    "brandColor": "#2563EB",
+    "capabilities": [
+      "Write",
+      "Review"
+    ],
+    "category": "Productivity",
+    "defaultPrompt": [
+      "\u542f\u52a8\u4ea4\u4ed8",
+      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u5141\u8bb8\u591aAgent\u8bc4\u5ba1",
+      "\u67e5\u770b\u72b6\u6001",
+      "\u9a8c\u8bc1\u95ed\u5305",
+      "\u505c\u6b62\u4ea4\u4ed8"
+    ],
+    "developerName": "Waygate Product Delivery Maintainers",
+    "displayName": "Waygate Product Delivery",
+    "longDescription": "A dormant-by-default workflow plugin for product briefs, scope confirmation, UI/non-UI gates, coverage audit, Codex handoff, and feature closure evidence.",
+    "privacyPolicyURL": "https://example.com/privacy",
+    "shortDescription": "Waygate-guided product delivery workflow for Codex.",
+    "termsOfServiceURL": "https://example.com/terms",
+    "websiteURL": "https://example.com/waygate-product-delivery"
+  },
+  "keywords": [
+    "product-delivery",
+    "open-spec",
+    "codex",
+    "feature-closure"
+  ],
+  "license": "MIT",
+  "name": "waygate-product-delivery",
+  "repository": "https://example.com/waygate-product-delivery.git",
+  "skills": "./skills/",
+  "version": "1.0.8+codex.20260629030902"
+}

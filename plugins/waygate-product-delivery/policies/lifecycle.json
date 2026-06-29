@@ -1,0 +1,7 @@
+{
+  "activation_command": "start",
+  "artifact_root": ".product-delivery/",
+  "current_project_only": true,
+  "deactivation_command": "stop",
+  "dormant_by_default": true
+}

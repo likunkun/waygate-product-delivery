@@ -1,0 +1,401 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
+from product_delivery_agent.coverage_audit import CoverageAuditError
+from product_delivery_agent.gatekeeper import (
+    GatekeeperError,
+    normalize_project_type,
+    validate_state_invariants,
+)
+from product_delivery_agent.workflow import ProductDeliveryWorkflow
+
+
+def scenario_row(**overrides):
+    row = {
+        "scenario_id": "SC-001",
+        "role": "teacher",
+        "user_story": "US-001",
+        "journey": "J-001",
+        "path_type": "main",
+        "risk_level": "high",
+        "blocking_level": "p0",
+        "review_status": "draft",
+        "negative_boundary": "student billing remains absent",
+        "planned_e2e_case": "TC-V008-001",
+    }
+    row.update(overrides)
+    return row
+
+
+def review(review_type, **overrides):
+    payload = {
+        "review_id": f"MR-{review_type.upper()}-001",
+        "review_type": review_type,
+        "status": "passed",
+        "reviewers": [
+            "product intent reviewer",
+            "ui scenario reviewer",
+            "test strategy reviewer",
+        ],
+        "artifact_version": f"{review_type}-review-v1",
+        "independent_positions": [
+            "Reviewer A: no blocker",
+            "Reviewer B: no blocker",
+        ],
+        "cross_challenges": [
+            "Reviewer A challenged missing journey coverage and it was resolved",
+        ],
+        "revisions": ["Final review includes explicit browser E2E obligation"],
+        "final_adjudication": "passed with no blocking findings",
+        "conclusions": [f"{review_type} review passed"],
+        "accepted_suggestions": ["add duplicate-name visible exception"],
+        "rejected_suggestions": ["billing is outside this version"],
+        "unresolved_questions": [],
+        "blocking_findings": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def user_confirmation(target, **overrides):
+    payload = {
+        "confirmation_id": f"CONF-{target}",
+        "target": target,
+        "artifact_path": f".product-delivery/artifacts/{target}.md",
+        "artifact_version": "v1",
+        "confirmed_by": "user",
+        "confirmation_source": "chat_user_reply",
+        "confirmed_at": "2026-06-23T00:00:00+00:00",
+        "decision": "approved",
+        "user_message": "确认",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def ui_review_payload():
+    return {
+        "prototype_path": "docs/prototypes/v2.5-prototype.html",
+        "pages": ["dashboard"],
+        "states": ["empty", "loading", "error", "success"],
+        "journeys": ["J-001"],
+        "taxonomy": {
+            "roles": ["teacher"],
+            "main_paths": ["J-001"],
+            "exceptions": ["duplicate classroom name"],
+            "recovery": ["retry after network failure"],
+            "permissions": ["teacher cannot access admin settings"],
+            "long_tasks": ["bulk import progress"],
+            "mobile": ["375px layout"],
+            "keyboard": ["tab through primary actions"],
+            "negative_scope_boundaries": ["student billing remains absent"],
+        },
+        "limitations": ["static fixture data"],
+        "browser_e2e_candidates": ["J-001"],
+        "negative_scope_guard_candidates": ["student billing remains absent"],
+    }
+
+
+def planned_obligation(**overrides):
+    payload = {
+        "obligation_id": "OBL-001",
+        "scenario_id": "SC-001",
+        "test_id": "TC-V008-001",
+        "user_story": "US-001",
+        "journey": "J-001",
+        "visible_exception": "duplicate classroom name",
+        "test_layer": "browser_e2e",
+        "semantic_assertions": [
+            "teacher sees the owner operation",
+            "duplicate-name error is visible",
+        ],
+        "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
+        "exemption_status": "none",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def coverage_row(**overrides):
+    row = {
+        "tc_id": "TC-V008-001",
+        "fr": "FR-001",
+        "nfr": "NFR-001",
+        "us": "US-001",
+        "journey": "J-001",
+        "acceptance_criteria": "AC-001",
+        "task": "TASK-001",
+        "test_layer": "browser_e2e",
+        "evidence_type": "browser_e2e",
+        "semantic_marker": "ui-browser-e2e-required",
+        "coverage_status": "covered",
+        "exemption_status": "none",
+        "obligation_ref": "J-001",
+        "critical": True,
+    }
+    row.update(overrides)
+    return row
+
+
+def browser_evidence(project_root, **overrides):
+    evidence_path = (
+        project_root / ARTIFACT_ROOT / "artifacts" / "e2e" / "tc-v008-001.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    record = {
+        "test_id": "TC-V008-001",
+        "obligation_id": "OBL-001",
+        "command": "npx playwright test tests/e2e/v25.spec.ts",
+        "exit_code": 0,
+        "trace_path": ".product-delivery/artifacts/e2e/trace.zip",
+        "screenshot_path": ".product-delivery/artifacts/e2e/screenshot.png",
+        "console_errors": [],
+        "network_errors": [],
+        "semantic_assertions": ["teacher sees the owner operation"],
+        "evidence_path": ".product-delivery/artifacts/e2e/tc-v008-001.json",
+    }
+    record.update(overrides)
+    return record
+
+
+def task_completion_artifact(state, task_id):
+    task = next(
+        task for task in state["delivery_goal"]["planned_tasks"] if task["task_id"] == task_id
+    )
+    return {
+        "artifact_path": f".product-delivery/artifacts/{task_id}.json",
+        "artifact_sha256": "c" * 64,
+        "verification_command": task["verification"],
+        "verification_exit_code": 0,
+        "verification_output": "OK",
+        "planned_task_hash": task["planned_task_hash"],
+    }
+
+
+def closure_artifact():
+    return {
+        "status": "passed",
+        "passed": True,
+        "closure_flag": "v1.0.3-gate-enforcement-passed",
+        "latest_test_case": "TC-V008-001",
+        "matrix_range": "TC-V008-001..TC-V008-001",
+        "e2e_covered_tc": ["TC-V008-001"],
+        "covered_user_stories": ["US-001"],
+        "covered_journeys": ["J-001"],
+        "artifact_root": ".product-delivery/artifacts",
+        "artifact_generation_command": "product-delivery formal-closure",
+        "e2e_evidence_paths": [".product-delivery/artifacts/e2e/tc-v008-001.json"],
+        "high_risk_gate_subresults": {"ui-browser-e2e-required": "passed"},
+        "negative_scope_guard_result": "passed",
+        "required_commands": [{"command": "pytest", "exit_code": 0, "output": "OK"}],
+        "secret_values_recorded": False,
+        "controller_session_modified": False,
+        "created_fake_controller_state": False,
+    }
+
+
+def workflow_with_open_spec_and_scenario(project_root):
+    prototype = project_root / "docs" / "prototypes" / "v2.5-prototype.html"
+    prototype.parent.mkdir(parents=True, exist_ok=True)
+    prototype.write_text("<html>prototype</html>", encoding="utf-8")
+    workflow = ProductDeliveryWorkflow(project_root)
+    workflow.start(feature_slug="v2.5-key-owner-ops")
+    workflow.record_scenario_matrix([scenario_row()])
+    workflow.record_multi_agent_review("scenario", review("scenario"))
+    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
+    workflow.select_project_type("ui")
+    workflow.record_ui_prototype_review(ui_review_payload())
+    return workflow
+
+
+def ready_for_handoff(project_root):
+    workflow = workflow_with_open_spec_and_scenario(project_root)
+    pending = workflow.status()["pending_confirmations"]["ui_prototype"]
+    workflow.confirm_ui_prototype(
+        "确认本地 HTML 原型符合预期",
+        "docs/prototypes/v2.5-prototype.html",
+        nonce=pending["nonce"],
+    )
+    workflow.record_planned_e2e_obligations([planned_obligation()])
+    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
+    workflow.record_test_coverage_audit(
+        [coverage_row()],
+        negative_guard_records=["student billing remains absent"],
+    )
+    workflow.record_multi_agent_review("test", review("test"))
+    workflow.record_implementation_launch_authorization(
+        user_message="确认按当前交付包开始实现",
+        scope="Implement owner operations",
+        verification_commands=["pytest"],
+    )
+    workflow.generate_codex_goal_handoff(
+        scope="Implement owner operations",
+        verification_commands=["pytest"],
+    )
+    return workflow
+
+
+class GatekeeperV103Tests(unittest.TestCase):
+    def test_normalizes_web_system_to_ui_subtype(self):
+        self.assertEqual(
+            normalize_project_type("web_system"),
+            ("ui", "web_system"),
+        )
+
+    def test_state_closed_without_passed_closure_validation_is_invalid(self):
+        with self.assertRaises(GatekeeperError) as caught:
+            validate_state_invariants(
+                {
+                    "active": True,
+                    "project_type": "ui",
+                    "status": "closed",
+                    "closure_validation": {"status": "closure_failed"},
+                }
+            )
+
+        self.assertIn("closure-like state requires", str(caught.exception))
+        self.assertIn("closure_validation.status=passed", str(caught.exception))
+
+    def test_handoff_blocks_until_ui_prototype_user_confirmation_artifact_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = workflow_with_open_spec_and_scenario(Path(tmp))
+            workflow.record_planned_e2e_obligations([planned_obligation()])
+            workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
+            workflow.record_test_coverage_audit(
+                [coverage_row()],
+                negative_guard_records=["student billing remains absent"],
+            )
+            workflow.record_multi_agent_review("test", review("test"))
+
+            with self.assertRaises(GatekeeperError) as caught:
+                workflow.generate_codex_goal_handoff(
+                    scope="Implement owner operations",
+                    verification_commands=["pytest"],
+                )
+
+            self.assertIn("ui_prototype_user_confirmation", str(caught.exception))
+
+    def test_legacy_confirm_does_not_clear_ui_prototype_user_confirmation_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = workflow_with_open_spec_and_scenario(Path(tmp))
+            state = workflow.confirm("ui_prototype_review")
+
+            self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
+            self.assertIn("ui_html_prototype_confirmation", state["blocked_until"])
+
+    def test_handoff_requires_structured_multi_agent_test_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_with_open_spec_and_scenario(project_root)
+            pending = workflow.status()["pending_confirmations"]["ui_prototype"]
+            workflow.confirm_ui_prototype(
+                "确认本地 HTML 原型符合预期",
+                "docs/prototypes/v2.5-prototype.html",
+                nonce=pending["nonce"],
+            )
+            workflow.record_planned_e2e_obligations([planned_obligation()])
+            workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
+            workflow.record_test_coverage_audit(
+                [coverage_row()],
+                negative_guard_records=["student billing remains absent"],
+            )
+
+            with self.assertRaises(GatekeeperError) as caught:
+                workflow.generate_codex_goal_handoff(
+                    scope="Implement owner operations",
+                    verification_commands=["pytest"],
+                )
+
+            self.assertIn("multi_agent_test_review", str(caught.exception))
+
+    def test_executed_browser_evidence_must_cover_unexempted_planned_obligations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ready_for_handoff(project_root)
+
+            with self.assertRaises(CoverageAuditError) as caught:
+                workflow.record_executed_browser_evidence(
+                    [browser_evidence(project_root, obligation_id="OBL-OTHER")]
+                )
+
+            self.assertIn("planned E2E obligation missing executed evidence", str(caught.exception))
+
+    def test_closure_requires_executed_evidence_matching_planned_obligations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ready_for_handoff(project_root)
+            workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow._state(), "TASK-001"),
+            )
+            evidence_path = (
+                project_root / ARTIFACT_ROOT / "artifacts" / "e2e" / "tc-v008-001.json"
+            )
+            evidence_path.parent.mkdir(parents=True, exist_ok=True)
+            evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+
+            with self.assertRaises(GatekeeperError) as caught:
+                workflow.record_feature_closure(closure_artifact())
+
+            self.assertIn("executed_browser_evidence", str(caught.exception))
+
+    def test_closure_requires_delivery_goal_before_validator_can_close(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ready_for_handoff(project_root)
+            workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow._state(), "TASK-001"),
+            )
+            workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            state = load_state(project_root)
+            state["delivery_goal"] = None
+            write_state(project_root, state)
+
+            with self.assertRaises(GatekeeperError) as caught:
+                workflow.record_feature_closure(closure_artifact())
+
+            self.assertIn("implementation_without_delivery_goal", str(caught.exception))
+
+    def test_invalid_closure_writes_closure_validator_result_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ready_for_handoff(project_root)
+            workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            bad_artifact = closure_artifact()
+            bad_artifact["status"] = "closed"
+
+            with self.assertRaises(Exception):
+                workflow.record_feature_closure(bad_artifact)
+
+            state = load_state(project_root)
+            self.assertEqual(state["closure_validation"]["status"], "closure_failed")
+            self.assertNotEqual(state.get("status"), "closed")
+            result_path = (
+                project_root
+                / ARTIFACT_ROOT
+                / "artifacts"
+                / "closure-validator-result.md"
+            )
+            self.assertTrue(result_path.is_file())
+            self.assertIn("closure_failed", result_path.read_text("utf-8"))
+
+    def test_project_type_web_system_is_normalized_when_existing_state_is_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(project_root)
+            state = workflow.start(feature_slug="v2.5-key-owner-ops")
+            state["project_type"] = "web_system"
+            write_state(project_root, state)
+
+            recovered = ProductDeliveryWorkflow(project_root).status()
+
+            self.assertEqual(recovered["project_type"], "ui")
+            self.assertEqual(recovered["project_subtype"], "web_system")
+
+
+if __name__ == "__main__":
+    unittest.main()

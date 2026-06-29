@@ -1,0 +1,432 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
+from product_delivery_agent.confirmation import ConfirmationError
+from product_delivery_agent.gatekeeper import GatekeeperError
+from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+
+
+def scenario_row(**overrides):
+    row = {
+        "scenario_id": "SC-001",
+        "role": "operator",
+        "user_story": "US-001",
+        "journey": "J-001",
+        "path_type": "main",
+        "risk_level": "high",
+        "blocking_level": "p0",
+        "review_status": "draft",
+        "negative_boundary": "billing remains absent",
+        "planned_e2e_case": "TC-V008-001",
+    }
+    row.update(overrides)
+    return row
+
+
+def multi_agent_review(review_type):
+    return {
+        "review_id": f"MR-{review_type.upper()}-001",
+        "review_type": review_type,
+        "status": "passed",
+        "reviewers": [
+            "product intent reviewer",
+            "ui scenario reviewer",
+            "test strategy reviewer",
+        ],
+        "artifact_version": f"{review_type}-review-v1",
+        "independent_positions": [
+            "Reviewer A: no blocker",
+            "Reviewer B: no blocker",
+        ],
+        "cross_challenges": [
+            "Reviewer A challenged missing journey coverage and it was resolved",
+        ],
+        "revisions": ["Final review includes explicit browser E2E obligation"],
+        "final_adjudication": "passed with no blocking findings",
+        "conclusions": [f"{review_type} review passed"],
+        "accepted_suggestions": ["add visible exception coverage"],
+        "rejected_suggestions": ["billing remains outside this version"],
+        "unresolved_questions": [],
+        "blocking_findings": [],
+    }
+
+
+def user_confirmation(target):
+    return {
+        "confirmation_id": f"CONF-{target}",
+        "target": target,
+        "artifact_path": f".product-delivery/artifacts/{target}.md",
+        "artifact_version": "v1",
+        "confirmed_by": "user",
+        "confirmation_source": "chat_user_reply",
+        "confirmed_at": "2026-06-23T00:00:00+00:00",
+        "decision": "approved",
+        "user_message": "确认",
+    }
+
+
+def ui_review_payload(prototype_path):
+    return {
+        "prototype_path": prototype_path,
+        "pages": ["dashboard"],
+        "states": ["empty", "loading", "error", "success"],
+        "journeys": ["J-001"],
+        "taxonomy": {
+            "roles": ["operator"],
+            "main_paths": ["operator edits ownership"],
+            "exceptions": ["duplicate owner name"],
+            "recovery": ["retry after network failure"],
+            "permissions": ["readonly operator cannot edit"],
+            "long_tasks": ["bulk owner sync progress"],
+            "mobile": ["375px layout"],
+            "keyboard": ["tab through owner actions"],
+            "negative_scope_boundaries": ["billing remains absent"],
+        },
+        "limitations": ["static fixture data"],
+        "browser_e2e_candidates": ["J-001"],
+        "negative_scope_guard_candidates": ["billing remains absent"],
+    }
+
+
+def planned_obligation():
+    return {
+        "obligation_id": "OBL-001",
+        "scenario_id": "SC-001",
+        "test_id": "TC-V008-001",
+        "user_story": "US-001",
+        "journey": "J-001",
+        "visible_exception": "duplicate owner name",
+        "test_layer": "browser_e2e",
+        "semantic_assertions": ["operator edits ownership"],
+        "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
+        "exemption_status": "none",
+    }
+
+
+def coverage_row():
+    return {
+        "tc_id": "TC-V008-001",
+        "fr": "FR-001",
+        "nfr": "NFR-001",
+        "us": "US-001",
+        "journey": "J-001",
+        "acceptance_criteria": "AC-001",
+        "task": "TASK-001",
+        "test_layer": "browser_e2e",
+        "evidence_type": "browser_e2e",
+        "semantic_marker": "ui-browser-e2e-required",
+        "coverage_status": "covered",
+        "exemption_status": "none",
+        "obligation_ref": "J-001",
+        "critical": True,
+    }
+
+
+def planned_tasks():
+    return [
+        {
+            "task_id": f"TASK-{index:03d}",
+            "title": f"Implement task {index}",
+            "description": f"Deliver implementation slice {index}",
+            "verification": f"pytest -k task_{index}",
+        }
+        for index in range(1, 5)
+    ]
+
+
+def write_prototype(project_root, relative_path, content):
+    path = project_root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def browser_evidence(project_root):
+    evidence_path = (
+        project_root / ARTIFACT_ROOT / "artifacts" / "e2e" / "tc-v008-001.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    return {
+        "test_id": "TC-V008-001",
+        "obligation_id": "OBL-001",
+        "command": "npx playwright test tests/e2e/owner.spec.ts",
+        "exit_code": 0,
+        "trace_path": ".product-delivery/artifacts/e2e/trace.zip",
+        "screenshot_path": ".product-delivery/artifacts/e2e/screenshot.png",
+        "console_errors": [],
+        "network_errors": [],
+        "semantic_assertions": ["operator edits ownership"],
+        "evidence_path": ".product-delivery/artifacts/e2e/tc-v008-001.json",
+    }
+
+
+def task_completion_artifact(state, task_id):
+    task = next(
+        task for task in state["delivery_goal"]["planned_tasks"] if task["task_id"] == task_id
+    )
+    return {
+        "artifact_path": f".product-delivery/artifacts/{task_id}.json",
+        "artifact_sha256": "b" * 64,
+        "verification_command": task["verification"],
+        "verification_exit_code": 0,
+        "verification_output": "OK",
+        "planned_task_hash": task["planned_task_hash"],
+    }
+
+
+def closure_artifact():
+    return {
+        "status": "passed",
+        "passed": True,
+        "closure_flag": "v1.0.4-goal-driven-closure-passed",
+        "latest_test_case": "TC-V008-001",
+        "matrix_range": "TC-V008-001..TC-V008-001",
+        "e2e_covered_tc": ["TC-V008-001"],
+        "covered_user_stories": ["US-001"],
+        "covered_journeys": ["J-001"],
+        "artifact_root": ".product-delivery/artifacts",
+        "artifact_generation_command": "product-delivery formal-closure",
+        "e2e_evidence_paths": [".product-delivery/artifacts/e2e/tc-v008-001.json"],
+        "high_risk_gate_subresults": {"ui-browser-e2e-required": "passed"},
+        "negative_scope_guard_result": "passed",
+        "required_commands": [{"command": "pytest", "exit_code": 0, "output": "OK"}],
+        "secret_values_recorded": False,
+        "controller_session_modified": False,
+        "created_fake_controller_state": False,
+    }
+
+
+def workflow_ready_for_handoff(project_root):
+    prototype_path = "docs/prototypes/v104-prototype.html"
+    write_prototype(project_root, prototype_path, "<html>revision one</html>")
+    workflow = ProductDeliveryWorkflow(project_root)
+    workflow.start(feature_slug="v1.0.4-goal-driven-closure")
+    workflow.record_scenario_matrix([scenario_row()])
+    workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
+    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
+    workflow.select_project_type("ui")
+    state = workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+    pending = state["pending_confirmations"]["ui_prototype"]
+    workflow.confirm_ui_prototype(
+        "确认当前本地 HTML 原型，nonce=" + pending["nonce"],
+        prototype_path,
+        nonce=pending["nonce"],
+    )
+    workflow.record_planned_e2e_obligations([planned_obligation()])
+    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
+    workflow.record_test_coverage_audit(
+        [coverage_row()],
+        negative_guard_records=["billing remains absent"],
+    )
+    workflow.record_multi_agent_review("test", multi_agent_review("test"))
+    return workflow
+
+
+def authorize_launch(workflow):
+    workflow.record_implementation_launch_authorization(
+        user_message="确认按当前交付包开始实现",
+        scope="Implement the frozen delivery scope",
+        verification_commands=["pytest"],
+        planned_tasks=planned_tasks(),
+    )
+
+
+class GoalDrivenClosureV104Tests(unittest.TestCase):
+    def test_revised_prototype_invalidates_prior_confirmation_and_requires_new_nonce(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            prototype_path = "docs/prototypes/v104-prototype.html"
+            write_prototype(project_root, prototype_path, "<html>revision one</html>")
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start(feature_slug="v1.0.4-goal-driven-closure")
+            workflow.select_project_type("ui")
+
+            state = workflow.record_ui_prototype_review(
+                ui_review_payload(prototype_path)
+            )
+            first_pending = state["pending_confirmations"]["ui_prototype"]
+            first_hash = first_pending["artifact_hash"]
+            state = workflow.confirm_ui_prototype(
+                "确认当前本地 HTML 原型，nonce=" + first_pending["nonce"],
+                prototype_path,
+                nonce=first_pending["nonce"],
+            )
+            self.assertTrue(state["ui_prototype"]["confirmed_by_user"])
+
+            state = workflow.record_ui_prototype_feedback(
+                "缺少人员与模板的编辑部分",
+                prototype_path,
+            )
+            self.assertEqual(state["ui_prototype"]["confirmation_status"], "changes_requested")
+            self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
+
+            write_prototype(project_root, prototype_path, "<html>revision two</html>")
+            state = workflow.record_ui_prototype_review(
+                ui_review_payload(prototype_path)
+            )
+            second_pending = state["pending_confirmations"]["ui_prototype"]
+
+            self.assertNotEqual(second_pending["artifact_hash"], first_hash)
+            self.assertNotEqual(second_pending["nonce"], first_pending["nonce"])
+            self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
+            self.assertEqual(
+                state["ui_prototype"]["prototype_revision"],
+                second_pending["prototype_revision"],
+            )
+
+    def test_bare_continue_cannot_confirm_revised_prototype_without_pending_nonce(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            prototype_path = "docs/prototypes/v104-prototype.html"
+            write_prototype(project_root, prototype_path, "<html>revision one</html>")
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start(feature_slug="v1.0.4-goal-driven-closure")
+            workflow.select_project_type("ui")
+            state = workflow.record_ui_prototype_review(
+                ui_review_payload(prototype_path)
+            )
+            pending = state["pending_confirmations"]["ui_prototype"]
+
+            with self.assertRaises(ConfirmationError):
+                workflow.confirm_ui_prototype(
+                    "继续",
+                    prototype_path,
+                    agent_explicitly_asked=True,
+                )
+            with self.assertRaises(ConfirmationError):
+                workflow.confirm_ui_prototype(
+                    "确认本地 HTML 原型",
+                    prototype_path,
+                    nonce="wrong-nonce",
+                )
+
+            state = workflow.confirm_ui_prototype(
+                "确认本地 HTML 原型，nonce=" + pending["nonce"],
+                prototype_path,
+                nonce=pending["nonce"],
+            )
+
+            self.assertTrue(state["ui_prototype"]["confirmed_by_user"])
+
+    def test_handoff_creates_active_delivery_goal_and_task_queue_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_ready_for_handoff(project_root)
+            authorize_launch(workflow)
+
+            state = workflow.generate_codex_goal_handoff(
+                scope="Implement the frozen delivery scope",
+                verification_commands=["pytest"],
+                planned_tasks=planned_tasks(),
+            )
+
+            goal = state["delivery_goal"]
+            self.assertEqual(goal["status"], "active")
+            self.assertEqual(goal["current_task_cursor"], "TASK-001")
+            self.assertEqual(len(goal["planned_tasks"]), 4)
+            self.assertEqual(goal["completed_tasks"], [])
+            self.assertTrue(goal["closure_required"])
+            self.assertIn("不要在 TASK 未完成时停止", state["codex_goal_prompt"])
+            self.assertIn("closure validator 未通过", state["codex_goal_prompt"])
+            self.assertTrue(
+                (
+                    project_root
+                    / ARTIFACT_ROOT
+                    / "artifacts"
+                    / "implementation-goal.md"
+                ).is_file()
+            )
+            self.assertTrue(
+                (
+                    project_root
+                    / ARTIFACT_ROOT
+                    / "artifacts"
+                    / "task-queue.md"
+                ).is_file()
+            )
+
+    def test_stop_guard_blocks_when_only_three_of_four_tasks_are_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_ready_for_handoff(project_root)
+            authorize_launch(workflow)
+            workflow.generate_codex_goal_handoff(
+                scope="Implement the frozen delivery scope",
+                verification_commands=["pytest"],
+                planned_tasks=planned_tasks(),
+            )
+            for task_id in ("TASK-001", "TASK-002", "TASK-003"):
+                workflow.record_task_completion(
+                    task_id,
+                    artifact=task_completion_artifact(workflow._state(), task_id),
+                )
+
+            with self.assertRaises(WorkflowError) as caught:
+                workflow.assert_goal_can_stop()
+
+            self.assertIn("remaining TASK", str(caught.exception))
+            self.assertIn("TASK-004", str(caught.exception))
+
+    def test_closure_failure_keeps_goal_active_and_closure_pass_completes_goal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_ready_for_handoff(project_root)
+            authorize_launch(workflow)
+            workflow.generate_codex_goal_handoff(
+                scope="Implement the frozen delivery scope",
+                verification_commands=["pytest"],
+                planned_tasks=planned_tasks(),
+            )
+            for task in planned_tasks():
+                workflow.record_task_completion(
+                    task["task_id"],
+                    artifact=task_completion_artifact(workflow._state(), task["task_id"]),
+                )
+
+            with self.assertRaises(WorkflowError) as caught:
+                workflow.assert_goal_can_stop()
+            self.assertIn("closure", str(caught.exception))
+
+            with self.assertRaises(Exception):
+                workflow.record_feature_closure({"status": "closed"})
+            failed = load_state(project_root)
+            self.assertEqual(failed["delivery_goal"]["status"], "active")
+            self.assertEqual(
+                failed["delivery_goal"]["next_action"],
+                "fix_closure_evidence",
+            )
+
+            workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            state = workflow.record_feature_closure(closure_artifact())
+            allowed = workflow.assert_goal_can_stop()
+
+            self.assertEqual(state["delivery_goal"]["status"], "complete")
+            self.assertEqual(allowed["stop_guard"]["status"], "allowed")
+            self.assertEqual(state["closure_validation"]["status"], "passed")
+
+    def test_revised_unconfirmed_prototype_blocks_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_ready_for_handoff(project_root)
+            prototype_path = "docs/prototypes/v104-prototype.html"
+            workflow.record_ui_prototype_feedback(
+                "缺少人员与模板的编辑部分",
+                prototype_path,
+            )
+            write_prototype(project_root, prototype_path, "<html>revision two</html>")
+            workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+
+            with self.assertRaises(GatekeeperError) as caught:
+                workflow.generate_codex_goal_handoff(
+                    scope="Implement the frozen delivery scope",
+                    verification_commands=["pytest"],
+                    planned_tasks=planned_tasks(),
+                )
+
+            self.assertIn("ui_prototype_user_confirmation", str(caught.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
