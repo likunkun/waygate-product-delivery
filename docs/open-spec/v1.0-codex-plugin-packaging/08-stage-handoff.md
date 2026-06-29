@@ -64,7 +64,7 @@ The package is validated locally but is not a public marketplace release.
 | `PYTHONPATH=src python3 -m unittest tests/test_plugin_packaging.py` | 6 tests pass. |
 | `PYTHONPATH=src python3 -m unittest discover -s tests` | 69 tests pass. |
 | `python3 -m py_compile src/product_delivery_agent/*.py` | Exit 0. |
-| `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` | Plugin validation passed. |
+| `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` | Plugin validation passed. |
 
 ## Next Stage Inputs
 

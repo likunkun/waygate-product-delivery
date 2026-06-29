@@ -101,6 +101,14 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
                 "status": "missing",
                 "artifact": None,
             },
+            "test_coverage": {
+                "status": "missing",
+                "artifact": None,
+            },
+            "test_implementation": {
+                "status": "missing",
+                "artifact": None,
+            },
         },
         "ui_prototype": {
             "generated": False,
@@ -172,6 +180,14 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
                 "status": "missing",
                 "artifact": None,
             },
+            "test_coverage": {
+                "status": "missing",
+                "artifact": None,
+            },
+            "test_implementation": {
+                "status": "missing",
+                "artifact": None,
+            },
         },
     )
     merged["multi_agent_reviews"].setdefault(
@@ -183,6 +199,20 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     )
     merged["multi_agent_reviews"].setdefault(
         "test",
+        {
+            "status": "missing",
+            "artifact": None,
+        },
+    )
+    merged["multi_agent_reviews"].setdefault(
+        "test_coverage",
+        {
+            "status": "missing",
+            "artifact": None,
+        },
+    )
+    merged["multi_agent_reviews"].setdefault(
+        "test_implementation",
         {
             "status": "missing",
             "artifact": None,

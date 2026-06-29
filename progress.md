@@ -4,7 +4,7 @@
 
 ### Project Initialization
 
-- Created independent project directory: `/home/lichangkun/code/waygate-product-delivery-agent`.
+- Created independent project directory: `<waygate-product-delivery-repo>`.
 - Initialized a clean git repository and renamed the default branch to `main`.
 - Created documentation directories:
   - `docs/product/`
@@ -77,7 +77,7 @@
 
 ### Classroom Closure Methodology Comparison
 
-- Compared the current roadmap and Open Spec packages with `/home/lichangkun/code/classroom/docs/workflow/open-spec-feature-closure-methodology.md`.
+- Compared the current roadmap and Open Spec packages with `<reference-project>/docs/workflow/open-spec-feature-closure-methodology.md`.
 - Identified that the current plan is strong on pre-implementation product delivery and handoff, but needs a dedicated feature-closure/evidence layer if it wants to reproduce the V1.3.0 successful practice.
 - Recorded the main supplement areas in `findings.md`.
 
@@ -285,7 +285,7 @@
   - Waygate/controller read-only boundary policy.
 - Generated package files under `plugins/product-delivery-agent/`.
 - Generated marketplace config at `.agents/plugins/marketplace.json`.
-- Validated the generated plugin with `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent`.
+- Validated the generated plugin with `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent`.
 
 ### Multi-Agent Coverage Review Follow-Up
 
@@ -307,7 +307,7 @@
 - Verified final checks:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 69 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
   - `codex plugin list | rg 'product-delivery-agent@repo-local|Marketplace repo-local|Marketplace \`repo-local\`'` passed and showed `product-delivery-agent@repo-local` as `installed, enabled`, version `1.0.1`.
 - Error encountered:
   - An initial `codex plugin list | rg ...` check used unescaped shell backticks and printed `zsh:1: command not found: repo-local`; reran with single-quoted pattern and confirmed the installed plugin status cleanly.
@@ -328,7 +328,7 @@
 - Ran fresh final verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 69 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
 
 ### README Generation
 
@@ -349,25 +349,25 @@
   - `PYTHONPATH=src python3 -m unittest tests/test_plugin_packaging.py` passed with 6 tests.
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 69 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
 
 ### Local Plugin Installation
 
 - Registered the repo-local Codex plugin marketplace:
-  - command: `codex plugin marketplace add /home/lichangkun/code/waygate-product-delivery-agent --json`
+  - command: `codex plugin marketplace add <waygate-product-delivery-repo> --json`
   - result: marketplace `repo-local`, `alreadyAdded=false`
 - Installed the plugin:
   - command: `codex plugin add product-delivery-agent@repo-local --json`
-  - result: `product-delivery-agent@repo-local`, version `1.0.0`, installed under `/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.0`
+  - result: `product-delivery-agent@repo-local`, version `1.0.0`, installed under `<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.0`
 - Verified:
-  - `codex plugin marketplace list` shows `repo-local` rooted at `/home/lichangkun/code/waygate-product-delivery-agent`
+  - `codex plugin marketplace list` shows `repo-local` rooted at `<waygate-product-delivery-repo>`
   - `codex plugin list` shows `product-delivery-agent@repo-local` as `installed, enabled`
   - plugin cache directory exists
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed
 
 ### Product Delivery Hard-Gate Takeover Follow-Up
 
-- Investigated the `proxy-collector` failure mode: installed plugin skill text was advisory, not a hard gate; `.product-delivery/state.json`, current-feature Open Spec, and current-feature UI prototype were not enforced.
+- Investigated the `sample-target-project` failure mode: installed plugin skill text was advisory, not a hard gate; `.product-delivery/state.json`, current-feature Open Spec, and current-feature UI prototype were not enforced.
 - Used TDD:
   - added failing skill gate tests for `active_mode_startup`, `open_spec_planning`, and `feature_closure`;
   - added failing `startup_guard` tests for stale Open Spec packages, missing planning file feature sections, missing UI prototypes, and missing non-UI behavior contracts;
@@ -391,7 +391,7 @@
 - Regenerated `plugins/product-delivery-agent/`.
 - Reinstalled the plugin:
   - command: `codex plugin add product-delivery-agent@repo-local --json`
-  - result: version `1.0.1`, installed under `/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.1`
+  - result: version `1.0.1`, installed under `<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.1`
   - `codex plugin list` shows `product-delivery-agent@repo-local` as `installed, enabled`, version `1.0.1`
 - Verified:
   - `PYTHONPATH=src python3 -m unittest tests/test_skill_gates.py` passed with 9 tests.
@@ -400,11 +400,11 @@
   - `PYTHONPATH=src python3 -m unittest tests/test_plugin_packaging.py` passed with 6 tests.
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 78 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
 
 ### Proxy Collector V2.4.1 Monitoring
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Latest sampled status at `2026-06-22 21:52:38 +0800`: Red.
 - Initially Product Delivery startup guard failed because `task_plan.md` lacked `v2.4.1-alert-triage-whitelist`; later sampling confirmed startup guard passes.
 - Confirmed `state.json` still uses non-standard `project_type=web_system`, remains at `implementation_ready`, and has no closure.
@@ -420,7 +420,7 @@
 - Observed Open Spec `08-stage-handoff.md` now claims closure completion, but monitoring report records it as invalid until Product Delivery V0.10 validator passes.
 - Confirmed there is no `.rrc-controller-v2.4.1`; formal closure artifact exists but is invalid.
 - 21:52 resampling found no new target-file changes; closure validator still fails with `status must be 'passed'`.
-- Created `docs/operations/proxy-collector-v241-monitoring.md` to preserve monitoring evidence, issue classification, timeline, and correction recommendations.
+- Created `docs/operations/sample-product-delivery-monitoring.md` to preserve monitoring evidence, issue classification, timeline, and correction recommendations.
 
 ### Product Delivery Hardening Plan
 
@@ -432,9 +432,9 @@
 ### Product Delivery Hardening Plan Revision
 
 - Revised `docs/operations/product-delivery-agent-hardening-plan.md` after user feedback.
-- Marked the earlier `proxy-collector` demand-boundary-control finding as a false positive.
+- Marked the earlier `sample-target-project` demand-boundary-control finding as a false positive.
 - Removed the false-positive scope-control issue as a P0 root cause.
-- Kept normal Open Spec and scenario-matrix confirmation gates, but reframed them as delivery controls rather than evidence of a `proxy-collector` scope failure.
+- Kept normal Open Spec and scenario-matrix confirmation gates, but reframed them as delivery controls rather than evidence of a `sample-target-project` scope failure.
 - Added Open Spec front-loading as a real P0 issue alongside prototype confirmation, visible multi-agent review, UI journey E2E coverage, and closure validator control.
 
 ### Product Delivery Hardening Runtime Implementation
@@ -455,50 +455,50 @@
   - `PYTHONPATH=src python3 -m unittest tests/test_delivery_hardening_gates.py` passed with 11 tests.
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 90 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
 - Reinstalled repo-local plugin:
   - command: `codex plugin add product-delivery-agent@repo-local --json`
-  - result: version `1.0.2`, installed under `/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.2`
+  - result: version `1.0.2`, installed under `<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.2`
   - `codex plugin list` shows `product-delivery-agent@repo-local` as installed and enabled at version `1.0.2`.
 
 ### Proxy Collector V1.0.2 Follow-Up Monitoring
 
-- Monitored `/home/lichangkun/code/proxy-collector` in read-only mode after installing Product Delivery Agent `1.0.2`.
+- Monitored `<sample-target-project>` in read-only mode after installing Product Delivery Agent `1.0.2`.
 - Confirmed installed plugin status with `codex plugin list`: `product-delivery-agent@repo-local` is installed and enabled at `1.0.2`.
 - Sampled target state and artifacts at `2026-06-23 00:08:17`, `00:08:47`, `00:09:19`, and `00:09:51 +0800`.
 - Found no new `.product-delivery`, Open Spec, or prototype writes during the polling window.
-- Confirmed no active Codex process cwd under `/home/lichangkun/code/proxy-collector`.
+- Confirmed no active Codex process cwd under `<sample-target-project>`.
 - Follow-up strict `/proc/*/cmdline` filtering confirmed `NO_REAL_CODEX_PROCESS_IN_PROXY_COLLECTOR`; an earlier broad `pgrep -f codex` match was the monitoring shell itself.
 - Confirmed target `.product-delivery/state.json` still uses the old format: `project_type=web_system`, `status=closed`, missing all V1.0.2 lifecycle fields.
 - Revalidated old `formal-closure.json` with the current validator; it still fails with `status must be 'passed'`.
-- Appended the follow-up monitoring section to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the follow-up monitoring section to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.2 Continuous Monitoring
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector` at `2026-06-23 00:22:38`, `00:23:09`, and `00:23:40 +0800`.
+- Continued read-only monitoring of `<sample-target-project>` at `2026-06-23 00:22:38`, `00:23:09`, and `00:23:40 +0800`.
 - Found no Codex process with cwd under the target project in any sample.
 - Found no new watched target writes during the sampling window; latest relevant target activity remained `progress.md` at `2026-06-23 00:00:46 +0800`.
 - Confirmed `.product-delivery/state.json` still combines `mode=active` and `status=closed` while missing `closure_validation` and all V1.0.2 hardening fields.
 - Confirmed no V1.0.2 hardening artifacts exist under `.product-delivery/artifacts`.
 - Checked current feature Open Spec for `multi-agent`, `scenario matrix`, `planned E2E`, `prototype confirmed`, and `confirmed_by_user`; no hits were found.
 - Revalidated `.product-delivery/artifacts/v2.4.1-verification/formal-closure.json`; it still fails with `status must be 'passed'`.
-- Appended the 00:22-00:23 findings to `docs/operations/proxy-collector-v241-monitoring.md` and recorded the monitoring limitation that live thread behavior cannot be proven without an observable target process.
+- Appended the 00:22-00:23 findings to `docs/operations/sample-product-delivery-monitoring.md` and recorded the monitoring limitation that live thread behavior cannot be proven without an observable target process.
 
 ### Proxy Collector V2.5 Worktree Correction Monitoring
 
 - Investigated the user's note that the new run may be using a different directory or worktree.
-- Checked `git worktree list --porcelain`; only `/home/lichangkun/code/proxy-collector` is registered.
-- Parsed Codex session logs and identified the relevant latest session as `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T00-03-47-019ef012-d80a-7963-adce-f136819547ab.jsonl`.
-- Confirmed that session's `session_meta.cwd` and `turn_context.cwd` are `/home/lichangkun/code/proxy-collector`; previous process-cwd monitoring missed it because app-server processes report generic cwd.
+- Checked `git worktree list --porcelain`; only `<sample-target-project>` is registered.
+- Parsed Codex session logs and identified the relevant latest session as `<codex-session-log>`.
+- Confirmed that session's `session_meta.cwd` and `turn_context.cwd` are `<sample-target-project>`; previous process-cwd monitoring missed it because app-server processes report generic cwd.
 - Observed the session loaded Product Delivery Agent `1.0.2`, planning/open-spec/closure/test/UI/browser/verification skills, asked V2.5 product-shaping questions, and switched the checkout to `v2.5-key-owner-ops`.
 - Confirmed no separate worktree was created; the original checkout is now on branch `v2.5-key-owner-ops`.
 - Confirmed V2.5 startup is not yet state-compliant: `.product-delivery/state.json` still points to V2.4.1 closed and lacks V1.0.2 hardening fields.
 - Confirmed V2.5 directories were created, but they are empty and no required V2.5 Open Spec, prototype, scenario matrix, user confirmation, planned E2E, or multi-agent review artifacts exist yet.
-- Appended a worktree-correction and V2.5 monitoring section to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended a worktree-correction and V2.5 monitoring section to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V2.5 Live Monitoring 01:17-01:20
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed V2.5 state now exists in `.product-delivery/state.json`, but still uses `project_type=web_system` and lacks V1.0.2 hardening fields.
 - Confirmed V2.5 Open Spec 00-08 files exist.
 - Confirmed V2.5 local 1:1 HTML prototype exists and has browser evidence JSON plus desktop/mobile screenshots.
@@ -506,11 +506,11 @@
 - Confirmed implementation is underway: aliases and web server code are modified, and V2.5 alias/web tests exist.
 - Confirmed no structured V1.0.2 hardening artifacts exist for scenario matrix, multi-agent review, user confirmation, planned E2E obligations, executed evidence, or closure validator result.
 - Observed drift: Open Spec `05-development-plan.md` still marks implementation tasks as pending, and test coverage/static-review artifacts still describe pending states while implementation has started.
-- Appended the 01:17-01:20 V2.5 live monitoring section to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the 01:17-01:20 V2.5 live monitoring section to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V2.5 Final Completion Review
 
-- Re-sampled `/home/lichangkun/code/proxy-collector` after the target thread appeared complete.
+- Re-sampled `<sample-target-project>` after the target thread appeared complete.
 - Confirmed target branch remains `v2.5-key-owner-ops`.
 - Confirmed `.product-delivery/state.json` now reports V2.5 `status=closed`.
 - Confirmed V2.5 Open Spec 00-08 are marked Closed and implementation/verification artifacts exist.
@@ -518,7 +518,7 @@
 - Ran the current Product Delivery closure validator against `.product-delivery/artifacts/v2.5-verification/formal-closure.json`; it failed with `status must be 'passed'`.
 - Confirmed V1.0.2 structured hardening artifacts are still absent.
 - Confirmed state still uses non-protocol `project_type=web_system` and lacks freeze/review/confirmation/planned-E2E/executed-evidence/closure-validation fields.
-- Appended final V2.5 completion review to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended final V2.5 completion review to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Product Delivery Agent V1.0.3 Gate Enforcement
 
@@ -535,18 +535,18 @@
 - Final verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 99 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/skill-creator/scripts/quick_validate.py plugins/product-delivery-agent/skills/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <skill-creator>/scripts/quick_validate.py plugins/product-delivery-agent/skills/product-delivery-agent` passed.
 - Reinstalled repo-local plugin:
   - command: `codex plugin add product-delivery-agent@repo-local --json`
-  - result: version `1.0.3`, installed under `/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.3`
+  - result: version `1.0.3`, installed under `<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.3`
   - `codex plugin list --json` shows `product-delivery-agent@repo-local` installed and enabled at version `1.0.3`.
 
 ### Proxy Collector V1.0.3 Startup Monitoring 13:39-13:41
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
-- Identified the latest relevant Codex session as `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
-- Confirmed session cwd is `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
+- Identified the latest relevant Codex session as `<codex-session-log>`.
+- Confirmed session cwd is `<sample-target-project>`.
 - Confirmed the session loaded Product Delivery Agent `1.0.3` from the repo-local plugin cache.
 - Confirmed the agent read Product Delivery, planning, Open Spec, and feature-closure skills.
 - Confirmed the agent stopped at requirements questions for `v2.5-team-key-governance` and did not start implementation during this sample window.
@@ -557,22 +557,22 @@
   - no current feature Open Spec package exists yet;
   - no current feature prototype or user confirmation artifact exists yet;
   - no scenario matrix, multi-agent review, planned E2E, executed evidence, or closure validator artifact exists yet.
-- Appended the monitoring results to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the monitoring results to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.3 Requirements To Specification Monitoring 15:15-15:20
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Sampled the parent session and the specification subagent session.
 - Confirmed the run advanced to Open Spec requirements/specification work without implementation file changes.
 - Confirmed current-feature Open Spec `00-change-request.md`, `01-requirements.md`, and `08-stage-handoff.md` now exist.
 - Confirmed the specification subagent was reading current code for spec grounding and had not edited implementation files during the sample.
 - Confirmed no current feature prototype, prototype confirmation artifact, scenario matrix, multi-agent review artifacts, planned E2E obligations, executed browser evidence, or closure validator artifacts exist yet.
 - Recorded continuing state protocol drift: `project_type=web_system`, no `project_subtype`, top-level `status=open_spec_requirements`, nested `current_open_spec_stage.stage=specification`, stale top-level `updated_at`, and missing V1.0.3 fields.
-- Appended the 15:15-15:20 monitoring window to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the 15:15-15:20 monitoring window to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.3 Pre-Handoff Gate Monitoring 16:37-16:42
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed Open Spec `00` through `08` exist for `v2.5-team-key-governance`.
 - Confirmed local 1:1 HTML prototype exists at `docs/prototypes/v2.5-team-key-governance-prototype.html`.
 - Confirmed prototype browser evidence exists under `.product-delivery/artifacts/v2.5-ui-prototype/`, with Playwright `status=PASS` and `failed_checks=0`.
@@ -581,11 +581,11 @@
 - Confirmed the target final message explicitly asks the user to confirm the UI prototype before implementation.
 - Confirmed no implementation code changes were observed; target `git diff --stat` only reported `.product-delivery/state.json` as a tracked modification.
 - Recorded remaining protocol drift: canonical V1.0.3 state/artifact fields are still absent, so gatekeeper still derives pre-handoff blockers.
-- Appended the 16:37-16:42 monitoring window to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the 16:37-16:42 monitoring window to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.3 Prototype Feedback Monitoring 16:55-17:12
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Observed user feedback `缺少人员与模板的编辑部分`.
 - Confirmed the target treated that feedback as prototype revision work and did not count it as approval.
 - Confirmed the local prototype was revised with personnel and template editing surfaces.
@@ -593,10 +593,10 @@
 - Observed a later user message `继续`.
 - Recorded that the target incorrectly interpreted that bare `继续` as confirmation of the revised UI prototype and announced it would enter TASK-001.
 - Confirmed state still had `ui_prototype.confirmed_by_user=false`, no `user_confirmations`, no `handoff`, and V1.0.3 derived pre-handoff blockers.
-- Appended the 16:55-17:12 monitoring window to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the 16:55-17:12 monitoring window to `docs/operations/sample-product-delivery-monitoring.md`.
 - Follow-up at `17:18 +0800` confirmed the target wrote a custom `user-confirmation.json` from `confirmation_message="继续"` and a custom `v2.5-pre-handoff-gate.json` with `implementation_entry="allowed"`.
 - Confirmed target state moved to `implementation_ready` and `ui_prototype.confirmed_by_user=true`, while V1.0.3 `derive_blockers()` still reports pre-handoff blockers and canonical fields remain absent.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md` with this gatekeeper-bypass finding.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md` with this gatekeeper-bypass finding.
 - Follow-up at `17:23 +0800` confirmed no TASK-001 business code/test writes yet.
 - Recorded that target planning files and Open Spec handoff/memory now repeat the non-canonical implementation-ready claim, creating recovery drift.
 - Follow-up at `17:24-17:27 +0800` confirmed TASK-001 implementation started.
@@ -609,7 +609,7 @@
 
 ### Proxy Collector V1.0.3 TASK-002 And TASK-003 Entry Monitoring 17:51-18:15
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed TASK-002 progressed through matcher/admission RED, handler RED, and startup-entry RED before implementation.
 - Confirmed focused V2.5 keygateway tests passed after matcher/admission and handler wiring.
 - Confirmed command-level startup test passed after aliases reload began returning team policies.
@@ -618,16 +618,16 @@
 - Confirmed target state moved to `implementation.current_task=TASK-003`, with `TASK-001` and `TASK-002` marked completed.
 - Re-ran Product Delivery V1.0.3 `derive_blockers()`; all pre-handoff blockers remain present.
 - Recorded that target session now trusts custom `pre-handoff gate PASS` as fact, which conflicts with V1.0.3 gatekeeper output.
-- Appended the TASK-002/TASK-003 entry monitoring section to `docs/operations/proxy-collector-v241-monitoring.md` and updated `findings.md`.
+- Appended the TASK-002/TASK-003 entry monitoring section to `docs/operations/sample-product-delivery-monitoring.md` and updated `findings.md`.
 
 ### Proxy Collector V1.0.3 TASK-003 RED Monitoring 18:17-18:19
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed target added `internal/usagereport/web/server_v25_test.go` before implementation.
 - Confirmed focused `go test ./internal/usagereport/web -run TestV25 -count=1` failed as expected.
 - Recorded RED failures: missing `people` array on `/api/keys`, `/api/keys/people` returning 405, and alias binding not validating missing person/template metadata.
 - Confirmed target diagnosed the RED and planned to limit implementation to `internal/usagereport/web/server.go` plus the new V2.5 tests.
-- Appended the TASK-003 RED monitoring section to `docs/operations/proxy-collector-v241-monitoring.md` and updated `findings.md`.
+- Appended the TASK-003 RED monitoring section to `docs/operations/sample-product-delivery-monitoring.md` and updated `findings.md`.
 - Follow-up at `18:25 +0800`: recorded that the target strengthened `server_v25_test.go` before implementation with a template rematerialization assertion for already-bound keys.
 - Follow-up at `18:27 +0800`: recorded that TASK-003 implementation began in `internal/usagereport/aliases/aliases.go` with `UpdateTeamTierTemplatesAndBindings`; `server.go` was not yet in the stable working diff.
 - Follow-up at `18:30 +0800`: recorded that Web layer implementation began in `server.go` and `ops_status.go`, including governance response structs, people/templates routes, and `/api/keys` metadata fields; no GREEN result observed yet.
@@ -636,39 +636,39 @@
 
 ### Proxy Collector V1.0.3 TASK-002 Monitoring 17:51
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed target state is `implementation_in_progress` with current task `TASK-002` and completed `TASK-001`.
 - Confirmed `internal/keygateway/team_policy_v25_test.go` was written before implementation and initial `go test ./internal/keygateway -run TestV25 -count=1` failed on missing matcher/policy/admission fields.
 - Confirmed target added `internal/keygateway/team_policy.go` and focused `internal/keygateway/admission.go` changes.
 - Confirmed target noticed and removed duplicated old normal-branch code in `admission.go`.
 - Confirmed a fixture-level failure around normal pool cooldown was corrected by isolating the subscenario, then TASK-002 focused tests passed.
 - Re-ran Product Delivery V1.0.3 `derive_blockers()` against target state; blockers remain `open_spec_current_feature`, `scenario_matrix_draft`, `multi_agent_scenario_review`, `user_confirmed_freeze`, `ui_html_prototype_review`, `ui_prototype_user_confirmation`, `planned_e2e_obligations`, `planned_e2e_user_confirmation`, `multi_agent_test_review`, and `test_coverage_audit`.
-- Appended the TASK-002 monitoring section to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the TASK-002 monitoring section to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.3 TASK-002 Handler Monitoring 17:57
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed `internal/keygateway/gateway_v25_test.go` was added to cover non-protected team policy model rejection, raw-key redaction, basic concurrency, and VIP bypass at handler level.
 - Confirmed handler RED failed on missing `Options.TeamPolicy`.
 - Confirmed target wired `TeamPolicyMatcher` through `internal/keygateway/gateway.go`.
 - Confirmed focused V2.5 keygateway tests passed with gateway, matcher, and admission cases.
 - Confirmed target started a startup-entry RED in `cmd/key-gateway/main_test.go` so aliases reload returns team policies for all bound rows.
 - Rechecked target state: canonical V1.0.3 fields remain absent and `derive_blockers()` still reports all pre-handoff blockers.
-- Appended the 17:57 handler/startup monitoring section to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the 17:57 handler/startup monitoring section to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.3 TASK-002 Startup Verification 18:00
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed startup-entry RED for `TestV25GatewayKeysFromAliasesLoadsTeamPoliciesForAllBoundRows` failed because `gatewayKeysFromAliases` still returned only protected keys and key policies.
 - Confirmed target updated `cmd/key-gateway/main.go` to create and refresh `TeamPolicyMatcher` and pass it into `NewGateway`.
 - Confirmed focused `cmd/key-gateway` V2.5 test passed.
 - Confirmed package-level `go test ./internal/keygateway -count=1` and `go test ./cmd/key-gateway -count=1` both exited with code `0`.
 - Confirmed Product Delivery state still records only TASK-001 completion and lacks canonical V1.0.3 fields; derived pre-handoff blockers remain unchanged.
-- Appended the 18:00 startup integration monitoring section to `docs/operations/proxy-collector-v241-monitoring.md`.
+- Appended the 18:00 startup integration monitoring section to `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V1.0.3 TASK-003 Evidence Sync 18:35-18:42
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed TASK-003 evidence artifact was written at `.product-delivery/artifacts/v2.5-task-003-web-api.json`.
 - Confirmed state advanced to `implementation.current_task=TASK-004` with completed tasks `TASK-001`, `TASK-002`, and `TASK-003`.
 - Confirmed Open Spec/handoff/memory were synchronized and the target corrected a misplaced `progress.md` insertion by appending the content as latest `Session 36`.
@@ -702,24 +702,24 @@
 - Final verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 105 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/skill-creator/scripts/quick_validate.py plugins/product-delivery-agent/skills/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <skill-creator>/scripts/quick_validate.py plugins/product-delivery-agent/skills/product-delivery-agent` passed.
 - Reinstalled repo-local plugin:
   - command: `codex plugin add product-delivery-agent@repo-local --json`
-  - result: version `1.0.4`, installed under `/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.4`
+  - result: version `1.0.4`, installed under `<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.4`
   - `codex plugin list --json` shows `product-delivery-agent@repo-local` installed and enabled at version `1.0.4`.
 
 ### Proxy Collector V2.6 V1.0.4 Monitoring 20:35-20:42
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
-- Confirmed latest target session cwd is `/home/lichangkun/code/proxy-collector` and the session is using the installed Product Delivery Agent `1.0.4` context.
+- Continued read-only monitoring of `<sample-target-project>`.
+- Confirmed latest target session cwd is `<sample-target-project>` and the session is using the installed Product Delivery Agent `1.0.4` context.
 - Confirmed V2.6 Open Spec 00-08 exists under `docs/open-spec/v2.6-gateway-concurrency-provider-priority-ui/`.
 - Confirmed Open Spec keeps implementation blocked: planned tasks are still not started and test cases are still planned.
 - Confirmed `.product-delivery/state.json` points to V2.6 with `status=open_spec_prepared_pending_ui_prototype`, `ui_prototype.confirmed_by_user=false`, and no implementation task in progress.
 - Confirmed no V2.6 local HTML prototype or V2.6 Product Delivery artifacts existed during this sampling window.
 - Confirmed no implementation code changes were observed; the target had only Product Delivery/Open Spec level changes.
 - Confirmed required UI/prototype skills were read before prototype work: `ui-ux-pro-max`, `frontend-design`, and `webapp-testing`.
-- Recorded current issues in `docs/operations/proxy-collector-v241-monitoring.md`:
+- Recorded current issues in `docs/operations/sample-product-delivery-monitoring.md`:
   - state still uses legacy `project_type=web_system`;
   - canonical V1.0.4 fields are still absent (`open_spec_freeze`, `multi_agent_reviews`, `planned_e2e_obligations`, `user_confirmations`, `delivery_goal`, `closure_validation`);
   - prototype artifact is not present yet, so the next gate must still block implementation until artifact, browser evidence, and explicit user confirmation exist.
@@ -787,7 +787,7 @@
 
 Status: `Implementation Started / Delivery Goal Not Persisted`.
 
-- Re-sampled the active `/home/lichangkun/code/proxy-collector` V2.6 session after pre-handoff.
+- Re-sampled the active `<sample-target-project>` V2.6 session after pre-handoff.
 - Observed the target write TASK-001 code artifacts:
   - `internal/keygateway/provider_capacity_v26_test.go`
   - `internal/keygateway/provider_capacity.go`
@@ -836,7 +836,7 @@ Follow-up at `22:47-22:49 +0800`:
 
 - The target did continue beyond the earlier three-task stop point and entered TASK-004.
 - TASK-004 scope is usage-web and management client integration: derived capacity fields on `GET /api/auth-files`, priority `1..10` save wrapper, and gateway runtime `provider_capacity` merge into `/api/gateway-status`.
-- The target read CLIProxyAPI local code and correctly identified the fields patch contract as a flat payload such as `{"name":"auth-file-name","priority":7}`, not a nested `fields` object.
+- The target read external service project local code and correctly identified the fields patch contract as a flat payload such as `{"name":"auth-file-name","priority":7}`, not a nested `fields` object.
 - This is positive continuation behavior, but state still has no persisted `delivery_goal`; forward progress is still session-discipline-driven rather than V1.0.4 state-machine-driven.
 
 Follow-up at `22:53-22:59 +0800`:
@@ -946,9 +946,9 @@ Follow-up at `2026-06-25 00:01 +0800`:
 
 Follow-up at `2026-06-25 00:03 +0800`:
 
-- The target performed a read-only boundary check for `/home/lichangkun/code/CLIProxyAPI`.
-- It found the external CLIProxyAPI checkout is dirty with unrelated `request_logging` changes.
-- Positive: the target explicitly decided not to claim the external repository is clean; it will record TC-013 as `PASS_WITH_EXTERNAL_DIRTY_NOTE` because V2.6 does not depend on or submit CLIProxyAPI changes.
+- The target performed a read-only boundary check for `<external-readonly-repo>`.
+- It found the external external service project checkout is dirty with unrelated `request_logging` changes.
+- Positive: the target explicitly decided not to claim the external repository is clean; it will record TC-013 as `PASS_WITH_EXTERNAL_DIRTY_NOTE` because V2.6 does not depend on or submit external service project changes.
 - State still has no closure artifact, no closure validator result, and no premature `closed` status.
 
 Follow-up at `2026-06-25 00:05 +0800`:
@@ -1029,12 +1029,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Confirmed the revised HTML prototype confirmation was correctly nonce-bound and current-revision-bound.
 - Confirmed TASK-001 through TASK-007 completed and implemented-app E2E/readonly/redaction evidence exists.
 - Re-ran the local Product Delivery closure validator against V2.6 `formal-closure.json`; it still fails with `ClosureGateError: status must be 'passed'`.
-- Recorded final P0/P1 issue summary in `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Recorded final P0/P1 issue summary in `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Final assessment: implementation evidence improved, but Product Delivery V1.0.4 is still not enforcing validator-controlled closure or persisted delivery-goal completion.
 
 ### Product Delivery Agent V1.0.5 Fail-Closed Finalization
 
-- Implemented the approved V1.0.5 hardening patch in `/home/lichangkun/code/waygate-product-delivery-agent`.
+- Implemented the approved V1.0.5 hardening patch in `<waygate-product-delivery-repo>`.
 - Used TDD:
   - Added `tests/test_fail_closed_finalization_v105.py` for V2.6 poisoned state recovery, invariant rejection, hooks/status blockers, missing delivery goal stop guard, pre-handoff missing-goal allowance, and finalization CLI failure.
   - Added `tests/test_review_mode_v105.py` for `review_mode` behavior and `role_simulation` user acceptance.
@@ -1056,7 +1056,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 115 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
   - `codex plugin list` shows `product-delivery-agent@repo-local` installed and enabled at `1.0.5+codex.20260624224055`.
 
 ### Proxy Collector V2.6.1 Monitoring 09:28
@@ -1070,7 +1070,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - raw target state still has `project_type=web_system`;
   - normalized state becomes `project_type=ui`, `project_subtype=web_system`;
   - derived blockers still include current Open Spec synchronization, scenario matrix, multi-agent scenario review, user freeze, UI prototype review/confirmation, planned E2E, test review, and coverage audit.
-- Recorded current V2.6.1 issues in `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Recorded current V2.6.1 issues in `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Current assessment: Yellow. The agent has not started implementation, but prototype gate evidence is incomplete because the prototype HTML exists without Playwright/static review, pending confirmation, or state/Open Spec synchronization.
 
 ### Proxy Collector V2.6.1 Monitoring 09:41
@@ -1108,12 +1108,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.6.1 Monitoring 10:34
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed TASK-001 evidence exists at `.product-delivery/artifacts/v2.6.1-task-001-provider-eligibility.json`.
 - Confirmed the target session wrote useful TASK-001 evidence after directed Go tests passed.
 - Confirmed state was manually patched to `implementation.current_task=TASK-002` and `completed_tasks=[TASK-001]`.
 - Confirmed `delivery_goal` remains `null`, and no `goal` or `task-queue` artifact exists for V2.6.1.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Current assessment: code-level TDD is credible, but V1.0.5 goal-driven task advancement is still not enforced.
 
 ### Proxy Collector V2.6.1 Monitoring 10:37
@@ -1129,7 +1129,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 ### Proxy Collector V2.6.1 Monitoring 10:53
 
 - Continued read-only monitoring of the target session.
-- Confirmed the 10:41 session with `proxy-collector` mentions is the current monitoring thread, not the target implementation thread.
+- Confirmed the 10:41 session with `sample-target-project` mentions is the current monitoring thread, not the target implementation thread.
 - Confirmed the real target thread remains `rollout-2026-06-25T09-02-32-019efc4c-cd6a-7780-b942-11725ff54369.jsonl`.
 - Observed TASK-002 RED tests added in `internal/usagereport/management/client_v26_test.go` and shared web fake changes in `internal/usagereport/web/server_v21_test.go`.
 - Observed target message: RED confirmed on missing `SetOpenAICompatibilityPriority` and `priority_configurable`; target began GREEN implementation.
@@ -1287,12 +1287,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - generated `SKILL.md` says custom pre-handoff artifacts are supporting evidence only.
 - Documentation changes:
   - updated `docs/operations/product-delivery-agent-hardening-plan.md`;
-  - appended V1.0.6 hardening response to `docs/operations/proxy-collector-v241-monitoring.md`;
+  - appended V1.0.6 hardening response to `docs/operations/sample-product-delivery-monitoring.md`;
   - recorded the V1.0.6 conclusions in `findings.md` and `task_plan.md`.
 - Verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 119 tests;
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed;
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed before and after cachebuster.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed before and after cachebuster.
 - Installation:
   - regenerated `plugins/product-delivery-agent/`;
   - cachebusted plugin manifest to `1.0.6+codex.20260625053906`;
@@ -1302,8 +1302,8 @@ Follow-up at `2026-06-25 00:31 +0800`:
 ### Proxy Collector V2.7 Startup Monitoring 23:09-23:18
 
 - Read-only monitored the latest target session:
-  - `/home/lichangkun/.codex/sessions/2026/06/25/rollout-2026-06-25T23-09-36-019eff54-5031-7390-b884-66c8a365b191.jsonl`;
-  - cwd `/home/lichangkun/code/proxy-collector`.
+  - `<codex-session-log>`;
+  - cwd `<sample-target-project>`.
 - Confirmed user request: `启动交付 完成V2.7 ... 形成图表 并可以导出`.
 - Confirmed the target loaded Product Delivery Agent `1.0.6+codex.20260625053906` and `planning-with-files`, ran catchup, read AGENTS/ROADMAP/task_plan/progress/findings/state, and checked `.rrc-controller-v2.7/session.json` absence.
 - Confirmed the target did not start implementation.
@@ -1319,7 +1319,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - state pre-populates `delivery_goal.status=not_started` before pre-handoff and launch authorization;
   - handmade state has many canonical V1.0.6 fields absent/null;
   - historical V2.6.1 closure artifact remains custom `PASS_WITH_NOTES`, although V2.7 is not reusing it.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 
 ### Proxy Collector V2.7 Requirements Monitoring 23:46-23:55
 
@@ -1336,12 +1336,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.7 Requirements Monitoring 00:17-00:20
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector` in the same V2.7 target session.
+- Continued read-only monitoring of `<sample-target-project>` in the same V2.7 target session.
 - Confirmed the user accepted the privacy boundary recommended by the target: request content may be read for classification, while UI/export/artifacts/derived storage expose only derived labels, confidence, sample counts, and sanitized summaries.
 - Confirmed target state remains `status=needs_requirements_input`, `implementation.current_task=NOT_STARTED`, and `implementation_launch_authorization=null`.
 - Confirmed no V2.7 Open Spec package, local prototype, V2.7 Product Delivery artifacts, or implementation code changes exist yet.
 - Ran V1.0.6 runtime checks; invariants pass and blockers still include Open Spec, scenario matrix, multi-agent reviews, freeze, UI prototype confirmation, planned E2E, test audit, and implementation launch authorization.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Current assessment: flow behavior is green for requirements intake; protocol remains yellow because `.product-delivery/state.json` is still hand-edited and persists `project_type=web_system` plus a pre-launch `delivery_goal.status=not_started`.
 - Follow-up idle poll at `00:21 +0800` found no new target messages after the scenario-taxonomy question, no V2.7 Open Spec/prototype/artifacts, and `implementation.current_task=NOT_STARTED`; assessment unchanged.
 
@@ -1384,7 +1384,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Confirmed the explorer subagent correctly reported missing Open Spec, prototype, prototype artifacts, prototype confirmation, coverage audit, scenario/test review, pre-handoff, and implementation launch authorization.
 - Confirmed no business implementation file changes appeared during the sample.
 - Recorded a new reliability issue: after the target said it would start writing Open Spec 00-08 and prototype evidence, no V2.7 Open Spec files, prototype HTML, or prototype artifacts existed by `08:30 +0800`; `.product-delivery/state.json` also remained unchanged from `08:04:18`.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 
 ### Proxy Collector V2.7 Task 0 Monitoring 08:52
 
@@ -1432,7 +1432,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.7 TASK-001 Monitoring 12:30
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed r3 prototype confirmation and exact implementation launch authorization happened before code work.
 - Confirmed target state: `status=implementation_active`, `implementation.current_task=TASK-001`, `completed_tasks=[]`, executed browser evidence and closure still `not_started`.
 - Confirmed target used worker/reviewer subagents for TASK-001 implementation and review.
@@ -1442,7 +1442,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - code-quality reviewer found contract mismatches for `evidence_kind`, `excellent_score`, sorting keys, and redaction-test log leakage risk.
 - Positive: target accepted the spec reviewer FAIL and did not immediately write TASK-001 completion evidence.
 - Ran current V1.0.6 gatekeeper against target state; it fails closed with `canonical_handoff`, `stale_implementation_launch_authorization`, and `delivery_goal_task_state_mismatch`.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: continue monitoring whether target fixes review findings and records separate per-TASK evidence before advancing state.
 
 ### Proxy Collector V2.7 Review-Fix Monitoring 12:37
@@ -1519,7 +1519,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - fixed safe 500 text;
   - enriched `model_rows` contract.
 - No post-fix GREEN, no post-fix reviewer PASS, no `v2.7-task-*` evidence, no executed browser evidence, and no closure validation were present yet.
-- Recorded the 13:16 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:16 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: continue monitoring worker completion, post-fix review, and whether evidence is split by TASK rather than bundled into TASK-001.
 
 ### Proxy Collector V2.7 Backend Re-Review Monitoring 13:26
@@ -1540,7 +1540,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Parent spawned fresh backend spec and security/code-quality re-review agents.
 - State remained `implementation_active`, `current_task=TASK-001`, `completed_tasks=[]`; no `v2.7-task-*` artifacts existed.
 - Parent explicitly waited for re-review before updating TASK evidence.
-- Recorded the 13:26 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:26 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor re-review PASS/FAIL and ensure any TASK evidence is split or reconciled across TASK-001..TASK-004.
 
 ### Proxy Collector V2.7 Backend Security Re-Review Monitoring 13:30
@@ -1553,7 +1553,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - unknown KEY requests may be silently excluded from analytics/warnings.
 - Target accepted the FAIL and planned TDD regression tests/fixes before evidence.
 - State remained `implementation_active`, `current_task=TASK-001`, `completed_tasks=[]`; no `v2.7-task-*` artifacts existed.
-- Recorded the 13:30 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:30 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor whether the next hardening worker writes red tests and whether no TASK-005 frontend writes occur before backend security re-review passes.
 
 ### Proxy Collector V2.7 Security Worker / Frontend Context Monitoring 13:33
@@ -1564,7 +1564,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - No TASK-005 frontend file writes were observed.
 - Parent identified stale Open Spec `authorization pending` / `not started` text in `05/06`, but did not update it yet.
 - State remained `implementation_active`, `current_task=TASK-001`, `completed_tasks=[]`; no `v2.7-task-*` artifacts existed.
-- Recorded the 13:33 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:33 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: confirm the security worker proves RED, fixes, verifies, and gets re-review PASS before evidence or frontend writes.
 
 ### Proxy Collector V2.7 Security Worker Completion 13:39
@@ -1581,7 +1581,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - `go test ./internal/usagereport/requestlog ./internal/usagereport/web -run TestV27 -count=1` passed.
 - Confirmed worker did not modify Product Delivery docs/artifacts/state and did not claim closure/controller DONE.
 - Confirmed read-only frontend explorer completed without file writes.
-- Recorded the 13:39 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:39 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor parent integration, fresh security review, and whether TASK evidence is split across TASK-001..TASK-004.
 
 ### Proxy Collector V2.7 Parent Security Re-Review Monitoring 13:42
@@ -1594,7 +1594,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Parent reported both passed.
 - Parent spawned an independent read-only re-review focused on CSV formula neutralization and unknown KEY warning/count handling.
 - No `v2.7-task-*` artifacts existed; state remained `implementation_active`, `current_task=TASK-001`, `completed_tasks=[]`.
-- Recorded the 13:42 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:42 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: wait for focused security re-review PASS/FAIL.
 
 ### Proxy Collector V2.7 Task Evidence Gap Monitoring 13:45
@@ -1608,7 +1608,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - no `v2.7-task-*` artifacts existed;
   - `delivery_goal.remaining_tasks` still listed TASK-001 through TASK-007.
 - Recorded this as a P0 task/goal accounting bypass: backend TASK-001..TASK-004 evidence was not split or reconciled before moving toward TASK-005.
-- Recorded the 13:45 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:45 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor whether the target corrects state/evidence before actual TASK-005 file writes, or proceeds with frontend changes despite stale task state.
 
 ### Proxy Collector V2.7 Backend Evidence Backfill Monitoring 13:49
@@ -1625,7 +1625,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - `implementation.completed_tasks=[]`;
   - `delivery_goal.remaining_tasks` still included TASK-001 through TASK-007.
 - Recorded remaining non-compliance: evidence was backfilled after the TASK-005 worker launch, and canonical state/delivery goal did not reflect the evidence.
-- Recorded the 13:49 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:49 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor whether frontend worker writes files before state/delivery goal catches up, and whether closure later detects task-state mismatch.
 
 ### Proxy Collector V2.7 TASK-005 Frontend RED Monitoring 13:53
@@ -1635,7 +1635,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Worker ran `go test ./internal/usagereport/web -run TestV27FrontendAssetsExposeTeamAnalyticsChartsAndExports -count=1`.
 - RED failed for expected missing frontend marker reason.
 - No `index.html`, `app.js`, or `app.css` writes had landed at this sample; only `server_v27_test.go` changed.
-- Recorded the 13:53 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:53 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor frontend implementation, GREEN, and whether state/delivery goal is eventually reconciled.
 
 ### Proxy Collector V2.7 TASK-005 Frontend Write Monitoring 13:56
@@ -1646,7 +1646,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - `internal/usagereport/web/assets/app.js`.
 - Implementation direction uses independent `teamAnalytics*` state and V2.7 `/api/team-analytics` endpoints.
 - Confirmed process issue became concrete: frontend writes began while Product Delivery state/delivery goal still had backend tasks stale.
-- Recorded the 13:56 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 13:56 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor GREEN verification and later state/evidence reconciliation.
 
 ### Proxy Collector V2.7 TASK-005 In-Progress Monitoring 14:02
@@ -1655,7 +1655,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - TASK-005 worker wrote substantial frontend implementation in `app.js`, `index.html`, and initial `app.css`.
 - No frontend GREEN result was observed yet.
 - Parent acknowledged state still stops at TASK-001 and planned to update it after TASK-005 returns.
-- Recorded the 14:02 monitoring section in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the 14:02 monitoring section in `docs/operations/sample-product-delivery-monitoring.md`.
 - Next: monitor frontend asset test GREEN and state/evidence reconciliation.
 
 ### Proxy Collector V2.7 TASK-005 Worker Completion Monitoring 14:07
@@ -1664,7 +1664,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - TASK-005 worker completed without claiming closure/controller DONE.
 - Worker reported RED first for `TestV27FrontendAssetsExposeTeamAnalyticsChartsAndExports`, then PASS for that test, V2.7 web tests, JS syntax check, and scoped diff check.
 - Worker disclosed that it removed an existing `.pdf` MIME marker to satisfy the V2.7 no-PDF guard.
-- Recorded the regression risk and stale state/goal issue in `docs/operations/proxy-collector-v241-monitoring.md`.
+- Recorded the regression risk and stale state/goal issue in `docs/operations/sample-product-delivery-monitoring.md`.
 
 ### Proxy Collector V2.7 Parent TASK-005 Review Monitoring 14:10-14:16
 
@@ -1674,7 +1674,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - The reviewer confirmed the `/api/team-analytics` API split, panel placement after existing V2.5 governance UI, and narrowed PDF guard.
 - The reviewer is investigating a possible functional issue: client-side team/department filter may not propagate to CSV export, which only includes `window`.
 - State remained unchanged: `implementation.current_task=TASK-001`, `completed_tasks=[]`, `delivery_goal.remaining_tasks` still includes TASK-001..TASK-007, and no TASK-005 artifact exists.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: wait for TASK-005 review PASS/FAIL, then verify whether parent updates state/delivery goal before TASK-006.
 
 ### Proxy Collector V2.7 TASK-005 Review Repair Monitoring 14:17-14:23
@@ -1692,7 +1692,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Parent reported the failing tests and wider V2.7 web/package checks now pass.
 - Parent spawned a second read-only spec review.
 - State remained stale: `current_task=TASK-001`, `completed_tasks=[]`, no TASK-005 artifact, no executed browser evidence.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: monitor second review result and state/delivery-goal reconciliation before TASK-006.
 
 ### Proxy Collector V2.7 TASK-005 Second Review Monitoring 14:28-14:30
@@ -1708,7 +1708,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - added privacy banner copy assertions.
 - Parent reported the related tests and JS syntax passing, ran scoped diff check, and spawned a third read-only review.
 - State remained stale: `current_task=TASK-001`, `completed_tasks=[]`, no TASK-005 artifact.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: monitor third review PASS/FAIL and ensure state/delivery goal is reconciled before TASK-006.
 
 ### Proxy Collector V2.7 TASK-005 Third Review PASS Monitoring 14:34-14:36
@@ -1725,7 +1725,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - generic `.pdf` MIME support remains.
 - Parent accepted the spec PASS and started a separate code-quality/security review instead of immediately marking TASK-005 complete.
 - State remained stale: `current_task=TASK-001`, `completed_tasks=[]`, no TASK-005 artifact.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: monitor code-quality/security review result and Product Delivery state reconciliation.
 
 ### Proxy Collector V2.7 TASK-005 Code Quality Review Monitoring 14:44-14:49
@@ -1740,7 +1740,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Parent reported targeted and wider V2.7 checks passing, then spawned a new code-quality/security re-review.
 - Parent explicitly noted Open Spec docs were still pre-implementation/stale and planned to update TASK-001..005 status after TASK-005 passed.
 - State remained unchanged during this sample: `current_task=TASK-001`, `completed_tasks=[]`, no TASK-005 artifact.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: monitor re-review PASS/FAIL and whether state is reconciled before TASK-006.
 
 ### Proxy Collector V2.7 TASK-005 PASS And State Reconciliation 14:58-15:03
@@ -1756,12 +1756,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - `executed_browser_evidence.status=not_started`.
 - Recorded remaining issue: state reconciliation happened late and in batch, but it happened before TASK-006 evidence/closure.
 - Recorded verification caveat: `server_v27_test.go` is still untracked, so git-scoped diff check does not inspect it until added or otherwise explicitly checked.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 - Next: monitor TASK-006 implemented-app browser E2E and canonical executed browser evidence.
 
 ### Proxy Collector V2.7 TASK-006 E2E Monitoring 15:27-15:31
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed V2.7 state is still `implementation_active` on `TASK-006`, with TASK-001 through TASK-005 completed and remaining work listed as TASK-006, TASK-007, executed browser evidence, formal closure, and closure validator.
 - Confirmed no premature closure claim in this sample.
 - Confirmed the TASK-006 Playwright runner now contains `OBL-V27-E2E-005` / `SCN-V27-EXCEPTIONS` / `TC-V27-016`.
@@ -1769,7 +1769,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Follow-up observation: the target reran UI/E2E successfully, produced `v27-team-analytics-exceptions.png`, and rewrote `v27-team-analytics-e2e.json` with `checked_at=2026-06-26T07:30:15Z` and obligations `OBL-V27-E2E-001` through `OBL-V27-E2E-008` plus `OBL-V27-E2E-010`.
 - Redaction scan reran successfully at `2026-06-26T07:30:32Z` with `status=PASS`.
 - Remaining gap: `.product-delivery/state.json` still has `executed_browser_evidence.status=not_started`; canonical state has not yet integrated the new evidence.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md`, `findings.md`, and `progress.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md`, `findings.md`, and `progress.md`.
 
 ### Proxy Collector V2.7 TASK-006 State Reconciliation 15:32-15:35
 
@@ -1859,7 +1859,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Confirmed latest validator result reports `status: passed` at `2026-06-26T08:23:10Z` for the V2.7 formal closure artifact.
 - Confirmed state remains closed locally with TASK-001..TASK-007 complete, `delivery_goal.status=complete`, `feature_closure.status=passed`, and `closure_validation.status=passed`.
 - Recorded new issue: the target's feature-specific validator accepted a non-canonical `formal-closure.json` with `status=PASS_WITH_NOTES`, no top-level `closure_flag`, no top-level Product Delivery integrity booleans, and no `required_commands[].output`.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 
 ### Product Delivery Agent V1.0.7 Canonical Closure Authority
 
@@ -1881,12 +1881,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - Targeted closure/fail-closed/canonical launch/goal tests passed.
   - Full `PYTHONPATH=src python3 -m unittest discover -s tests` passed with 124 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed.
 
 ### Proxy Collector V2.8 Startup Monitoring 11:51-11:57
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
-- Located latest session: `/home/lichangkun/.codex/sessions/2026/06/28/rollout-2026-06-28T00-38-06-019f09f2-0de3-7d70-a269-6a24c1dcaab5.jsonl`.
+- Continued read-only monitoring of `<sample-target-project>`.
+- Located latest session: `<codex-session-log>`.
 - Confirmed the user started `启动交付 v2.8` for global UI restructuring and a mobile-operable raw-content unlock path.
 - Confirmed the target loaded Product Delivery Agent `1.0.7+codex.20260626102933`, plus brainstorming, frontend-design, open-spec, test-strategy, ui-ux-pro-max, webapp-testing, and planning-with-files.
 - Confirmed no V2.8 Open Spec or V2.8 Product Delivery artifacts exist yet; session is waiting for user selection on multi-agent review authorization.
@@ -1895,7 +1895,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - Plan Mode prevented current-feature state initialization, but no explicit Product Delivery pending-start artifact/state was created.
   - Target treated V2.7 raw state as locally closed, while V1.0.7 read-only normalization from this repo returns `closure_failed`.
   - No `session-catchup.py` execution was observed despite `planning-with-files` startup requirements.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md`, `findings.md`, and `task_plan.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md`, `findings.md`, and `task_plan.md`.
 
 ### Proxy Collector V2.8 Plan Mode Follow-Up 12:06-12:09
 
@@ -1915,7 +1915,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.8 Implementation-Mode Gate Monitoring 12:23-12:49
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed execution mode ran `planning-with-files` session catchup.
 - Confirmed V2.8 Open Spec `00` through `08`, local HTML prototype, prototype static review, Playwright verifier, desktop/mobile screenshots, `playwright-result.json`, and nonce-bound `pending-confirmation.json` exist.
 - Confirmed real spawned subagents reviewed UI scenario coverage, mobile raw safety, and test obligation/gate coherence.
@@ -1930,13 +1930,13 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.8 Prototype Feedback Rollback Monitoring 13:05-13:10
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed the target did not start production implementation after the user's feedback.
 - Confirmed no production UI files, V2.8 tests, or V2.8 verify scripts were modified in the monitored paths.
 - Confirmed the target stated that r1 prototype feedback invalidated the current confirmation path and that it should return to UI/function inventory before r2 prototype work.
 - Confirmed the target began inventory from real `index.html`, `app.js`, and `server.go` rather than from the stale r1 prototype.
 - Recorded a new recovery risk: `.product-delivery/state.json` still points to r1 `pre_handoff_blocked_ui_prototype_confirmation` and the old nonce, with no durable `changes_requested`, `prototype_superseded`, inventory gate, or r2 preparation artifact yet.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 
 ### Proxy Collector V2.8 Inventory Artifact Follow-Up 13:12
 
@@ -1964,7 +1964,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.8 Multi-Agent Inventory Review Start 14:22-14:24
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed the user asked the target to use multi-agent discussion to check inventory omissions and clarified priorities: system health/safety, AI usage amount, who is using AI, classify/organize/fold less important content.
 - Confirmed the target loaded multi-agent deliberation and subagent-related skills.
 - Confirmed the target spawned three real read-only explorer agents: SRE/security, AI usage/team analytics, and IA/folding strategy.
@@ -1993,7 +1993,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.8 Multi-Agent Final Adjudication 14:35-14:36
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`.
+- Continued read-only monitoring of `<sample-target-project>`.
 - Confirmed the target completed position revision for all three reviewer roles and wrote `.product-delivery/artifacts/v2.8-inventory-multi-agent-review.md`.
 - Confirmed the artifact includes final conclusion, why, key disagreements, risks/unknowns, and confidence.
 - Confirmed final adjudication: no major page/module missing, but affordance-level paths, high-risk actions, and analytics trust signals are missing from the inventory and must be added before user confirmation.
@@ -2070,7 +2070,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.8 R5 Review/Audit Repair Monitoring 00:19
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`; no target files were modified by this monitoring agent.
+- Continued read-only monitoring of `<sample-target-project>`; no target files were modified by this monitoring agent.
 - Confirmed the target still has not started implementation:
   - `.product-delivery/state.json` has `status=pre_handoff_blocked_r5_review_audit`;
   - `implementation.current_task=BLOCKED_BEFORE_IMPLEMENTATION`;
@@ -2138,7 +2138,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
 
 ### Proxy Collector V2.8 TASK-001 TDD Monitoring 00:45-00:56
 
-- Continued read-only monitoring of `/home/lichangkun/code/proxy-collector`; no target files were modified by this monitoring agent.
+- Continued read-only monitoring of `<sample-target-project>`; no target files were modified by this monitoring agent.
 - Confirmed TASK-001 entered a proper TDD RED sequence:
   - target added `internal/usagereport/web/server_v28_test.go`;
   - target noticed the first draft would fail as a test-code/import problem and corrected the test before running RED;
@@ -2274,7 +2274,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - the target tried to run the installed V1.0.7 `scripts/validate-closure-artifact.py`;
   - it failed with `ModuleNotFoundError: No module named 'product_delivery_agent'`;
   - the source package exists in this repo under `src/product_delivery_agent`, but the installed plugin cache does not expose it.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md` with these observations.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md` with these observations.
 
 ### Proxy Collector V2.8 Retroactive Task Evidence 01:39-01:43
 
@@ -2292,7 +2292,7 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - V2.8 `formal-closure.json` is missing;
   - `.product-delivery/artifacts/closure-validator-result.md` still points to V2.7.
 - Confirmed target updated human-readable docs and Open Spec execution language before canonical state/closure caught up.
-- Updated `docs/operations/proxy-collector-v241-monitoring.md` and `findings.md`.
+- Updated `docs/operations/sample-product-delivery-monitoring.md` and `findings.md`.
 
 ### Product Delivery Agent V1.0.8 Installed Runtime And Transition Authority
 
@@ -2321,14 +2321,14 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Full verification status:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 131 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` passed before and after cachebuster.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` passed before and after cachebuster.
   - packaged-root validator smoke passed with `PYTHONPATH` unset.
   - installed-cache validator smoke passed with `PYTHONPATH` unset.
   - installed-cache invalid closure fixture returned non-zero and wrote canonical `closure-validator-result.md`.
 - Installed plugin:
   - `product-delivery-agent@repo-local`
   - version `1.0.8+codex.20260629021916`
-  - cache path `/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.8+codex.20260629021916`
+  - cache path `<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.8+codex.20260629021916`
 - **Status:** complete.
 
 ### Waygate Product Delivery Package Rename And Install Automation
@@ -2351,14 +2351,14 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 132 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
   - packaged-root validator smoke passed with `PYTHONPATH` unset.
   - installed-cache validator smoke passed with `PYTHONPATH` unset.
   - installed-cache invalid closure fixture returned non-zero and wrote canonical `closure-validator-result.md`.
 - Installed plugin:
   - `waygate-product-delivery@repo-local`;
   - version `1.0.8+codex.20260629025828`;
-  - cache path `/home/lichangkun/.codex/plugins/cache/repo-local/waygate-product-delivery/1.0.8+codex.20260629025828`.
+  - cache path `<codex-plugin-cache>/repo-local/waygate-product-delivery/1.0.8+codex.20260629025828`.
 - **Status:** complete.
 
 ### Waygate Product Delivery Final Name Cleanup
@@ -2368,11 +2368,11 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Current installed plugin:
   - `waygate-product-delivery@repo-local`;
   - version `1.0.8+codex.20260629030902`;
-  - cache path `/home/lichangkun/.codex/plugins/cache/repo-local/waygate-product-delivery/1.0.8+codex.20260629030902`.
+  - cache path `<codex-plugin-cache>/repo-local/waygate-product-delivery/1.0.8+codex.20260629030902`.
 - Final verification:
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 132 tests.
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
   - installed-cache validator smoke passed with `PYTHONPATH` unset.
   - `codex plugin list` shows `waygate-product-delivery@repo-local` installed and enabled.
 - **Status:** complete.
@@ -2389,11 +2389,44 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - current-facing files have no stale `product-delivery-agent@repo-local` / `plugins/product-delivery-agent` references;
   - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 132 tests;
   - `python3 -m py_compile src/product_delivery_agent/*.py` passed;
-  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed;
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery` passed;
   - installed-cache validator smoke passed with `PYTHONPATH` unset.
 - GitHub push:
   - initial HTTPS push failed because no interactive GitHub credential prompt was available;
   - SSH auth succeeded for `likunkun`;
   - remote was updated to `git@github.com:likunkun/waygate-product-delivery.git`;
   - commit `16f8a65` was pushed to `origin/main`.
+- **Status:** complete.
+
+### Product Delivery Agent V1.0.9 Multi-Agent Test Coverage Review Gate
+
+- Implemented the approved V1.0.9 hardening plan for the `sample-target-project` QA gate incident.
+- RED tests added in `tests/test_multi_agent_test_coverage_review_v109.py`:
+  - existing runtime rejected `test_coverage` and `test_implementation` review types;
+  - missing `test_coverage` review did not block pre-handoff when old generic `test` review passed;
+  - collection coverage with 11 required items but one action assertion was accepted;
+  - marker-only / first-button-only planned assertions were accepted;
+  - missing `test_implementation` review did not block pre-closure.
+- GREEN implementation:
+  - `review_gates.py` now validates `test_coverage` and `test_implementation` review artifacts;
+  - `coverage_audit.py` now requires `coverage_items`, `action_assertions`, and `false_positive_guards` for planned E2E obligations;
+  - `gatekeeper.py` now blocks UI pre-handoff without `multi_agent_test_coverage_review` and UI closure without `multi_agent_test_implementation_review`;
+  - `artifact_protocol.py` default state now includes missing placeholders for both new review types;
+  - `workflow.py` now routes next gates to coverage review and implementation review;
+  - `plugin_packaging.py` now emits V1.0.9 templates and SKILL hard rules.
+- Verification so far:
+  - `PYTHONPATH=src python3 -m unittest tests/test_multi_agent_test_coverage_review_v109.py` passed: 7 tests.
+  - Focused impacted suite passed: 56 tests.
+  - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 139 tests.
+- Final verification:
+  - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
+  - `PYTHONPATH=src python3 scripts/package_waygate_product_delivery.py` generated `dist/waygate-product-delivery-1.0.9.tar.gz`.
+  - `python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
+  - Packaged-root validator `--help` passed with source `PYTHONPATH` unset.
+  - `bash scripts/install_waygate_product_delivery.sh` installed `waygate-product-delivery@repo-local` version `1.0.9+codex.20260629071804`.
+  - `codex plugin list` shows `waygate-product-delivery@repo-local` installed and enabled at `1.0.9+codex.20260629071804`.
+  - Installed-cache validator `--help` passed with source `PYTHONPATH` unset.
+  - Installed-cache invalid closure smoke returned non-zero and wrote `closure-validator-result.md`.
+  - Final `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 139 tests.
+  - Final plugin validation passed after cachebuster installation.
 - **Status:** complete.

@@ -54,8 +54,8 @@ If you need to run the steps manually:
 
 ```bash
 python3 scripts/package_waygate_product_delivery.py
-python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery
-python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/waygate-product-delivery
+python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery
+python3 <plugin-creator>/scripts/update_plugin_cachebuster.py plugins/waygate-product-delivery
 codex plugin add waygate-product-delivery@repo-local
 ```
 
@@ -71,5 +71,5 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 For the installed cache, replace the script path with:
 
 ```text
-~/.codex/plugins/cache/repo-local/waygate-product-delivery/<installed-version>/scripts/validate-closure-artifact.py
+<codex-home>/plugins/cache/repo-local/waygate-product-delivery/<installed-version>/scripts/validate-closure-artifact.py
 ```

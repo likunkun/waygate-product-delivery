@@ -111,7 +111,7 @@ class CanonicalClosureAuthorityV107Tests(unittest.TestCase):
                 state["closure_validation"]["canonical_schema_version"],
                 "v0.10",
             )
-            self.assertEqual(state["closure_validation"]["plugin_version"], "1.0.8")
+            self.assertEqual(state["closure_validation"]["plugin_version"], "1.0.9")
             self.assertEqual(
                 state["feature_closure"]["source_artifact_path"],
                 str(artifact_path),

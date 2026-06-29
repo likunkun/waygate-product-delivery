@@ -15,7 +15,7 @@
   "matrix_range": "TC-V008-001..TC-V008-001",
   "negative_scope_guard_result": "passed",
   "passed": true,
-  "plugin_version": "1.0.8",
+  "plugin_version": "1.0.9",
   "required_commands": [
     {
       "command": "PYTHONPATH=src python3 -m unittest discover -s tests",

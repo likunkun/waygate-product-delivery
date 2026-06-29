@@ -45,6 +45,35 @@ REQUIRED_PLANNED_OBLIGATION_FIELDS = (
     "expected_artifact_pattern",
     "exemption_status",
 )
+REQUIRED_ACTION_ASSERTION_FIELDS = (
+    "item_id",
+    "action_entry",
+    "expected_real_surface",
+    "assertion_target",
+    "semantic_depth",
+)
+ACCEPTED_SEMANTIC_DEPTHS = {
+    "real_surface",
+    "real_behavior",
+    "functional_panel",
+    "user_journey",
+}
+FALSE_POSITIVE_SEMANTIC_DEPTHS = {
+    "marker_only",
+    "function_name_only",
+    "static_panel_only",
+    "first_button_only",
+}
+FALSE_POSITIVE_TEXT_TERMS = {
+    "marker exists",
+    "function name",
+    "function-name",
+    "static explanation",
+    "static panel",
+    "static-only",
+    "first visible button",
+    "first button",
+}
 
 REQUIRED_EXEMPTION_FIELDS = (
     "exemption_id",
@@ -363,6 +392,97 @@ def _validate_planned_obligations(obligations: list[dict[str, Any]]) -> None:
             )
         if obligation["test_layer"] != "browser_e2e":
             raise CoverageAuditError("UI planned obligation must target browser_e2e")
+        _validate_obligation_action_assertions(index, obligation)
+
+
+def _validate_obligation_action_assertions(
+    index: int,
+    obligation: dict[str, Any],
+) -> None:
+    coverage_items = _string_list(obligation.get("coverage_items"))
+    action_assertions = obligation.get("action_assertions")
+    false_positive_guards = _string_list(obligation.get("false_positive_guards"))
+    if not coverage_items:
+        raise CoverageAuditError(
+            f"planned obligation row {index} missing fields: coverage_items"
+        )
+    if not isinstance(action_assertions, list) or not action_assertions:
+        raise CoverageAuditError(
+            f"planned obligation row {index} missing fields: action_assertions"
+        )
+    if not false_positive_guards:
+        raise CoverageAuditError(
+            f"planned obligation row {index} missing fields: false_positive_guards"
+        )
+
+    assertion_by_item: dict[str, list[dict[str, Any]]] = {}
+    for assertion_index, assertion in enumerate(action_assertions, start=1):
+        if not isinstance(assertion, dict):
+            raise CoverageAuditError(
+                f"planned obligation row {index} action assertion {assertion_index} "
+                "must be object"
+            )
+        missing = [
+            field_name
+            for field_name in REQUIRED_ACTION_ASSERTION_FIELDS
+            if not _has_value(assertion.get(field_name))
+        ]
+        if missing:
+            raise CoverageAuditError(
+                f"planned obligation row {index} action assertion {assertion_index} "
+                "missing fields: "
+                + ", ".join(missing)
+            )
+        item_id = assertion["item_id"]
+        assertion_by_item.setdefault(item_id, []).append(assertion)
+        if item_id not in coverage_items:
+            raise CoverageAuditError(
+                f"planned obligation row {index} action assertion references "
+                f"unknown coverage item: {item_id}"
+            )
+        semantic_depth = assertion["semantic_depth"]
+        if semantic_depth in FALSE_POSITIVE_SEMANTIC_DEPTHS:
+            raise CoverageAuditError(
+                f"planned obligation row {index} has false-positive action "
+                f"assertion for {item_id}: {semantic_depth}"
+            )
+        if semantic_depth not in ACCEPTED_SEMANTIC_DEPTHS:
+            raise CoverageAuditError(
+                f"planned obligation row {index} action assertion semantic_depth "
+                f"must be one of {', '.join(sorted(ACCEPTED_SEMANTIC_DEPTHS))}"
+            )
+        _reject_false_positive_action_text(index, item_id, assertion)
+
+    missing_items = [
+        item
+        for item in coverage_items
+        if item not in assertion_by_item
+    ]
+    if missing_items:
+        raise CoverageAuditError(
+            f"planned obligation row {index} missing action assertions for "
+            "coverage items: "
+            + ", ".join(missing_items)
+        )
+
+
+def _reject_false_positive_action_text(
+    row_index: int,
+    item_id: str,
+    assertion: dict[str, Any],
+) -> None:
+    haystack = " ".join(
+        [
+            assertion.get("action_entry", ""),
+            assertion.get("expected_real_surface", ""),
+            assertion.get("assertion_target", ""),
+        ]
+    ).lower()
+    if any(term in haystack for term in FALSE_POSITIVE_TEXT_TERMS):
+        raise CoverageAuditError(
+            f"planned obligation row {row_index} has false-positive action "
+            f"assertion for {item_id}"
+        )
 
 
 def _validate_structured_exemptions(exemptions: list[dict[str, Any]]) -> None:
@@ -458,6 +578,16 @@ def _has_list_values(value: Any) -> bool:
     return isinstance(value, list) and bool(value) and all(
         isinstance(item, str) and item.strip() for item in value
     )
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        item.strip()
+        for item in value
+        if isinstance(item, str) and item.strip()
+    ]
 
 
 def _sha256(path: Path) -> str:

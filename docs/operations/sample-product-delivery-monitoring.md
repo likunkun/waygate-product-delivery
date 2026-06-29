@@ -1,6 +1,6 @@
 # Proxy Collector V2.4.1 Product Delivery Monitoring
 
-- 监控对象：`/home/lichangkun/code/proxy-collector`
+- 监控对象：`<sample-target-project>`
 - 当前 feature：`v2.4.1-alert-triage-whitelist`
 - 监控方：`waygate-product-delivery-agent`
 - 监控方式：只读检查，不修改目标项目
@@ -9,7 +9,7 @@
 
 ## Summary
 
-`proxy-collector` 的 V2.4.1 线程已经补出部分 Product Delivery 产物，包括当前 feature 的 Open Spec 包、本地 HTML prototype、UI prototype 截图证据和测试覆盖审计草案。
+`sample-target-project` 的 V2.4.1 线程已经补出部分 Product Delivery 产物，包括当前 feature 的 Open Spec 包、本地 HTML prototype、UI prototype 截图证据和测试覆盖审计草案。
 
 但执行过程仍不合格。问题不是单个文件缺失，而是 Product Delivery 主流程没有持续接管实现过程：`.product-delivery/state.json`、planning-with-files、Open Spec、验证证据、closure evidence 和实际代码改动之间已经分叉。
 
@@ -416,7 +416,7 @@ tmp/v2_4_ops_alerts/*.png
 
 ## Recommended Correction For The Running Thread
 
-对 `proxy-collector` 当前线程，建议先暂停继续实现，按顺序纠偏：
+对 `sample-target-project` 当前线程，建议先暂停继续实现，按顺序纠偏：
 
 1. 修正 `state.json`：`project_type` 改为协议值 `ui`，保留 subtype 信息到辅助字段。
 2. 重新生成符合 V0.10 schema 的 formal closure artifact。
@@ -444,7 +444,7 @@ tmp/v2_4_ops_alerts/*.png
 
 ```bash
 python3 -m json.tool .product-delivery/state.json
-PYTHONPATH=/home/lichangkun/code/waygate-product-delivery-agent/src python3 - <<'PY'
+PYTHONPATH=<waygate-product-delivery-repo>/src python3 - <<'PY'
 from pathlib import Path
 from product_delivery_agent.startup_guard import validate_required_delivery_gates
 r = validate_required_delivery_gates(Path('.'), 'v2.4.1-alert-triage-whitelist', 'ui')
@@ -478,8 +478,8 @@ Read-only sampling window:
 Environment check:
 
 - Codex sees `product-delivery-agent@repo-local` installed and enabled at version `1.0.2`.
-- A new Codex app-server process started at `2026-06-23 00:03:49 +0800`, but its cwd is `/home/lichangkun/works/2026Q2/test`, not `/home/lichangkun/code/proxy-collector`.
-- No real Codex process cwd was found under `/home/lichangkun/code/proxy-collector`.
+- A new Codex app-server process started at `2026-06-23 00:03:49 +0800`, but its cwd is `<codex-app-server-cwd>`, not `<sample-target-project>`.
+- No real Codex process cwd was found under `<sample-target-project>`.
 - A broad `pgrep -f codex` scan briefly matched the monitoring shell itself because the shell command contained the word `codex`; a stricter `/proc/*/cmdline` filter for real `node .../codex` or vendor `bin/codex` processes returned `NO_REAL_CODEX_PROCESS_IN_PROXY_COLLECTOR`.
 
 Target project observations:
@@ -519,7 +519,7 @@ Latest file activity:
 
 Assessment:
 
-- The latest installed plugin version is correct, but the `proxy-collector` project has not yet shown evidence that a currently running agent is using the V1.0.2 hardening lifecycle.
+- The latest installed plugin version is correct, but the `sample-target-project` project has not yet shown evidence that a currently running agent is using the V1.0.2 hardening lifecycle.
 - The observed Product Delivery state is still from the older, non-compliant flow.
 - The latest plugin is therefore not yet behaving as expected in this target project, based on filesystem and state evidence.
 
@@ -546,7 +546,7 @@ Read-only sampling window:
 
 Observed state:
 
-- No Codex process with cwd under `/home/lichangkun/code/proxy-collector` was found in any sample.
+- No Codex process with cwd under `<sample-target-project>` was found in any sample.
 - `.product-delivery/state.json` still has `mode=active`, `status=closed`, `project_type=web_system`, and `updated_at=2026-06-22T22:42:21+08:00`.
 - The latest watched target file remains `progress.md` at `2026-06-23 00:00:46 +0800`; no `.product-delivery`, Open Spec, prototype, or planning-file writes occurred during this sampling window.
 - The current Open Spec package still has no textual evidence for the V1.0.2 lifecycle terms checked in this pass: `multi-agent`, `scenario matrix`, `planned E2E`, `prototype confirmed`, or `confirmed_by_user`.
@@ -566,23 +566,23 @@ Unreasonable issues recorded in this pass:
 Current assessment:
 
 - Treat the target project as not V1.0.2-compliant.
-- Do not accept `proxy-collector` V2.4.1 as Product Delivery closed until a new run writes the V1.0.2 state fields, user confirmations, multi-agent artifacts, planned/executed E2E evidence, and a validator-passing closure artifact.
+- Do not accept `sample-target-project` V2.4.1 as Product Delivery closed until a new run writes the V1.0.2 state fields, user confirmations, multi-agent artifacts, planned/executed E2E evidence, and a validator-passing closure artifact.
 
 ## 2026-06-23 00:31-00:35 Worktree Correction And V2.5 Monitoring
 
 Status remains `Red`, with an updated target interpretation.
 
-The earlier process-cwd check was incomplete. Codex app-server processes report cwd such as `/home/lichangkun/works/2026Q2/test`, but the relevant session log records the actual workspace:
+The earlier process-cwd check was incomplete. Codex app-server processes report cwd such as `<codex-app-server-cwd>`, but the relevant session log records the actual workspace:
 
-- Session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T00-03-47-019ef012-d80a-7963-adce-f136819547ab.jsonl`
-- `session_meta.cwd`: `/home/lichangkun/code/proxy-collector`
-- `turn_context.cwd`: `/home/lichangkun/code/proxy-collector`
+- Session: `<codex-session-log>`
+- `session_meta.cwd`: `<sample-target-project>`
+- `turn_context.cwd`: `<sample-target-project>`
 
 Worktree check:
 
-- `git worktree list --porcelain` still reports only `/home/lichangkun/code/proxy-collector`.
+- `git worktree list --porcelain` still reports only `<sample-target-project>`.
 - The active target checkout branch is now `v2.5-key-owner-ops`.
-- No registered separate worktree for `proxy-collector` was found.
+- No registered separate worktree for `sample-target-project` was found.
 - Conclusion: the running V2.5 thread is using the original checkout on a new branch, not a separate Git worktree directory.
 
 Positive evidence from the latest V2.5 session:
@@ -748,9 +748,9 @@ Status: `Requirements Blocked / Runtime Protocol Drift`.
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Latest relevant Codex session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
-- Session cwd: `/home/lichangkun/code/proxy-collector`.
+- Target repo: `<sample-target-project>`.
+- Latest relevant Codex session: `<codex-session-log>`.
+- Session cwd: `<sample-target-project>`.
 - Sample window: `2026-06-23 13:39:32` to `13:41:13 +0800`.
 
 What improved:
@@ -817,9 +817,9 @@ Status: `Open Spec In Progress / Runtime Protocol Drift Persists`.
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Parent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
-- Specification subagent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T15-15-10-019ef355-3dd4-7d51-9608-4aef2e60fd50.jsonl`.
+- Target repo: `<sample-target-project>`.
+- Parent session: `<codex-session-log>`.
+- Specification subagent session: `<codex-session-log>`.
 - Sample window: `2026-06-23 15:15:23` to `15:19:54 +0800`.
 
 What improved:
@@ -890,8 +890,8 @@ Status: `Pre-Handoff Blocked On UI Prototype Confirmation / Improved Gate Behavi
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Parent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
+- Target repo: `<sample-target-project>`.
+- Parent session: `<codex-session-log>`.
 - Sample window: `2026-06-23 16:37:28` to `16:42:20 +0800`.
 
 What improved:
@@ -960,8 +960,8 @@ Status: `Prototype Feedback Correctly Applied / Confirmation Gate Regressed`.
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Parent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
+- Target repo: `<sample-target-project>`.
+- Parent session: `<codex-session-log>`.
 - Sample window: `2026-06-23 16:55` to `17:12 +0800`.
 
 What improved:
@@ -1051,8 +1051,8 @@ Status: `Implementation Started After Non-Canonical Gate / TDD Sequence Good`.
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Parent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
+- Target repo: `<sample-target-project>`.
+- Parent session: `<codex-session-log>`.
 - Sample window: `2026-06-23 17:24` to `17:27 +0800`.
 
 What was compliant:
@@ -1078,7 +1078,7 @@ entry.PersonID undefined
 
 ```text
 PASS
-ok gitee.com/changkun2025/proxy-collector/internal/usagereport/aliases 0.002s
+ok <target-module-path>/internal/usagereport/aliases 0.002s
 ```
 
 Observed non-compliance or risk:
@@ -1205,8 +1205,8 @@ Status: `TASK-002 Implementation Evidence Good / Product Delivery Gatekeeper Sti
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Parent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
+- Target repo: `<sample-target-project>`.
+- Parent session: `<codex-session-log>`.
 - Sample window: `2026-06-23 17:51` to `18:15 +0800`.
 
 What was compliant at the implementation layer:
@@ -1287,8 +1287,8 @@ Status: `TASK-002 RED/GREEN Started / Product Delivery Gate Still Red`.
 
 Scope of this sample:
 
-- Target repo: `/home/lichangkun/code/proxy-collector`.
-- Parent session: `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`.
+- Target repo: `<sample-target-project>`.
+- Parent session: `<codex-session-log>`.
 - Sample time: `2026-06-23 17:51:34 +0800`.
 
 What was compliant:
@@ -1685,7 +1685,7 @@ Status: `Planning Gate Mostly Correct / Canonical State Drift Remains / Prototyp
 
 What was compliant:
 
-- The latest relevant session is `/home/lichangkun/.codex/sessions/2026/06/24/rollout-2026-06-24T20-07-40-019ef987-62ec-7510-9dc6-95a57fe45b03.jsonl`, with cwd `/home/lichangkun/code/proxy-collector`.
+- The latest relevant session is `<codex-session-log>`, with cwd `<sample-target-project>`.
 - The target session had Product Delivery Agent `1.0.4` available and read the required UI/prototype skills before prototype work, including `ui-ux-pro-max`, `frontend-design`, and `webapp-testing`.
 - V2.6 Open Spec 00-08 exists at `docs/open-spec/v2.6-gateway-concurrency-provider-priority-ui/`; all 9 files were written at `2026-06-24 20:35 +0800`.
 - Open Spec documents correctly mark implementation as blocked by Product Delivery gates. `05-development-plan.md` keeps `TASK-001..TASK-007` as `未开始`, and `06-test-cases.md` keeps `TC-001..TC-021` as planned.
@@ -1932,8 +1932,8 @@ What was compliant:
 - The target entered TASK-001 only after the user explicitly confirmed the revised local HTML prototype and after pre-handoff artifacts were written.
 - The TASK-001 implementation direction matches the approved boundary:
   - use `management.Client.FetchAuthFiles` / safe `management.AuthFile` readback as the capacity fact source;
-  - do not parse CLIProxyAPI config directly;
-  - do not copy CLIProxyAPI provider scheduling;
+  - do not parse external service project config directly;
+  - do not copy external service project provider scheduling;
   - disabled Claude contributes `0` slots;
   - unavailable packages are not eligible;
   - each eligible provider package contributes `3` total gateway slots.
@@ -2056,7 +2056,7 @@ Follow-up at `2026-06-24 22:47-22:49 +0800`:
   - `GET /api/auth-files` derived capacity fields;
   - priority `1..10` save wrapper;
   - gateway runtime `provider_capacity` merged into `/api/gateway-status`.
-- The target read CLIProxyAPI local code before writing wrapper tests and correctly identified the fields patch contract as a flat payload:
+- The target read external service project local code before writing wrapper tests and correctly identified the fields patch contract as a flat payload:
 
 ```json
 {"name":"auth-file-name","priority":7}
@@ -2344,9 +2344,9 @@ delivery_goal=null
 
 Follow-up at `2026-06-25 00:03 +0800`:
 
-- The target checked `/home/lichangkun/code/CLIProxyAPI` as an external read-only boundary.
+- The target checked `<external-readonly-repo>` as an external read-only boundary.
 - It found that external checkout is not clean because of unrelated `request_logging` changes.
-- Positive behavior: the target did not claim CLIProxyAPI was clean. It plans to record TC-013 as `PASS_WITH_EXTERNAL_DIRTY_NOTE`: V2.6 did not rely on or submit CLIProxyAPI changes, but the external repository has separate dirty state.
+- Positive behavior: the target did not claim external service project was clean. It plans to record TC-013 as `PASS_WITH_EXTERNAL_DIRTY_NOTE`: V2.6 did not rely on or submit external service project changes, but the external repository has separate dirty state.
 - State still has no closure artifact, closure validator result, or premature `closed` status.
 
 Follow-up at `2026-06-25 00:05 +0800`:
@@ -2531,7 +2531,7 @@ executed_browser_evidence=null
 ## Final Summary - Proxy Collector V2.6 V1.0.4 Run
 
 - Final sampling time: `2026-06-25 00:31 +0800`.
-- Target session: `/home/lichangkun/.codex/sessions/2026/06/24/rollout-2026-06-24T20-07-40-019ef987-62ec-7510-9dc6-95a57fe45b03.jsonl`.
+- Target session: `<codex-session-log>`.
 - Target feature: `v2.6-gateway-concurrency-provider-priority-ui`.
 - Overall assessment: improved implementation discipline, but Product Delivery closure is still Red because the final state claims completion while the formal closure artifact fails the current validator.
 
@@ -2704,7 +2704,7 @@ Required Product Delivery fix:
 
 ## 2026-06-25 Proxy Collector V2.6.1 Monitoring
 
-- 监控对象：`/home/lichangkun/code/proxy-collector`
+- 监控对象：`<sample-target-project>`
 - 当前 feature：`v2.6.1-provider-capacity-governance-fixes`
 - 监控方式：只读检查，不修改目标项目
 - 最近采样时间：2026-06-25 09:28:13 +0800
@@ -2718,8 +2718,8 @@ V2.6.1 线程相较早期失败案例有明显改进：它加载了 Product Deli
 
 ### Positive Evidence
 
-- 最新 session：`/home/lichangkun/.codex/sessions/2026/06/25/rollout-2026-06-25T09-02-32-019efc4c-cd6a-7780-b942-11725ff54369.jsonl`。
-- `session_meta.cwd` / `turn_context.cwd` 指向 `/home/lichangkun/code/proxy-collector`。
+- 最新 session：`<codex-session-log>`。
+- `session_meta.cwd` / `turn_context.cwd` 指向 `<sample-target-project>`。
 - Open Spec 当前 feature 包已存在：
   - `docs/open-spec/v2.6.1-provider-capacity-governance-fixes/00-change-request.md`
   - `01-requirements.md`
@@ -3419,7 +3419,7 @@ The artifact is useful at task level. It records:
 - package-level management/web tests;
 - `node --check internal/usagereport/web/assets/app.js`;
 - `git diff --check`;
-- safety flags for no CLIProxyAPI source modification, no production mutation, no synthetic traffic, and no secrets in artifact.
+- safety flags for no external service project source modification, no production mutation, no synthetic traffic, and no secrets in artifact.
 
 State was then advanced to:
 
@@ -3850,7 +3850,7 @@ V1.0.6 turns those findings into canonical runtime gates:
 - `role_simulation` requires a separate `role_simulation_review_acceptance` confirmation before it can satisfy scenario/test review gates.
 - Any implementation marker without canonical `handoff` and `delivery_goal` derives `implementation_without_delivery_goal` and fails closed on load-state, hooks, blockers, and finalization.
 
-Expected impact on the next monitored `proxy-collector` run:
+Expected impact on the next monitored `sample-target-project` run:
 
 - confirming the prototype should not imply review acceptance or implementation authorization;
 - after prototype and review gates, the target must ask for implementation launch authorization explicitly;
@@ -3862,8 +3862,8 @@ Expected impact on the next monitored `proxy-collector` run:
 Latest target session:
 
 ```text
-/home/lichangkun/.codex/sessions/2026/06/25/rollout-2026-06-25T23-09-36-019eff54-5031-7390-b884-66c8a365b191.jsonl
-cwd=/home/lichangkun/code/proxy-collector
+<codex-session-log>
+cwd=<sample-target-project>
 ```
 
 User request in that target session:
@@ -5701,7 +5701,7 @@ Positive observations:
 
 New watch item:
 
-- The RED run overwrote `.product-delivery/artifacts/closure-validator-result.md` with a temporary failure against `/tmp/v27-closure-*.json`.
+- The RED run overwrote `.product-delivery/artifacts/closure-validator-result.md` with a temporary failure against `<temp-closure-fixture>`.
 - The final V2.7 closure must overwrite that result with a current-feature validation pass.
 - The new V2.7 validator accepts production readonly command statuses `PASS` and `PASS_WITH_SAMPLE_GAP`, while TASK-006 evidence recorded `PASS_WITH_SAMPLE_GAP_NO_URL`. If the closure artifact uses the more specific status unchanged, the validator may fail until the status is normalized or accepted.
 
@@ -5891,7 +5891,7 @@ Decision:
 
 Session inspected:
 
-- `/home/lichangkun/.codex/sessions/2026/06/28/rollout-2026-06-28T00-38-06-019f09f2-0de3-7d70-a269-6a24c1dcaab5.jsonl`
+- `<codex-session-log>`
 
 Positive observations:
 
@@ -6715,18 +6715,18 @@ Persistent issue:
 New plugin packaging issue:
 
 - The target attempted to run the V1.0.7 packaged canonical closure validator:
-  - `PYTHONPATH=/home/lichangkun/.codex/plugins/cache/repo-local/product-delivery-agent/1.0.7+codex.20260626102933 python3 .../scripts/validate-closure-artifact.py --help`.
+  - `PYTHONPATH=<codex-plugin-cache>/repo-local/product-delivery-agent/1.0.7+codex.20260626102933 python3 .../scripts/validate-closure-artifact.py --help`.
 - It failed with:
   - `ModuleNotFoundError: No module named 'product_delivery_agent'`.
 - This indicates the packaged validator script is not self-contained in the installed plugin cache. It imports `product_delivery_agent.finalization`, but the installed plugin cache does not expose the runtime Python package on that `PYTHONPATH`.
-- Workaround discovery found the source package in `/home/lichangkun/code/waygate-product-delivery-agent/src/product_delivery_agent`, but relying on the source checkout would violate the plugin packaging expectation. The packaged validator should be runnable from the installed plugin without requiring a sibling development repo.
+- Workaround discovery found the source package in `<waygate-product-delivery-repo>/src/product_delivery_agent`, but relying on the source checkout would violate the plugin packaging expectation. The packaged validator should be runnable from the installed plugin without requiring a sibling development repo.
 
 Assessment:
 
 - **Code/test implementation quality:** green/yellow; TDD, package regression, browser E2E, redaction, and readonly smoke all produced useful evidence.
 - **Canonical Product Delivery state authority:** red; local state still cannot reconstruct the platform goal, task queue, completed TASKs, or executed browser evidence.
 - **Canonical closure authority:** red; V1.0.7 correctly requires packaged finalization, but the installed packaged script currently fails to import its runtime.
-- **Next required behavior:** before any closure claim, the target must either repair the validator runtime path without changing `proxy-collector` semantics, or stop with a Product Delivery closure blocker. It must not use a target-local validator or custom JSON as final closure truth.
+- **Next required behavior:** before any closure claim, the target must either repair the validator runtime path without changing `sample-target-project` semantics, or stop with a Product Delivery closure blocker. It must not use a target-local validator or custom JSON as final closure truth.
 
 Follow-up at `01:39-01:43 +0800`:
 

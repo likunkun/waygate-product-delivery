@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.8")
+            self.assertEqual(manifest["version"], "1.0.9")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -63,6 +63,8 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/scope-scenario-matrix.md",
                 "templates/multi-agent-scenario-review.md",
                 "templates/multi-agent-test-review.md",
+                "templates/multi-agent-test-coverage-review.md",
+                "templates/multi-agent-test-implementation-review.md",
                 "templates/user-confirmation.md",
                 "templates/planned-e2e-obligations.md",
                 "templates/executed-browser-evidence.md",
@@ -114,6 +116,11 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("product_delivery_agent.finalization", skill_markdown)
             self.assertIn("closure validator 未通过", skill_markdown)
             self.assertIn("planned E2E", skill_markdown)
+            self.assertIn("multi_agent_test_coverage_review", skill_markdown)
+            self.assertIn("multi_agent_test_implementation_review", skill_markdown)
+            self.assertIn("item-level coverage", skill_markdown)
+            self.assertIn("false-positive risk", skill_markdown)
+            self.assertIn("RED test", skill_markdown)
             self.assertIn("closure validator", skill_markdown)
             self.assertIn(".product-delivery/state.json", skill_markdown)
             self.assertIn("不能替代 Product Delivery 主流程", skill_markdown)
@@ -138,7 +145,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.8")
+            self.assertEqual(closure_template["plugin_version"], "1.0.9")
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
             validator_script = (
@@ -179,7 +186,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.8.tar.gz",
+                "waygate-product-delivery-1.0.9.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

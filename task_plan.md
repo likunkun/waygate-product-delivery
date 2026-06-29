@@ -2,11 +2,11 @@
 
 ## Goal
 
-Create a clean independent project under `/home/lichangkun/code/waygate-product-delivery-agent` for designing the Waygate Product Delivery Agent methodology, Codex-native plugin product shape, roadmap, and future implementation path.
+Create a clean independent project under `<waygate-product-delivery-repo>` for designing the Waygate Product Delivery Agent methodology, Codex-native plugin product shape, roadmap, and future implementation path.
 
 ## Current Phase
 
-Product Delivery V1.0.6 canonical launch and review enforcement is implemented, verified, packaged, and installed; next work is to validate the behavior in a fresh `proxy-collector` thread.
+Product Delivery V1.0.6 canonical launch and review enforcement is implemented, verified, packaged, and installed; next work is to validate the behavior in a fresh `sample-target-project` thread.
 
 ## Phases
 
@@ -202,8 +202,8 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 20 - Proxy Collector Monitoring Hardening Plan
 
-- [x] Monitor the `proxy-collector` V2.4.1 trial run in read-only mode.
-- [x] Record observed Product Delivery compliance issues in `docs/operations/proxy-collector-v241-monitoring.md`.
+- [x] Monitor the `sample-target-project` V2.4.1 trial run in read-only mode.
+- [x] Record observed Product Delivery compliance issues in `docs/operations/sample-product-delivery-monitoring.md`.
 - [x] Summarize user feedback about missing prototype confirmation, missing visible multi-agent review, scenario gaps, the initial scope-control concern later revised as a false positive, and E2E journey coverage.
 - [x] Create `docs/operations/product-delivery-agent-hardening-plan.md` with gate-level improvement requirements.
 - [x] Register the new hardening plan in operations and documentation indexes.
@@ -211,7 +211,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 21 - Hardening Plan False Positive Revision
 
-- [x] Remove demand-boundary-control as a `proxy-collector` failure root cause in the hardening plan.
+- [x] Remove demand-boundary-control as a `sample-target-project` failure root cause in the hardening plan.
 - [x] Record the false-positive decision in planning files.
 - [x] Reframe Open Spec and scenario-matrix confirmation as normal delivery gates, not evidence of the misdiagnosed issue.
 - [x] Keep the real P0 issues: Open Spec front-loading, UI prototype user confirmation, visible multi-agent review, UI journey E2E coverage, and validator-controlled closure.
@@ -231,9 +231,9 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 ### Phase 23 - Proxy Collector V1.0.2 Continuous Monitoring
 
 - [x] Confirm repo-local plugin installation remains `product-delivery-agent@repo-local` version `1.0.2`.
-- [x] Run read-only sampling against `/home/lichangkun/code/proxy-collector`.
+- [x] Run read-only sampling against `<sample-target-project>`.
 - [x] Check strict Codex process cwd evidence, Product Delivery state, V1.0.2 hardening artifacts, Open Spec terms, and formal closure validation.
-- [x] Append unreasonable findings to `docs/operations/proxy-collector-v241-monitoring.md`.
+- [x] Append unreasonable findings to `docs/operations/sample-product-delivery-monitoring.md`.
 - [x] Update `findings.md` and `progress.md` with this monitoring window.
 - **Status:** complete for the 2026-06-23 00:22-00:23 sampling window
 
@@ -241,7 +241,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 - [x] Re-check target location after the user noted the new run may use a different directory or worktree.
 - [x] Inspect Git worktree registration, Codex process cwd, `.product-delivery` locations, and Codex session metadata.
-- [x] Identify the actual latest target session as `/home/lichangkun/code/proxy-collector`, branch `v2.5-key-owner-ops`.
+- [x] Identify the actual latest target session as `<sample-target-project>`, branch `v2.5-key-owner-ops`.
 - [x] Record that no separate registered worktree exists and previous process-cwd monitoring was incomplete.
 - [x] Check V2.5 startup state, empty directories, and missing hardening artifacts.
 - [x] Append the V2.5 worktree-correction findings to monitoring, findings, and progress files.
@@ -279,7 +279,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 28 - Proxy Collector V1.0.3 Startup Monitoring
 
-- [x] Inspect latest `proxy-collector` Codex session targeting `/home/lichangkun/code/proxy-collector`.
+- [x] Inspect latest `sample-target-project` Codex session targeting `<sample-target-project>`.
 - [x] Confirm the session loaded Product Delivery Agent version `1.0.3`.
 - [x] Sample current branch, state file, Open Spec directories, prototype files, and Product Delivery artifacts.
 - [x] Derive current V1.0.3 blockers from the target state.
@@ -289,7 +289,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 29 - Proxy Collector V1.0.3 Requirements To Specification Monitoring
 
-- [x] Re-sample the active `proxy-collector` parent session and specification subagent session.
+- [x] Re-sample the active `sample-target-project` parent session and specification subagent session.
 - [x] Check target state, Open Spec files, prototype files, Product Delivery artifacts, and git status.
 - [x] Confirm the run remains in Open Spec/specification work and has not started implementation.
 - [x] Record that current-feature Open Spec 00/01/08 now exist.
@@ -326,7 +326,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 - [ ] Monitor browser E2E coverage for user journeys and user-visible exception paths.
 - [ ] Monitor formal closure evidence and Product Delivery state.
 - [ ] Validate whether closure passes the current V1.0.3 gatekeeper/closure expectations.
-- [ ] Record all non-compliance and positive evidence in `docs/operations/proxy-collector-v241-monitoring.md`, `findings.md`, and `progress.md`.
+- [ ] Record all non-compliance and positive evidence in `docs/operations/sample-product-delivery-monitoring.md`, `findings.md`, and `progress.md`.
 - **Status:** in progress from the 2026-06-23 17:24 sampling window onward.
 
 ### Phase 33 - Product Delivery Agent V1.0.4 Goal-Driven Closure
@@ -343,7 +343,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 34 - Proxy Collector V2.6 V1.0.4 Monitoring
 
-- [x] Inspect latest `proxy-collector` Codex session targeting `/home/lichangkun/code/proxy-collector`.
+- [x] Inspect latest `sample-target-project` Codex session targeting `<sample-target-project>`.
 - [x] Confirm the V2.6 run generated current-feature Open Spec 00-08 and remained blocked before implementation.
 - [x] Check target state, prototype path, V2.6 artifacts, Open Spec files, git status, and session events.
 - [x] Confirm required UI skills were read before prototype work.
@@ -399,11 +399,11 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 38 - Proxy Collector V2.6.1 V1.0.5 Monitoring
 
-- [x] Inspect latest `proxy-collector` Codex session targeting `/home/lichangkun/code/proxy-collector`.
+- [x] Inspect latest `sample-target-project` Codex session targeting `<sample-target-project>`.
 - [x] Confirm V2.6.1 Open Spec `00` through `08` exists.
 - [x] Confirm local HTML prototype file exists.
 - [x] Check target Product Delivery state, derived blockers, prototype artifacts, and git status.
-- [x] Record current non-compliance in `docs/operations/proxy-collector-v241-monitoring.md`, `findings.md`, and `progress.md`.
+- [x] Record current non-compliance in `docs/operations/sample-product-delivery-monitoring.md`, `findings.md`, and `progress.md`.
 - [x] Continue watching whether the target writes Playwright/static review evidence and a nonce-bound pending confirmation before asking the user to confirm.
 - [x] Confirm Open Spec `08-stage-handoff.md` is synchronized to prototype verified / user confirmation pending.
 - [x] Continue watching whether implementation remains blocked until user confirmation, coverage audit, multi-agent/test review, pre-handoff, and persisted delivery goal/task queue exist.
@@ -433,7 +433,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 40 - Proxy Collector V2.7 Startup Monitoring
 
-- [x] Identify the latest target session for `/home/lichangkun/code/proxy-collector`.
+- [x] Identify the latest target session for `<sample-target-project>`.
 - [x] Confirm the V2.7 request and target use of Product Delivery Agent `1.0.6`.
 - [x] Check target `.product-delivery/state.json`, ROADMAP/task/progress/findings updates, git status, and current artifacts.
 - [x] Run V1.0.6 runtime invariant and blocker checks against the target state in read-only mode.
@@ -509,7 +509,7 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 
 ### Phase 42 - Proxy Collector V2.8 Startup Monitoring
 
-- [x] Identify the latest `proxy-collector` Codex session after V1.0.7 install.
+- [x] Identify the latest `sample-target-project` Codex session after V1.0.7 install.
 - [x] Confirm the target loaded Product Delivery Agent `1.0.7+codex.20260626102933`.
 - [x] Confirm V2.8 stayed in Plan Mode and did not start implementation.
 - [x] Confirm no current-feature V2.8 Open Spec or `.product-delivery/artifacts/*v2.8*` files exist yet.
@@ -611,6 +611,21 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 - [x] Commit the repository.
 - [x] Push to `https://github.com/likunkun/waygate-product-delivery.git`.
 - **Status:** complete; pushed commit `16f8a65` to `main`.
+
+### Phase 46 - Product Delivery Agent V1.0.9 Multi-Agent Test Coverage Review Gate
+
+- [x] Convert the `sample-target-project` false-positive test coverage incident into RED tests.
+- [x] Add `test_coverage` and `test_implementation` multi-agent review types.
+- [x] Require pre-implementation multi-agent review of test case coverage range, including `US/J/SC/AC/TASK/TC` mapping.
+- [x] Require collection scenarios to expand into item-level coverage and concrete action assertions.
+- [x] Reject marker-only, function-name-only, static-panel-only, and first-button-only planned assertions as false-positive risks.
+- [x] Require pre-closure multi-agent review of actual test code, Playwright/browser scripts, execution logs, screenshots, and traces.
+- [x] Block UI pre-handoff when `multi_agent_test_coverage_review` is missing.
+- [x] Block UI closure when `multi_agent_test_implementation_review` is missing.
+- [x] Update plugin packaging to version `1.0.9` with new templates and hard-rule SKILL text.
+- [x] Run focused V1.0.9 tests and full unit discovery.
+- [x] Compile runtime, validate package, regenerate distribution, reinstall plugin, and smoke installed validator.
+- **Status:** complete; installed version `1.0.9+codex.20260629071804`.
 
 ## Out Of Scope For V0.1
 

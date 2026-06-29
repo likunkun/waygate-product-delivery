@@ -79,7 +79,7 @@
 
 ## 2026-06-22 Proxy Collector V2.4.1 Monitoring
 
-- Monitored `/home/lichangkun/code/proxy-collector` in read-only mode after installing Product Delivery Agent plugin version 1.0.1.
+- Monitored `<sample-target-project>` in read-only mode after installing Product Delivery Agent plugin version 1.0.1.
 - Current feature slug is `v2.4.1-alert-triage-whitelist`.
 - Positive evidence exists: current-feature Open Spec 00-08, local HTML prototype, desktop/mobile browser evidence, and a test coverage audit artifact.
 - The execution remains non-compliant because startup guard still fails: `task_plan.md` does not contain the current feature slug.
@@ -97,7 +97,7 @@
 - Current status is Red because state claims closed while closure evidence is schema-invalid.
 - `.rrc-controller-v2.4.1/session.json` still does not exist; the closure artifact exists but is invalid.
 - Earlier suspected frontend boundary drift was later treated by the user as a false positive; do not use it as a Product Delivery hardening root cause.
-- Durable monitoring report created at `docs/operations/proxy-collector-v241-monitoring.md`.
+- Durable monitoring report created at `docs/operations/sample-product-delivery-monitoring.md`.
 
 ## 2026-06-22 Product Delivery Hardening Plan
 
@@ -113,7 +113,7 @@
 - Gate 4 must freeze planned E2E obligations and structured exemptions before implementation; real browser evidence belongs after implementation and before formal closure.
 - Runtime must split evidence into scenario matrix, planned obligation, executed browser evidence, and supporting evidence.
 - User confirmation must be a reusable artifact schema for Open Spec freeze, scenario matrix, prototype, planned coverage, and handoff.
-- `scope-scenario-matrix` naming is retained, but `scope` means version boundary and scenario mapping, not a `proxy-collector` demand-boundary-control failure.
+- `scope-scenario-matrix` naming is retained, but `scope` means version boundary and scenario mapping, not a `sample-target-project` demand-boundary-control failure.
 - Implementation added new validators and workflow APIs for scenario matrix, multi-agent reviews, user confirmations, prototype confirmation, planned E2E obligations, executed browser evidence, and closure failure state.
 - Verification evidence for the hardening implementation:
   - targeted startup, UI prototype, coverage audit, feature closure, plugin packaging, and new delivery hardening gate tests passed;
@@ -125,8 +125,8 @@
 ## 2026-06-23 Proxy Collector V1.0.2 Follow-Up Monitoring
 
 - Confirmed Codex sees `product-delivery-agent@repo-local` installed and enabled at version `1.0.2`.
-- Read-only monitoring of `/home/lichangkun/code/proxy-collector` from `00:08` to `00:13 +0800` found no new Product Delivery artifact writes.
-- No active Codex process cwd was found under `/home/lichangkun/code/proxy-collector`; the only matching process was the monitoring command itself.
+- Read-only monitoring of `<sample-target-project>` from `00:08` to `00:13 +0800` found no new Product Delivery artifact writes.
+- No active Codex process cwd was found under `<sample-target-project>`; the only matching process was the monitoring command itself.
 - `.product-delivery/state.json` remains from the old flow: `project_type=web_system`, `status=closed`, and updated at `2026-06-22T22:42:21+08:00`.
 - The target state lacks all V1.0.2 hardening fields: draft Open Spec, scenario matrix, freeze confirmation, multi-agent reviews, planned E2E, executed evidence, closure validation, and user confirmations.
 - The old formal closure artifact still fails the current validator with `status must be 'passed'`.
@@ -134,7 +134,7 @@
 
 ## 2026-06-23 Proxy Collector Continuous Monitoring 00:22-00:23
 
-- Three additional read-only samples at `00:22:38`, `00:23:09`, and `00:23:40 +0800` found no Codex process with cwd under `/home/lichangkun/code/proxy-collector`.
+- Three additional read-only samples at `00:22:38`, `00:23:09`, and `00:23:40 +0800` found no Codex process with cwd under `<sample-target-project>`.
 - No watched target files changed during the sampling window; latest relevant target activity remained `progress.md` at `2026-06-23 00:00:46 +0800`.
 - `.product-delivery/state.json` still combines `mode=active` with `status=closed`, but has no `closure_validation` field and no V1.0.2 hardening fields.
 - The current feature Open Spec package has no checked textual evidence for `multi-agent`, `scenario matrix`, `planned E2E`, `prototype confirmed`, or `confirmed_by_user`.
@@ -144,9 +144,9 @@
 
 ## 2026-06-23 Proxy Collector V2.5 Worktree Correction
 
-- The relevant latest session is `rollout-2026-06-23T00-03-47-019ef012-d80a-7963-adce-f136819547ab.jsonl`; its `session_meta.cwd` and `turn_context.cwd` are both `/home/lichangkun/code/proxy-collector`.
+- The relevant latest session is `rollout-2026-06-23T00-03-47-019ef012-d80a-7963-adce-f136819547ab.jsonl`; its `session_meta.cwd` and `turn_context.cwd` are both `<sample-target-project>`.
 - Codex process cwd was misleading because app-server processes run from generic directories; session logs are a better source for actual workspace targeting.
-- `git worktree list --porcelain` reports only `/home/lichangkun/code/proxy-collector`; no separate registered `proxy-collector` worktree was found.
+- `git worktree list --porcelain` reports only `<sample-target-project>`; no separate registered `sample-target-project` worktree was found.
 - The target checkout branch is now `v2.5-key-owner-ops`.
 - The V2.5 session loaded Product Delivery Agent `1.0.2` plus planning/open-spec/test/UI/browser/verification skills, and it asked product questions before implementation.
 - It did not update `.product-delivery/state.json` before starting V2.5; state still points to V2.4.1 closed.
@@ -192,7 +192,7 @@
 
 ## 2026-06-23 Proxy Collector V1.0.3 Startup Monitoring
 
-- Latest relevant target session is `/home/lichangkun/.codex/sessions/2026/06/23/rollout-2026-06-23T13-34-28-019ef2f9-0aae-7533-9341-b483c4ea6374.jsonl`, with cwd `/home/lichangkun/code/proxy-collector`.
+- Latest relevant target session is `<codex-session-log>`, with cwd `<sample-target-project>`.
 - The target session loaded `product-delivery-agent` version `1.0.3` and read Product Delivery, planning, Open Spec, and feature closure skills.
 - The target session improved over the previous V2.5 attempt by stopping at requirements questions and not starting implementation.
 - New feature slug is `v2.5-team-key-governance`.
@@ -203,7 +203,7 @@
 
 ## 2026-06-23 Proxy Collector V1.0.3 Requirements To Specification Monitoring
 
-- The active `proxy-collector` run advanced from requirements to specification for `v2.5-team-key-governance`.
+- The active `sample-target-project` run advanced from requirements to specification for `v2.5-team-key-governance`.
 - Current-feature Open Spec `00-change-request.md`, `01-requirements.md`, and `08-stage-handoff.md` now exist.
 - The parent session spawned a specification subagent and waited for it; the subagent was reading existing API/server/alias code to ground the spec and had not edited implementation files during the sampling window.
 - No current feature implementation file changes were observed in `git status`; the run remained in planning/specification work.
@@ -245,7 +245,7 @@
 - Prototype confirmation must be version-bound. V1.0.4 records `artifact_hash`, `prototype_revision`, and `nonce` in pending confirmation state and user confirmation artifacts.
 - Bare `继续` is no longer valid for UI prototype confirmation, even when the agent just asked for confirmation. The agent must ask for and record explicit confirmation against the current pending prototype revision.
 - User feedback on a prototype records `changes_requested`, clears current UI prototype confirmation, removes the active user confirmation, and requires a new review/pending confirmation.
-- The `proxy-collector` run also showed that implementation can stop after 3 of 4 planned TASKs. V1.0.4 adds a Product Delivery delivery goal with a planned TASK queue, current task cursor, task completion records, remaining task derivation, and a stop guard.
+- The `sample-target-project` run also showed that implementation can stop after 3 of 4 planned TASKs. V1.0.4 adds a Product Delivery delivery goal with a planned TASK queue, current task cursor, task completion records, remaining task derivation, and a stop guard.
 - `delivery_goal.status=complete` is only valid after all planned TASKs are complete and `closure_validation.status=passed`.
 - `progress.md`, Open Spec summaries, and chat summaries remain supporting records only; they cannot complete or close the delivery goal.
 - The propagation is a recovery risk because future turns may trust human-readable summaries over V1.0.3 gatekeeper-derived blockers.
@@ -261,7 +261,7 @@
 
 ## 2026-06-26 Proxy Collector V2.7 TASK-006 Monitoring
 
-- Current target remains `/home/lichangkun/code/proxy-collector`, session `/home/lichangkun/.codex/sessions/2026/06/25/rollout-2026-06-25T23-09-36-019eff54-5031-7390-b884-66c8a365b191.jsonl`.
+- Current target remains `<sample-target-project>`, session `<codex-session-log>`.
 - Feature slug is `v2.7-team-member-usage-analytics-export`; installed Product Delivery Agent version in the run is `1.0.6+codex.20260625053906`.
 - After TASK-005, state was eventually reconciled to `implementation.current_task=TASK-006` and completed TASK-001..005, but the reconciliation happened late after a long TASK-005 window.
 - TASK-006 runner code now includes `OBL-V27-E2E-005` for `SCN-V27-EXCEPTIONS` / `TC-V27-016`, including error retry and empty-state paths.
@@ -356,7 +356,7 @@
 
 ## 2026-06-24 Proxy Collector V2.6 V1.0.4 Monitoring
 
-- The latest relevant target session is `/home/lichangkun/.codex/sessions/2026/06/24/rollout-2026-06-24T20-07-40-019ef987-62ec-7510-9dc6-95a57fe45b03.jsonl`, with cwd `/home/lichangkun/code/proxy-collector`.
+- The latest relevant target session is `<codex-session-log>`, with cwd `<sample-target-project>`.
 - The V2.6 run generated current-feature Open Spec 00-08 under `docs/open-spec/v2.6-gateway-concurrency-provider-priority-ui/`.
 - Open Spec correctly marks implementation as blocked; `TASK-001..TASK-007` remain not started and `TC-001..TC-021` remain planned.
 - Target state is `status=open_spec_prepared_pending_ui_prototype`, `ui_prototype.confirmed_by_user=false`, and `implementation.current_task=null`.
@@ -442,7 +442,7 @@
 - No V2.6 closure artifact or closure validator result existed at that sample, so the run was not yet closed.
 - Follow-up at `23:58 +0800` showed TASK-007 remained in formal documentation work and had not prematurely closed state.
 - Follow-up at `2026-06-25 00:01 +0800` showed the target generated V2.6 product, architecture, and operations runbook docs. Closure artifacts still had not appeared.
-- Follow-up at `2026-06-25 00:03 +0800` showed the target found the external CLIProxyAPI checkout dirty with unrelated changes and chose to record an explicit dirty-note instead of falsely claiming a clean external boundary.
+- Follow-up at `2026-06-25 00:03 +0800` showed the target found the external external service project checkout dirty with unrelated changes and chose to record an explicit dirty-note instead of falsely claiming a clean external boundary.
 - Follow-up at `2026-06-25 00:05 +0800` showed the target updating Open Spec execution status and docs index while still avoiding premature closed state.
 - Follow-up at `2026-06-25 00:09 +0800` confirmed Open Spec `05/06/07/08` were updated to execution status. The target still had not closed state and planned to generate TASK-007/formal closure artifacts next.
 - Follow-up at `2026-06-25 00:10-00:11 +0800` showed the target reran key closure verification after documentation changes, refreshing E2E, readonly, and redaction artifacts before closure.
@@ -480,7 +480,7 @@
 
 ## 2026-06-25 Proxy Collector V2.6.1 Startup And Prototype Monitoring
 
-- Latest relevant target session is `/home/lichangkun/.codex/sessions/2026/06/25/rollout-2026-06-25T09-02-32-019efc4c-cd6a-7780-b942-11725ff54369.jsonl`, with cwd `/home/lichangkun/code/proxy-collector`.
+- Latest relevant target session is `<codex-session-log>`, with cwd `<sample-target-project>`.
 - V2.6.1 feature slug is `v2.6.1-provider-capacity-governance-fixes`.
 - The run created current-feature Open Spec `00` through `08` under `docs/open-spec/v2.6.1-provider-capacity-governance-fixes/`.
 - The run created a local HTML prototype at `docs/prototypes/v2.6.1-provider-capacity-governance-fixes-prototype.html`.
@@ -541,7 +541,7 @@
 
 ## 2026-06-25 Proxy Collector V2.7 Startup Monitoring
 
-- Latest target session for the new run is `/home/lichangkun/.codex/sessions/2026/06/25/rollout-2026-06-25T23-09-36-019eff54-5031-7390-b884-66c8a365b191.jsonl`, with cwd `/home/lichangkun/code/proxy-collector`.
+- Latest target session for the new run is `<codex-session-log>`, with cwd `<sample-target-project>`.
 - The target loaded Product Delivery Agent `1.0.6+codex.20260625053906`, read planning/product-delivery skills, ran planning catchup, and read the project fact sources.
 - V2.7 request is a UI/web Product Delivery intake: per-person team model usage, team/department grouping, excellent individual discovery, model-purpose visibility where possible, charts, and export.
 - Positive: no implementation started; the target set current feature slug to `v2.7-team-member-usage-analytics-export` and status to `needs_requirements_input`.
@@ -711,7 +711,7 @@
 
 ## 2026-06-28 Proxy Collector V2.8 Startup Monitoring
 
-- Latest target session: `/home/lichangkun/.codex/sessions/2026/06/28/rollout-2026-06-28T00-38-06-019f09f2-0de3-7d70-a269-6a24c1dcaab5.jsonl`.
+- Latest target session: `<codex-session-log>`.
 - The target loaded Product Delivery Agent `1.0.7+codex.20260626102933` and correctly did not implement while still in Plan Mode.
 - `启动交付 v2.8` did not create or recover a V2.8 current-feature `.product-delivery/state.json` record. The target said Plan Mode prevents mutation, but the plugin currently lacks a visible pending-start state for this mode conflict.
 - The target described raw V2.7 state as locally closed. Read-only V1.0.7 `load_state()` from this repo instead normalizes the same state to `closure_failed` because canonical closure metadata is missing.
@@ -842,7 +842,7 @@
 
 ## 2026-06-29 Proxy Collector V2.8 Closure Monitoring
 
-- V2.8 code/test behavior is materially better than earlier proxy-collector runs:
+- V2.8 code/test behavior is materially better than earlier sample-target-project runs:
   - exact R5 prototype confirmation was required before pre-handoff;
   - exact implementation launch authorization was required before implementation;
   - TASK-001 had a real RED before production UI edits and later reached GREEN;
@@ -858,7 +858,7 @@
 - Hardening implication:
   - V1.0.7's canonical finalization rule is correct, but packaging must include or expose the runtime Python package;
   - closure must fail closed if the packaged canonical validator cannot run;
-  - relying on `/home/lichangkun/code/waygate-product-delivery-agent/src` as an ad hoc `PYTHONPATH` workaround would mask an installation/package defect.
+  - relying on `<waygate-product-delivery-repo>/src` as an ad hoc `PYTHONPATH` workaround would mask an installation/package defect.
 - Follow-up at `01:39-01:43 +0800`:
   - V2.8 TASK-001 through TASK-007 evidence artifacts were added in one batch after implementation and verification, not at task boundaries.
   - The files' `recorded_at` timestamps are `2026-06-29T01:28:00+08:00`, while their mtime is around `01:39 +0800`, making chronology less auditable.
@@ -903,3 +903,15 @@
 - The GitHub repository already had a `main` branch containing only `.gitignore`; local work was committed on top of that remote commit and pushed as a fast-forward update.
 - HTTPS push was unavailable in this environment, but SSH authentication to GitHub succeeded for `likunkun`.
 - The repository remote now uses `git@github.com:likunkun/waygate-product-delivery.git`.
+
+## 2026-06-29 Product Delivery Agent V1.0.9 QA Gate Findings
+
+- The `sample-target-project` incident root cause is not requirements scope. R5 prototype, test audit, and scenario review already named the second-level workbench, tertiary panels, people maintenance, templates, Agent rules, binding, suppliers, whitelist, and alert-ignore areas.
+- The failure mode is QA gate weakness: TC titles claimed coverage, but the test actions did not click every relevant user entry or assert real functional panels.
+- Generic multi-agent scenario/test review is insufficient when it reviews plans and prototypes but not the executable tests themselves.
+- `marker exists`, function-name existence, static explanation panels, and first-button-only tests are false-positive risks and must be machine-rejected when they are used as the claimed coverage action.
+- V1.0.9 splits testing review into two gates:
+  - `test_coverage` before implementation authorization, focused on coverage range, `US/J/SC/AC/TASK/TC` traceability, collection expansion, and missing executable assertions.
+  - `test_implementation` after implementation/E2E and before closure, focused on real test code, Playwright/browser scripts, logs, screenshots, traces, and action-level assertions.
+- If coverage gaps are found, the first repair step should be RED test补齐: make the current shallow implementation fail before changing UI or E2E code.
+- The V1.0.9 repo-local plugin package now builds `dist/waygate-product-delivery-1.0.9.tar.gz` and installs as `waygate-product-delivery@repo-local` version `1.0.9+codex.20260629071804`.

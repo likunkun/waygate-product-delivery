@@ -221,11 +221,12 @@ class ProductDeliveryWorkflow:
         }
         self._remove_blockers(state, f"multi_agent_{review_type}_review")
         state["stage"] = f"multi_agent_{review_type}_review_passed"
-        state["next_gate"] = (
-            "user_confirmed_freeze"
-            if review_type == "scenario"
-            else "codex_goal_handoff"
-        )
+        next_gates = {
+            "scenario": "user_confirmed_freeze",
+            "test_coverage": "codex_goal_handoff",
+            "test_implementation": "feature_closure_after_implementation",
+        }
+        state["next_gate"] = next_gates.get(review_type, "codex_goal_handoff")
         return write_state(self.project_root, state)
 
     def record_implementation_launch_authorization(
@@ -778,7 +779,7 @@ class ProductDeliveryWorkflow:
         state["closure_inputs"]["coverage_matrix_range"] = audit["matrix_range"]
         state["closure_inputs"]["latest_test_case"] = audit["latest_test_case"]
         state["stage"] = "test_coverage_audit_ready"
-        state["next_gate"] = "codex_goal_handoff"
+        state["next_gate"] = "multi_agent_test_coverage_review"
         return write_state(self.project_root, state)
 
     def record_planned_e2e_obligations(
@@ -857,7 +858,7 @@ class ProductDeliveryWorkflow:
         )
         self._remove_blockers(state, "executed_browser_evidence")
         state["stage"] = "executed_browser_evidence_passed"
-        state["next_gate"] = "feature_closure_after_implementation"
+        state["next_gate"] = "multi_agent_test_implementation_review"
         return write_state(self.project_root, state)
 
     def generate_codex_goal_handoff(

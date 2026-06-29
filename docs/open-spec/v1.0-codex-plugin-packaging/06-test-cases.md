@@ -70,7 +70,7 @@ Lifecycle install/start/stop/upgrade execution against a real Codex installation
 - Runtime unit evidence: `PYTHONPATH=src python3 -m unittest tests/test_plugin_packaging.py` passes 6 tests.
 - Full-suite evidence: `PYTHONPATH=src python3 -m unittest discover -s tests` passes 69 tests.
 - Compile evidence: `python3 -m py_compile src/product_delivery_agent/*.py` exits 0.
-- Plugin validator evidence: `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/product-delivery-agent` reports plugin validation passed.
+- Plugin validator evidence: `python3 <plugin-creator>/scripts/validate_plugin.py plugins/product-delivery-agent` reports plugin validation passed.
 - Future evidence: live Codex install/start/stop/upgrade monitoring for TC-V100-013.
 
 ## Information Gaps

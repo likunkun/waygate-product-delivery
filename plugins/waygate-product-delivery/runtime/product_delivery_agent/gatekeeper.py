@@ -21,7 +21,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.10"
-PLUGIN_VERSION = "1.0.8"
+PLUGIN_VERSION = "1.0.9"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -374,6 +374,15 @@ def derive_blockers(
         != "passed",
         "multi_agent_test_review",
     )
+    if project_type == "ui":
+        _append_if(
+            blockers,
+            normalized.get("multi_agent_reviews", {})
+            .get("test_coverage", {})
+            .get("status")
+            != "passed",
+            "multi_agent_test_coverage_review",
+        )
     _append_if(
         blockers,
         not normalized.get("test_coverage_audit", {}).get("passed"),
@@ -482,6 +491,15 @@ def assert_pre_closure_ready(
             raise GatekeeperError("executed_browser_evidence must pass before closure")
         _assert_executed_covers_planned(planned, executed.get("records", []))
         _assert_closure_covers_executed(closure_artifact, planned, executed)
+        if (
+            state.get("multi_agent_reviews", {})
+            .get("test_implementation", {})
+            .get("status")
+            != "passed"
+        ):
+            raise GatekeeperError(
+                "multi_agent_test_implementation_review is required before closure"
+            )
 
 
 def assert_executed_evidence_covers_planned(

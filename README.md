@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.8-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-132%20passing-15803d)](#verify)
+[![Version](https://img.shields.io/badge/version-1.0.9-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-139%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
@@ -88,8 +88,8 @@ Manual install:
 
 ```bash
 python3 scripts/package_waygate_product_delivery.py
-python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery
-python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/waygate-product-delivery
+python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery
+python3 <plugin-creator>/scripts/update_plugin_cachebuster.py plugins/waygate-product-delivery
 codex plugin add waygate-product-delivery@repo-local
 ```
 
@@ -102,7 +102,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.8.tar.gz
+dist/waygate-product-delivery-1.0.9.tar.gz
 ```
 
 ## Use In Codex
@@ -189,14 +189,14 @@ python3 -m py_compile src/product_delivery_agent/*.py
 Validate the generated plugin:
 
 ```bash
-python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery
+python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery
 ```
 
 Smoke-test the installed validator without source `PYTHONPATH`:
 
 ```bash
 env -u PYTHONPATH PYTHONNOUSERSITE=1 \
-  python3 ~/.codex/plugins/cache/repo-local/waygate-product-delivery/<installed-version>/scripts/validate-closure-artifact.py --help
+  python3 <codex-home>/plugins/cache/repo-local/waygate-product-delivery/<installed-version>/scripts/validate-closure-artifact.py --help
 ```
 
 Current baseline:

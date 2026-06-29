@@ -77,6 +77,37 @@ def review_payload(review_type, **overrides):
         "rejected_suggestions": [],
         "unresolved_questions": [],
         "blocking_findings": [],
+        "traceability_reviewed": ["US", "J", "SC", "AC", "TASK", "TC"],
+        "coverage_gaps": [],
+        "title_overbreadth_findings": [],
+        "missing_executable_assertions": [],
+        "false_positive_risks": [],
+        "collection_coverage": [
+            {
+                "collection_id": "owner-edit-paths",
+                "required_items": ["owner-edit"],
+                "covered_items": ["owner-edit"],
+                "item_level_assertions": {
+                    "owner-edit": "click owner edit action and assert owner edit form",
+                },
+            }
+        ],
+        "actual_test_code_paths": ["tests/e2e/owner.spec.ts"],
+        "execution_evidence_paths": [
+            ".product-delivery/artifacts/e2e/tc-v008-001.json",
+        ],
+        "reviewed_test_ids": ["TC-V008-001"],
+        "verified_action_assertions": [
+            {
+                "test_id": "TC-V008-001",
+                "item_id": "owner-edit",
+                "clicked_entry": "owner edit action",
+                "expected_real_surface": "owner edit form",
+                "assertion_target": "save button and duplicate owner error",
+                "evidence_path": ".product-delivery/artifacts/e2e/tc-v008-001.json",
+            }
+        ],
+        "supporting_evidence_only": [],
     }
     payload.update(overrides)
     return payload
@@ -133,6 +164,22 @@ def planned_obligation():
         "semantic_assertions": ["operator edits ownership"],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "coverage_items": ["owner-edit"],
+        "action_assertions": [
+            {
+                "item_id": "owner-edit",
+                "action_entry": "click owner edit action",
+                "expected_real_surface": "owner edit form",
+                "assertion_target": "save button and duplicate owner error",
+                "semantic_depth": "real_surface",
+            }
+        ],
+        "false_positive_guards": [
+            "reject marker-only",
+            "reject function-name-only",
+            "reject static-panel-only",
+            "reject first-button-only",
+        ],
     }
 
 
@@ -223,6 +270,7 @@ def workflow_ready_for_launch(project_root):
         [coverage_row()],
         negative_guard_records=["billing remains absent"],
     )
+    workflow.record_multi_agent_review("test_coverage", review_payload("test_coverage"))
     workflow.record_multi_agent_review("test", review_payload("test"))
     return workflow
 

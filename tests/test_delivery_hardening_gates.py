@@ -88,6 +88,22 @@ def planned_obligation(**overrides):
         ],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "coverage_items": ["classroom-create"],
+        "action_assertions": [
+            {
+                "item_id": "classroom-create",
+                "action_entry": "click create classroom",
+                "expected_real_surface": "classroom creation form",
+                "assertion_target": "submit button and duplicate-name error",
+                "semantic_depth": "real_surface",
+            }
+        ],
+        "false_positive_guards": [
+            "reject marker-only",
+            "reject function-name-only",
+            "reject static-panel-only",
+            "reject first-button-only",
+        ],
     }
     obligation.update(overrides)
     return obligation

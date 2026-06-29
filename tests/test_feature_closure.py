@@ -46,6 +46,39 @@ def multi_agent_review(review_type):
         "rejected_suggestions": ["billing is outside this version"],
         "unresolved_questions": [],
         "blocking_findings": [],
+        "traceability_reviewed": ["US", "J", "SC", "AC", "TASK", "TC"],
+        "coverage_gaps": [],
+        "title_overbreadth_findings": [],
+        "missing_executable_assertions": [],
+        "false_positive_risks": [],
+        "collection_coverage": [
+            {
+                "collection_id": "classroom-journeys",
+                "required_items": ["classroom-create"],
+                "covered_items": ["classroom-create"],
+                "item_level_assertions": {
+                    "classroom-create": (
+                        "click create classroom and assert classroom creation form"
+                    ),
+                },
+            }
+        ],
+        "actual_test_code_paths": ["tests/e2e/classroom.spec.ts"],
+        "execution_evidence_paths": [
+            ".product-delivery/artifacts/browser-e2e-results.json",
+        ],
+        "reviewed_test_ids": ["TC-V008-001"],
+        "verified_action_assertions": [
+            {
+                "test_id": "TC-V008-001",
+                "item_id": "classroom-create",
+                "clicked_entry": "create classroom action",
+                "expected_real_surface": "classroom creation form",
+                "assertion_target": "submit button and duplicate-name error",
+                "evidence_path": ".product-delivery/artifacts/browser-e2e-results.json",
+            }
+        ],
+        "supporting_evidence_only": [],
     }
 
 
@@ -117,6 +150,22 @@ def planned_obligation():
         "semantic_assertions": ["teacher creates classroom"],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "coverage_items": ["classroom-create"],
+        "action_assertions": [
+            {
+                "item_id": "classroom-create",
+                "action_entry": "click create classroom",
+                "expected_real_surface": "classroom creation form",
+                "assertion_target": "submit button and duplicate-name error",
+                "semantic_depth": "real_surface",
+            }
+        ],
+        "false_positive_guards": [
+            "reject marker-only",
+            "reject function-name-only",
+            "reject static-panel-only",
+            "reject first-button-only",
+        ],
     }
 
 
@@ -174,6 +223,7 @@ def ready_workflow(project_root):
         [coverage_row()],
         negative_guard_records=["student billing is absent"],
     )
+    workflow.record_multi_agent_review("test_coverage", multi_agent_review("test_coverage"))
     workflow.record_multi_agent_review("test", multi_agent_review("test"))
     workflow.record_implementation_launch_authorization(
         user_message="确认按当前交付包开始实现",
@@ -197,6 +247,10 @@ def ready_workflow(project_root):
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
     workflow.record_executed_browser_evidence([browser_evidence()])
+    workflow.record_multi_agent_review(
+        "test_implementation",
+        multi_agent_review("test_implementation"),
+    )
     return workflow
 
 
