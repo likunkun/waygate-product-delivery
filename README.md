@@ -118,11 +118,13 @@ dist/waygate-product-delivery-1.0.9.tar.gz
 Implementation must not begin until the current feature has:
 
 1. current-feature Open Spec documents;
-2. scenario matrix and review artifacts;
+2. scenario matrix and multi-agent scenario review artifacts;
 3. user-confirmed freeze;
 4. UI prototype confirmation or non-UI behavior contract confirmation;
-5. planned E2E obligations and accepted exemptions;
-6. implementation launch authorization.
+5. passed test coverage audit;
+6. passed multi-agent test coverage review;
+7. planned E2E obligations and accepted exemptions confirmed by the user;
+8. implementation launch authorization.
 
 ## Workflow
 
@@ -130,18 +132,25 @@ Implementation must not begin until the current feature has:
 flowchart LR
     A[Start] --> B[Product brief]
     B --> C[Open Spec]
-    C --> D[Scenario matrix]
-    D --> E[Multi-agent review]
-    E --> F{Project type}
-    F -->|UI| G[1:1 HTML prototype]
-    F -->|Non-UI| H[Behavior contract]
-    G --> I[User confirmation]
-    H --> I
-    I --> J[Planned E2E obligations]
-    J --> K[Codex Goal handoff]
-    K --> L[Task queue execution]
-    L --> M[Executed evidence]
-    M --> N[Canonical closure validator]
+    C --> D[Project type decision]
+    D --> E[Scenario matrix]
+    E --> F[Multi-agent scenario review]
+    F --> G[User-confirmed freeze]
+    G --> H{Project type}
+    H -->|UI| I[1:1 HTML prototype]
+    H -->|Non-UI| J[Behavior contract]
+    I --> K[User confirmation]
+    J --> K
+    K --> L[Test coverage audit]
+    L --> M[Multi-agent test coverage review]
+    M --> N[Planned E2E obligations]
+    N --> O[Planned E2E user confirmation]
+    O --> P[Implementation launch authorization]
+    P --> Q[Codex Goal handoff]
+    Q --> R[Task queue execution]
+    R --> S[Executed evidence]
+    S --> T[Multi-agent test implementation review]
+    T --> U[Canonical closure validator]
 ```
 
 The key rule is simple: artifacts and state are authoritative; chat summaries are not.

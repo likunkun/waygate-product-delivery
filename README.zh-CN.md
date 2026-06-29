@@ -118,11 +118,13 @@ dist/waygate-product-delivery-1.0.9.tar.gz
 进入实现前必须完成：
 
 1. 当前 feature 的 Open Spec；
-2. scenario matrix 和评审 artifact；
+2. scenario matrix 和多 Agent 场景评审 artifact；
 3. 用户确认 freeze；
 4. UI 原型确认或非 UI 行为契约确认；
-5. planned E2E obligations 和已批准豁免；
-6. implementation launch authorization。
+5. 测试覆盖审计通过；
+6. 多 Agent 测试覆盖评审通过；
+7. planned E2E obligations 和已批准豁免已由用户确认；
+8. implementation launch authorization。
 
 ## 工作流
 
@@ -130,18 +132,25 @@ dist/waygate-product-delivery-1.0.9.tar.gz
 flowchart LR
     A[启动] --> B[产品蓝图]
     B --> C[Open Spec]
-    C --> D[场景矩阵]
-    D --> E[多 Agent 评审]
-    E --> F{项目类型}
-    F -->|UI| G[1:1 HTML 原型]
-    F -->|非 UI| H[行为契约]
-    G --> I[用户确认]
-    H --> I
-    I --> J[计划 E2E 义务]
-    J --> K[Codex Goal 移交]
-    K --> L[TASK 队列实现]
-    L --> M[执行证据]
-    M --> N[canonical 闭包验证]
+    C --> D[项目类型判断]
+    D --> E[场景矩阵]
+    E --> F[多 Agent 场景评审]
+    F --> G[用户确认 freeze]
+    G --> H{项目类型}
+    H -->|UI| I[1:1 HTML 原型]
+    H -->|非 UI| J[行为契约]
+    I --> K[用户确认]
+    J --> K
+    K --> L[测试覆盖审计]
+    L --> M[多 Agent 测试覆盖评审]
+    M --> N[计划 E2E 义务]
+    N --> O[计划 E2E 用户确认]
+    O --> P[实现授权]
+    P --> Q[Codex Goal 移交]
+    Q --> R[TASK 队列实现]
+    R --> S[执行证据]
+    S --> T[多 Agent 测试实现评审]
+    T --> U[canonical 闭包验证]
 ```
 
 核心规则：artifact 和 state 是事实源，聊天总结不是。
