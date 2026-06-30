@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.9")
+            self.assertEqual(manifest["version"], "1.0.10")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -36,7 +36,7 @@ class PluginPackagingTests(unittest.TestCase):
                 manifest["interface"]["defaultPrompt"],
                 [
                     "启动交付",
-                    "启动交付，允许多Agent评审",
+                    "启动交付，允许降级评审",
                     "查看状态",
                     "验证闭包",
                     "停止交付",
@@ -107,7 +107,8 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("closure-like", skill_markdown)
             self.assertIn("missing goal", skill_markdown)
             self.assertIn("review_mode", skill_markdown)
-            self.assertIn("启动交付，允许多Agent评审", skill_markdown)
+            self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
+            self.assertIn("启动交付，允许降级评审", skill_markdown)
             self.assertIn("确认按当前交付包开始实现", skill_markdown)
             self.assertIn("implementation_launch_authorization", skill_markdown)
             self.assertIn("custom artifact", skill_markdown)
@@ -145,7 +146,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.9")
+            self.assertEqual(closure_template["plugin_version"], "1.0.10")
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
             validator_script = (
@@ -186,7 +187,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.9.tar.gz",
+                "waygate-product-delivery-1.0.10.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

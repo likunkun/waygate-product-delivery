@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.9-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-139%20passing-15803d)](#verify)
+[![Version](https://img.shields.io/badge/version-1.0.10-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-146%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
@@ -58,10 +58,10 @@ Start a new Codex thread after installation, then activate the workflow inside t
 启动交付
 ```
 
-For real spawned-subagent review gates, start with:
+Real spawned-subagent review gates are required by default. If subagents are unavailable and you explicitly accept weaker evidence, start with:
 
 ```text
-启动交付，允许多Agent评审
+启动交付，允许降级评审
 ```
 
 ## Install
@@ -102,7 +102,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.9.tar.gz
+dist/waygate-product-delivery-1.0.10.tar.gz
 ```
 
 ## Use In Codex
@@ -110,7 +110,7 @@ dist/waygate-product-delivery-1.0.9.tar.gz
 | Prompt | Meaning |
 | --- | --- |
 | `启动交付` | Activate Product Delivery mode for the current project. |
-| `启动交付，允许多Agent评审` | Activate Product Delivery and allow real multi-agent review work. |
+| `启动交付，允许降级评审` | Activate Product Delivery and explicitly allow role-simulation review only when spawned subagents are unavailable. |
 | `查看状态` | Show the current Product Delivery stage, blockers, and next gate. |
 | `验证闭包` | Run formal closure validation against current artifacts. |
 | `停止交付` | Exit Product Delivery intervention for the current project. |
@@ -211,7 +211,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 Current baseline:
 
 ```text
-132 unit tests passing
+146 unit tests passing
 Plugin validation passed
 Packaged validator runs without source PYTHONPATH
 ```

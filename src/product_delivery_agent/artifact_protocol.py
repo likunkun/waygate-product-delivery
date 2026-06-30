@@ -110,6 +110,9 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
                 "artifact": None,
             },
         },
+        "multi_agent_policy": {
+            "mode": "spawned_subagents_required",
+        },
         "ui_prototype": {
             "generated": False,
             "reviewed_by_agent": False,
@@ -188,6 +191,12 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
                 "status": "missing",
                 "artifact": None,
             },
+        },
+    )
+    merged.setdefault(
+        "multi_agent_policy",
+        {
+            "mode": "spawned_subagents_required",
         },
     )
     merged["multi_agent_reviews"].setdefault(

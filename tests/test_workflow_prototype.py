@@ -57,6 +57,10 @@ class WorkflowPrototypeTests(unittest.TestCase):
                 "docs/open-spec/v2.4-ops-security-alerts/",
                 started["required_artifacts"],
             )
+            self.assertEqual(
+                started["multi_agent_policy"]["mode"],
+                "spawned_subagents_required",
+            )
 
             artifact = project_root / ARTIFACT_ROOT / "artifacts" / "note.md"
             artifact.write_text("preserve\n", encoding="utf-8")
@@ -158,6 +162,17 @@ class WorkflowPrototypeTests(unittest.TestCase):
 
             self.assertEqual(recovered["stage"], "ui_prototype_confirmation")
             self.assertEqual(load_state(project_root)["stage"], "ui_prototype_confirmation")
+
+    def test_start_can_explicitly_allow_review_degradation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+
+            started = workflow.start(allow_review_degradation=True)
+
+            self.assertEqual(
+                started["multi_agent_policy"]["mode"],
+                "role_simulation_allowed",
+            )
 
 
 if __name__ == "__main__":

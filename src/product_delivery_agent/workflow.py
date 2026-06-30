@@ -100,7 +100,12 @@ class ProductDeliveryWorkflow:
         self.project_root = Path(project_root)
         self.fallback_state = fallback_state
 
-    def start(self, *, feature_slug: str | None = None) -> dict[str, Any]:
+    def start(
+        self,
+        *,
+        feature_slug: str | None = None,
+        allow_review_degradation: bool = False,
+    ) -> dict[str, Any]:
         state = initialize_workspace(self.project_root)
         state["active"] = True
         state["paused"] = False
@@ -124,6 +129,13 @@ class ProductDeliveryWorkflow:
                 "status": "missing",
                 "artifact": None,
             },
+        }
+        state["multi_agent_policy"] = {
+            "mode": (
+                "role_simulation_allowed"
+                if allow_review_degradation
+                else "spawned_subagents_required"
+            ),
         }
         state["ui_prototype"] = {
             "generated": False,
@@ -196,6 +208,14 @@ class ProductDeliveryWorkflow:
         state = self._require_started()
         validate_multi_agent_review(review_type, review)
         review_mode = review.get("review_mode", "spawned_subagents")
+        policy_mode = state.get("multi_agent_policy", {}).get(
+            "mode",
+            "spawned_subagents_required",
+        )
+        if review_mode == "role_simulation" and policy_mode != "role_simulation_allowed":
+            raise ReviewGateError(
+                "role_simulation review rejected by spawned_subagents_required policy"
+            )
         if (
             review_mode == "role_simulation"
             and "role_simulation_review_acceptance"

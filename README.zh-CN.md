@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.9-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-139%20passing-15803d)](#验证)
+[![Version](https://img.shields.io/badge/version-1.0.10-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-146%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
 
@@ -58,10 +58,10 @@ bash scripts/install_waygate_product_delivery.sh
 启动交付
 ```
 
-如果要允许真实 spawned subagents 参与评审，使用：
+默认要求真实 spawned subagents 参与评审。如果 subagents 不可用，并且你明确接受较弱证据，使用：
 
 ```text
-启动交付，允许多Agent评审
+启动交付，允许降级评审
 ```
 
 ## 安装
@@ -102,7 +102,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.9.tar.gz
+dist/waygate-product-delivery-1.0.10.tar.gz
 ```
 
 ## Codex 使用方式
@@ -110,7 +110,7 @@ dist/waygate-product-delivery-1.0.9.tar.gz
 | 启动语 | 作用 |
 | --- | --- |
 | `启动交付` | 在当前项目开启 Product Delivery 模式。 |
-| `启动交付，允许多Agent评审` | 开启 Product Delivery，并允许真实多 Agent 评审。 |
+| `启动交付，允许降级评审` | 开启 Product Delivery，并在真实 subagents 不可用时显式允许 role-simulation 弱证据评审。 |
 | `查看状态` | 查看当前阶段、阻塞项和下一门禁。 |
 | `验证闭包` | 对当前 artifacts 执行正式闭包验证。 |
 | `停止交付` | 退出当前项目的 Product Delivery 干预。 |
@@ -211,7 +211,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 当前基线：
 
 ```text
-132 个单测通过
+146 个单测通过
 Plugin validation passed
 Packaged validator 可在无源码 PYTHONPATH 下运行
 ```

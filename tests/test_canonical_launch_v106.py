@@ -381,7 +381,10 @@ class CanonicalLaunchV106Tests(unittest.TestCase):
     def test_role_simulation_review_requires_separate_user_acceptance(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v1.0.6-canonical-launch")
+            workflow.start(
+                feature_slug="v1.0.6-canonical-launch",
+                allow_review_degradation=True,
+            )
             workflow.record_scenario_matrix([scenario_row()])
             review = review_payload(
                 "scenario",

@@ -13,6 +13,7 @@ from product_delivery_agent.gatekeeper import (
     CANONICAL_VALIDATOR,
     PLUGIN_VERSION,
 )
+from product_delivery_agent.skill_gates import FILE_SKILLS, STAGE_SKILLS
 
 PLUGIN_NAME = "waygate-product-delivery"
 LEGACY_PLUGIN_NAMES = ("product-delivery-agent",)
@@ -127,7 +128,7 @@ def _plugin_manifest() -> dict[str, Any]:
             "termsOfServiceURL": "https://example.com/terms",
             "defaultPrompt": [
                 "启动交付",
-                "启动交付，允许多Agent评审",
+                "启动交付，允许降级评审",
                 "查看状态",
                 "验证闭包",
                 "停止交付",
@@ -231,21 +232,9 @@ def _write_templates(templates_dir: Path) -> None:
             "- Read or create `task_plan.md`, `findings.md`, and `progress.md`.\n"
             "- Create or recover `.product-delivery/state.json`.\n"
             "- Record the current feature slug and blocked gates in state.\n"
+            "- Default multi-agent policy is `spawned_subagents_required`.\n"
         ),
-        "required-skills-checklist.md": (
-            "# Required Skills Checklist\n\n"
-            "| Gate | Required skills |\n"
-            "| --- | --- |\n"
-            "| Active startup | `superpowers:using-superpowers`, `planning-with-files`, `waygate-product-delivery` |\n"
-            "| Product blueprint | `superpowers:brainstorming` |\n"
-            "| Version and implementation plan | `superpowers:writing-plans` |\n"
-            "| Open Spec package | `open-spec` |\n"
-            "| Test coverage audit | `test-strategy` or `testing-strategy` |\n"
-            "| UI prototype | `ui-ux-pro-max` |\n"
-            "| Browser verification | `webapp-testing` |\n"
-            "| Feature closure | `open-spec-feature-closure`, `superpowers:verification-before-completion` |\n"
-            "| File-specific work | `pdf`, `docx`, or `pptx` when those files appear |\n"
-        ),
+        "required-skills-checklist.md": _required_skills_checklist(),
         "open-spec-gate.md": (
             "# Open Spec Gate\n\n"
             "- The current feature must have `docs/open-spec/<feature-slug>/`.\n"
@@ -414,8 +403,9 @@ def _skill_markdown() -> str:
         "---\n\n"
         "# Product Delivery Agent\n\n"
         "默认休眠。说 `启动交付` 激活当前项目的产品交付模式；"
-        "说 `启动交付，允许多Agent评审` 激活并授权当前 feature 使用真实 spawned subagents "
-        "完成 scenario/test coverage review；"
+        "默认要求当前 feature 使用真实 spawned subagents 完成 scenario/test coverage review；"
+        "只有在真实 subagents 不可用时，才使用 `启动交付，允许降级评审` "
+        "显式允许 role_simulation 弱证据；"
         "说 `停止交付` 或使用 `stop` 退出干预。底层命令仍保留 "
         "`start` / `stop`。\n\n"
         "## Active Mode Hard Rules\n\n"
@@ -492,7 +482,9 @@ def _skill_markdown() -> str:
         "都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、"
         "旧 feature closure result 或 docs 领先状态必须 fail closed。\n\n"
         "multi-agent review 必须记录 `review_mode`。`spawned_subagents` 是强证据；"
-        "`role_simulation` 是弱证据，必须记录用户接受；`blocked_with_reason` 不能通过 handoff。\n\n"
+        "默认启动要求 `spawned_subagents`。`role_simulation` 是弱证据，"
+        "只有使用 `启动交付，允许降级评审` 后才允许，并且必须记录用户接受；"
+        "`blocked_with_reason` 不能通过 handoff。\n\n"
         "原型确认、review 接受、实现授权是三个不同 gate。进入实现前必须记录 "
         "`implementation_launch_authorization`，用户确认语必须是 `确认按当前交付包开始实现`，"
         "并且授权要绑定当前 `feature_slug`、review mode、prototype hash、planned E2E、"
@@ -509,6 +501,34 @@ def _skill_markdown() -> str:
         "检查 Open Spec 或原型时必须按当前 feature slug 匹配。旧版本 "
         "`docs/open-spec/`、旧 prototype、聊天总结、`progress.md` 都不能替代当前 feature gate evidence。\n"
     )
+
+
+def _required_skills_checklist() -> str:
+    lines = [
+        "# Required Skills Checklist",
+        "",
+        "| Gate | Required skills |",
+        "| --- | --- |",
+    ]
+    for stage, requirements in STAGE_SKILLS.items():
+        formatted = ", ".join(_format_skill_requirement(requirement) for requirement in requirements)
+        lines.append(f"| {stage} | {formatted} |")
+    optional = ", ".join(f"`{skill}`" for skill in dict.fromkeys(FILE_SKILLS.values()))
+    lines.extend(
+        [
+            f"| file_specific_optional | {optional} |",
+            "",
+            "Installation checks fail closed for required skills and warn for file-specific optional skills.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _format_skill_requirement(requirement: str) -> str:
+    alternatives = requirement.split("|")
+    if len(alternatives) == 1:
+        return f"`{alternatives[0]}`"
+    return " or ".join(f"`{alternative}`" for alternative in alternatives)
 
 
 def _hooks_readme() -> str:

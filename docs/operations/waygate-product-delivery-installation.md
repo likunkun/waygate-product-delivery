@@ -41,10 +41,14 @@ bash scripts/install_waygate_product_delivery.sh
 
 The script runs:
 
-1. package regeneration;
-2. plugin validation;
-3. Codex cachebuster update;
-4. `codex plugin add waygate-product-delivery@repo-local`.
+1. required local skill dependency check;
+2. package regeneration;
+3. plugin validation;
+4. Codex cachebuster update;
+5. `codex plugin add waygate-product-delivery@repo-local`.
+
+Missing required skills block installation. Missing file-specific skills for `.pdf`,
+`.docx`, or `.pptx` only produce warnings because they are conditional.
 
 After installation, start a new Codex thread so Codex loads the updated plugin.
 
@@ -53,6 +57,7 @@ After installation, start a new Codex thread so Codex loads the updated plugin.
 If you need to run the steps manually:
 
 ```bash
+PYTHONPATH=src python3 scripts/check_waygate_product_delivery_dependencies.py --plugin-root plugins/waygate-product-delivery
 python3 scripts/package_waygate_product_delivery.py
 python3 <plugin-creator>/scripts/validate_plugin.py plugins/waygate-product-delivery
 python3 <plugin-creator>/scripts/update_plugin_cachebuster.py plugins/waygate-product-delivery
