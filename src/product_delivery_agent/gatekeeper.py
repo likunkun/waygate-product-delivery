@@ -21,7 +21,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.10"
-PLUGIN_VERSION = "1.0.10"
+PLUGIN_VERSION = "1.0.11"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",

@@ -16,6 +16,7 @@ This directory stores formal documentation for the Waygate Product Delivery proj
 
 | Document | Purpose |
 | --- | --- |
+| `CHANGELOG.md` | Release ledger and compact post-1.0 version direction. |
 | `docs/product/product-delivery-workflow-agent.md` | Product value, target users, non-goals, and success criteria. |
 | `docs/workflow/product-to-delivery-methodology.md` | Full methodology from product blueprint to final evidence. |
 | `docs/architecture/system-boundaries.md` | Boundary between this project, Waygate, Claude workflow, Codex goal, and Open Spec. |

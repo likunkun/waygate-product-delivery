@@ -2430,3 +2430,25 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - Final `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 139 tests.
   - Final plugin validation passed after cachebuster installation.
 - **Status:** complete.
+
+### Waygate Product Delivery V1.0.11 Release Consistency Patch
+
+- Implemented the approved simplified post-1.0 version plan.
+- Reframed future planning:
+  - `V1.0.x` remains the patch line for gate leaks, packaging failures, validator failures, and version drift.
+  - `V1.1` is the next meaningful capability version: multi-agent review orchestration productization.
+  - `V1.1.x` absorbs Runtime API, schema, or dashboard support work when it directly serves orchestration.
+  - `V2.0` remains external workflow integration after local closure authority is stable.
+- Added `CHANGELOG.md` as the release ledger.
+- Added release consistency regression coverage in `tests/test_release_consistency_v1011.py`.
+- Updated packaging expectations and generated plugin assets to `1.0.11`.
+- Generated `dist/waygate-product-delivery-1.0.11.tar.gz`.
+- Installed `waygate-product-delivery@repo-local` version `1.0.11+codex.20260701011848`.
+- Verification:
+  - `PYTHONPATH=src python3 -m unittest tests/test_plugin_packaging.py tests/test_release_consistency_v1011.py` passed: 10 tests.
+  - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 149 tests.
+  - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
+  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
+  - Packaged-root validator `--help` passed with source `PYTHONPATH` unset.
+  - Installed-cache validator `--help` passed with source `PYTHONPATH` unset.
+- **Status:** complete.

@@ -6,7 +6,7 @@ Create a clean independent project under `<waygate-product-delivery-repo>` for d
 
 ## Current Phase
 
-Product Delivery V1.0.6 canonical launch and review enforcement is implemented, verified, packaged, and installed; next work is to validate the behavior in a fresh `sample-target-project` thread.
+Waygate Product Delivery V1.0.11 release consistency patch is implemented in this branch: runtime/package metadata, README references, changelog, and the simplified post-1.0 roadmap are aligned around the next meaningful capability version, V1.1 multi-agent review orchestration.
 
 ## Phases
 
@@ -626,6 +626,16 @@ Product Delivery V1.0.6 canonical launch and review enforcement is implemented, 
 - [x] Run focused V1.0.9 tests and full unit discovery.
 - [x] Compile runtime, validate package, regenerate distribution, reinstall plugin, and smoke installed validator.
 - **Status:** complete; installed version `1.0.9+codex.20260629071804`.
+
+### Phase 47 - Waygate Product Delivery V1.0.11 Release Consistency Patch
+
+- [x] Reframe the post-1.0 roadmap so `V1.0.x` stays a patch line, `V1.1` becomes multi-agent review orchestration, `V1.1.x` absorbs orchestration support work, and `V2.0` remains external workflow integration.
+- [x] Add `CHANGELOG.md` as the concise release ledger for `1.0.11` and the simplified post-1.0 direction.
+- [x] Update runtime package version expectations from `1.0.10` to `1.0.11`.
+- [x] Add release consistency regression coverage for runtime, generated plugin manifest, generated closure template, README artifact names, and changelog roadmap entries.
+- [x] Regenerate `plugins/waygate-product-delivery/` and `dist/waygate-product-delivery-1.0.11.tar.gz`.
+- [x] Run focused release consistency tests, full unit discovery, runtime compilation, plugin validation, and packaged validator smoke.
+- **Status:** complete; current source/package version `1.0.11`.
 
 ## Out Of Scope For V0.1
 

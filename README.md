@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.10-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-146%20passing-15803d)](#verify)
+[![Version](https://img.shields.io/badge/version-1.0.11-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-149%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
@@ -102,7 +102,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.10.tar.gz
+dist/waygate-product-delivery-1.0.11.tar.gz
 ```
 
 ## Use In Codex
@@ -211,7 +211,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 Current baseline:
 
 ```text
-146 unit tests passing
+149 unit tests passing
 Plugin validation passed
 Packaged validator runs without source PYTHONPATH
 ```
@@ -220,6 +220,7 @@ Packaged validator runs without source PYTHONPATH
 
 | Document | Purpose |
 | --- | --- |
+| [CHANGELOG.md](CHANGELOG.md) | Release ledger and compact post-1.0 version direction. |
 | [ROADMAP.md](ROADMAP.md) | Version roadmap and capability plan. |
 | [docs/README.md](docs/README.md) | Documentation registry. |
 | [docs/open-spec/README.md](docs/open-spec/README.md) | Open Spec package index from V0.1 through V1.0. |

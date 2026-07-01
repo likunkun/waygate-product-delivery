@@ -163,9 +163,65 @@ Scope:
 - Exit intervention after `stop`.
 - Preserve existing `.product-delivery/` artifacts across plugin upgrades.
 
+## Post-1.0 Version Plan
+
+The post-1.0 line is intentionally compact. Technical support work such as runtime entrypoints, schema migration, and dashboards should not become standalone versions unless they solve a new user-visible delivery problem.
+
+### V1.0.x - Patch Line
+
+Goal: preserve release and closure trust without expanding product scope.
+
+Scope:
+
+- Fix urgent gate leaks, packaging failures, validator failures, or version drift.
+- Keep release metadata aligned across README, manifest, runtime version, generated plugin package, distribution archive, and installed package evidence.
+- Do not introduce new product capabilities in `V1.0.x`.
+
+### V1.0.11 - Release Consistency Patch
+
+Goal: reconcile the current `1.0.10` release drift and record the simplified post-1.0 roadmap.
+
+Scope:
+
+- Align planning files, README badges, manifest output, runtime `PLUGIN_VERSION`, generated templates, distribution archive naming, and test expectations.
+- Add a concise changelog / version ledger.
+- Keep behavior unchanged.
+
+### V1.1 - Multi-Agent Review Orchestration
+
+Goal: productize multi-agent review as a reusable orchestration layer instead of loose templates and prose rules.
+
+Scope:
+
+- Keep fixed reviewer responsibilities for product intent, scenario and journey completeness, test coverage, test implementation, and negative boundaries.
+- Generate feature-specific prompts from current Open Spec, scenario matrix, prototype evidence, planned E2E obligations, and executed evidence.
+- Prefer real spawned subagents and record their evidence as the strong path.
+- Allow `role_simulation` only as an explicit user-accepted degradation.
+- Keep scenario review, test coverage review, and test implementation review as separate non-interchangeable gates.
+- Persist independent positions, cross-challenges, revisions, final adjudication, and blocking findings.
+
+### V1.1.x - Multi-Agent Orchestration Patch Line
+
+Goal: harden V1.1 without creating artificial capability versions.
+
+Scope:
+
+- Add runtime entrypoints, schema adjustments, or reporting only when they directly support multi-agent orchestration.
+- Treat migration and dashboard work as implementation support unless a later user need proves they deserve their own product version.
+
+### V2.0 - External Workflow Integration
+
+Goal: integrate with external execution or controller systems after local Product Delivery closure authority is stable.
+
+Scope:
+
+- Integrate Waygate/controller or another execution system as an optional external workflow target.
+- Keep Product Delivery's canonical closure authority local and non-replaceable.
+- Treat external validator outputs as supporting evidence unless Product Delivery explicitly adopts them.
+
 ## Assumptions
 
 - The current phase only produces roadmap and version planning.
-- Detailed implementation design, public interfaces, test plans, and file schemas are intentionally deferred.
-- The first implementation handoff target is Codex Goal.
-- Waygate integration is future work and does not directly mutate Waygate state in V1.
+- Detailed implementation design, public interfaces, test plans, and file schemas are scoped only when a version explicitly requires them.
+- The first implementation handoff target remains Codex Goal.
+- Waygate integration is deferred to V2.0 and does not directly mutate Waygate state in V1.

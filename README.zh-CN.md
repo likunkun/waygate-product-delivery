@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.10-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-146%20passing-15803d)](#验证)
+[![Version](https://img.shields.io/badge/version-1.0.11-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-149%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
 
@@ -102,7 +102,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.10.tar.gz
+dist/waygate-product-delivery-1.0.11.tar.gz
 ```
 
 ## Codex 使用方式
@@ -211,7 +211,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 当前基线：
 
 ```text
-146 个单测通过
+149 个单测通过
 Plugin validation passed
 Packaged validator 可在无源码 PYTHONPATH 下运行
 ```
@@ -220,6 +220,7 @@ Packaged validator 可在无源码 PYTHONPATH 下运行
 
 | 文档 | 用途 |
 | --- | --- |
+| [CHANGELOG.md](CHANGELOG.md) | 发布账本和 1.0 之后的精简版本方向。 |
 | [ROADMAP.md](ROADMAP.md) | 版本路线和能力规划。 |
 | [docs/README.md](docs/README.md) | 文档索引。 |
 | [docs/open-spec/README.md](docs/open-spec/README.md) | V0.1 到 V1.0 的 Open Spec 索引。 |

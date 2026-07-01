@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.10")
+            self.assertEqual(manifest["version"], "1.0.11")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -146,7 +146,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.10")
+            self.assertEqual(closure_template["plugin_version"], "1.0.11")
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
             validator_script = (
@@ -187,7 +187,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.10.tar.gz",
+                "waygate-product-delivery-1.0.11.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 
