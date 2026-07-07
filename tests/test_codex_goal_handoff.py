@@ -209,7 +209,6 @@ def authorize_launch(
     prohibited_work=None,
 ):
     workflow.record_implementation_launch_authorization(
-        user_message="确认按当前交付包开始实现",
         scope=scope,
         verification_commands=(
             ["pytest"] if verification_commands is None else verification_commands

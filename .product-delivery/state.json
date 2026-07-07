@@ -1,0 +1,1343 @@
+{
+  "activation_source": "waygate-product-delivery",
+  "active": true,
+  "artifact_paths": {
+    "handoff": "artifacts/handoff.md",
+    "non_ui_behavior_contract": "artifacts/non-ui-behavior-contract.md",
+    "product_brief": "artifacts/product-brief.md",
+    "test_coverage_audit": "artifacts/test-coverage-audit.md",
+    "ui_prototype_review": "artifacts/ui-prototype-review.md",
+    "version_scope": "artifacts/version-scope.md"
+  },
+  "behavior_contract_limitations": [
+    "implementation has not started",
+    "tests have not run",
+    "release remains Draft / Not Released",
+    "current delivery policy is spawned_subagents_required and does not allow role_simulation degradation",
+    "real spawned subagents are available in this session but orchestration must still fail closed if unavailable in future sessions unless policy explicitly allows degradation"
+  ],
+  "blocked_until": [
+    "planning_files_ready",
+    "non_ui_behavior_contract_confirmation",
+    "planned_e2e_user_confirmation",
+    "executed_behavior_evidence"
+  ],
+  "blocking_gates": {},
+  "change_requests": [
+    {
+      "change_type": "coverage_traceability_correction",
+      "cr_id": "CR-001-coverage-traceability-correction-20260702",
+      "description": "Expanded V1.1 scenario/test coverage traceability without changing product scope after spawned test coverage review blockers.",
+      "status": "recorded"
+    }
+  ],
+  "closure_inputs": {
+    "non_ui_behavior_limitations": [
+      "implementation has not started",
+      "tests have not run",
+      "release remains Draft / Not Released",
+      "current delivery policy is spawned_subagents_required and does not allow role_simulation degradation",
+      "real spawned subagents are available in this session but orchestration must still fail closed if unavailable in future sessions unless policy explicitly allows degradation"
+    ]
+  },
+  "closure_validation": {
+    "errors": [],
+    "status": "not_run"
+  },
+  "confirmation_points": {
+    "handoff": {
+      "artifact_path": "artifacts/handoff.md",
+      "confirmed": false
+    },
+    "non_ui_behavior_contract": {
+      "artifact_path": "artifacts/non-ui-behavior-contract.md",
+      "confirmed": false
+    },
+    "product_brief": {
+      "artifact_path": "artifacts/product-brief.md",
+      "confirmed": false
+    },
+    "test_coverage_audit": {
+      "artifact_path": "artifacts/test-coverage-audit.md",
+      "confirmed": false
+    },
+    "ui_prototype_review": {
+      "artifact_path": "artifacts/ui-prototype-review.md",
+      "confirmed": false
+    },
+    "version_scope": {
+      "artifact_path": "artifacts/version-scope.md",
+      "confirmed": false
+    }
+  },
+  "delivery_goal": null,
+  "downstream_inputs": {
+    "behavior_evidence_candidates": [
+      "BP-V11-001 scenario review orchestration builds role prompts and records deliberation",
+      "BP-V11-002 test coverage review checks traceability and item-level planned assertions",
+      "BP-V11-003 test implementation review checks real test code and execution evidence",
+      "BP-V11-004 role_simulation is rejected under spawned_subagents_required and requires policy allowance plus explicit user acceptance otherwise",
+      "BP-V11-005 blocked_with_reason fails closed and preserves visible reason",
+      "BP-V11-006 legacy state remains readable without satisfying new split gates",
+      "BP-V11-007 package output carries V1.1 orchestration rules",
+      "BP-V11-008 status-only, Open Spec/progress summary, and custom-only review claims cannot satisfy review gates",
+      "BP-V11-009 non-UI pre-handoff requires test_coverage and pre-closure requires test_implementation",
+      "BP-V11-010 release and Product Delivery closure remain not eligible before implementation, executed tests, and formal closure evidence exist"
+    ],
+    "negative_boundary_candidates": [
+      "NB-V11-001 do not merge scenario, test coverage, and test implementation gates",
+      "NB-V11-002 do not treat role_simulation as strong evidence",
+      "NB-V11-003 do not allow chat summaries, session logs, status-only claims, Open Spec summaries, progress records, or custom gate artifacts to replace review artifacts",
+      "NB-V11-004 do not introduce dashboard or external workflow integration in V1.1",
+      "NB-V11-005 do not create standalone Runtime API versioning for V1.1",
+      "NB-V11-006 do not mark release or closure passed before implementation and tests run",
+      "NB-V11-007 do not accept role_simulation under spawned_subagents_required policy"
+    ]
+  },
+  "executed_behavior_evidence": {
+    "records": [],
+    "status": "missing"
+  },
+  "executed_browser_evidence": {
+    "records": [],
+    "status": "missing"
+  },
+  "feature_slug": "v1.1-multi-agent-review-orchestration",
+  "freeze": {
+    "frozen": true,
+    "scope_version": null
+  },
+  "handoff_inputs": {
+    "non_ui_behavior_limitations": [
+      "implementation has not started",
+      "tests have not run",
+      "release remains Draft / Not Released",
+      "current delivery policy is spawned_subagents_required and does not allow role_simulation degradation",
+      "real spawned subagents are available in this session but orchestration must still fail closed if unavailable in future sessions unless policy explicitly allows degradation"
+    ]
+  },
+  "intervention_enabled": true,
+  "multi_agent_policy": {
+    "mode": "spawned_subagents_required"
+  },
+  "multi_agent_reviews": {
+    "scenario": {
+      "artifact": "artifacts/multi-agent-scenario-review.md",
+      "artifact_version": "v1.1-scenario-review-rev-20260701-02",
+      "review_id": "MR-V11-SCENARIO-20260701-001",
+      "review_mode": "spawned_subagents",
+      "status": "passed"
+    },
+    "test": {
+      "artifact": null,
+      "status": "missing"
+    },
+    "test_coverage": {
+      "artifact": "artifacts/multi-agent-test_coverage-review.md",
+      "artifact_version": "v1.1-test-coverage-review-rev-20260702-01",
+      "review_id": "MR-V11-TEST-COVERAGE-20260702-001",
+      "review_mode": "spawned_subagents",
+      "status": "passed"
+    },
+    "test_implementation": {
+      "artifact": null,
+      "status": "missing"
+    }
+  },
+  "next_gate": "codex_goal_handoff",
+  "non_ui_behavior_contract": {
+    "behavior_paths": [
+      "BP-V11-001 scenario review orchestration builds role prompts and records deliberation",
+      "BP-V11-002 test coverage review checks traceability and item-level planned assertions",
+      "BP-V11-003 test implementation review checks real test code and execution evidence",
+      "BP-V11-004 role_simulation is rejected under spawned_subagents_required and requires policy allowance plus explicit user acceptance otherwise",
+      "BP-V11-005 blocked_with_reason fails closed and preserves visible reason",
+      "BP-V11-006 legacy state remains readable without satisfying new split gates",
+      "BP-V11-007 package output carries V1.1 orchestration rules",
+      "BP-V11-008 status-only, Open Spec/progress summary, and custom-only review claims cannot satisfy review gates",
+      "BP-V11-009 non-UI pre-handoff requires test_coverage and pre-closure requires test_implementation",
+      "BP-V11-010 release and Product Delivery closure remain not eligible before implementation, executed tests, and formal closure evidence exist"
+    ],
+    "contract_artifact_path": "artifacts/non-ui-behavior-contract.md",
+    "contract_name": "V1.1 Multi-Agent Review Orchestration Behavior Contract",
+    "entry_points": [
+      "build review orchestration profile for scenario review",
+      "build review orchestration profile for test coverage review",
+      "build review orchestration profile for test implementation review",
+      "record accepted review through ProductDeliveryWorkflow.record_multi_agent_review",
+      "derive pre-handoff and pre-closure blockers from Product Delivery state",
+      "generate packaged skill and template text for V1.1 review orchestration"
+    ],
+    "inputs": [
+      "feature_slug v1.1-multi-agent-review-orchestration",
+      "current Open Spec package 00 through 08",
+      "scope scenario matrix rows",
+      "non-UI behavior contract artifact",
+      "planned behavior obligations and coverage audit records",
+      "executed test evidence and closure inputs when reviewing implementation",
+      "review mode policy and user confirmation records",
+      "canonical structured multi-agent review artifacts"
+    ],
+    "limitations": [
+      "implementation has not started",
+      "tests have not run",
+      "release remains Draft / Not Released",
+      "current delivery policy is spawned_subagents_required and does not allow role_simulation degradation",
+      "real spawned subagents are available in this session but orchestration must still fail closed if unavailable in future sessions unless policy explicitly allows degradation"
+    ],
+    "negative_boundary_records": [
+      "NB-V11-001 do not merge scenario, test coverage, and test implementation gates",
+      "NB-V11-002 do not treat role_simulation as strong evidence",
+      "NB-V11-003 do not allow chat summaries, session logs, status-only claims, Open Spec summaries, progress records, or custom gate artifacts to replace review artifacts",
+      "NB-V11-004 do not introduce dashboard or external workflow integration in V1.1",
+      "NB-V11-005 do not create standalone Runtime API versioning for V1.1",
+      "NB-V11-006 do not mark release or closure passed before implementation and tests run",
+      "NB-V11-007 do not accept role_simulation under spawned_subagents_required policy"
+    ],
+    "outputs": [
+      "feature-specific review input snapshot",
+      "reviewer role prompt payloads",
+      "structured multi-agent review artifact",
+      "Product Delivery state multi_agent_reviews entry",
+      "blocked_with_reason result when evidence is unavailable or blockers remain",
+      "packaged V1.1 skill/template review rules"
+    ],
+    "taxonomy": {
+      "boundary_conditions": [
+        "legacy generic test review remains readable but cannot satisfy split gates",
+        "missing review_mode defaults to spawned_subagents for legacy compatibility only",
+        "new V1.1 accepted artifacts must record review_mode explicitly",
+        "existing V1.0.11 artifacts remain supporting evidence unless revalidated",
+        "status-only, Open Spec/progress summaries, and custom gate artifacts remain supporting evidence only",
+        "no dashboard, external integration, or standalone Runtime API versioning"
+      ],
+      "entry_points": [
+        "review profile lookup",
+        "input snapshot construction",
+        "review artifact assembly",
+        "workflow state recording",
+        "gate blocker derivation",
+        "plugin packaging generation"
+      ],
+      "exceptions": [
+        "missing current feature evidence",
+        "unavailable spawned subagents",
+        "wrong review type for gate",
+        "unresolved blocking findings",
+        "role_simulation under spawned_subagents_required policy",
+        "role_simulation without both policy allowance and explicit user acceptance",
+        "blocked_with_reason review result",
+        "status-only or custom-only review completion claim"
+      ],
+      "inputs_outputs": [
+        "Open Spec, scenario matrix, behavior contract, obligations, evidence, review mode input",
+        "prompt payloads, review artifacts, state entries, blockers, package text output"
+      ],
+      "long_tasks": [
+        "multi-round subagent deliberation may exceed a single response window",
+        "full regression and packaging verification runs after implementation"
+      ],
+      "permissions": [
+        "do not start implementation before Product Delivery gates pass",
+        "do not accept role_simulation under spawned_subagents_required policy",
+        "do not replace structured artifacts with chat summaries, session logs, status-only claims, Open Spec summaries, progress records, or custom gate artifacts"
+      ],
+      "recovery": [
+        "fail closed without mutating closure status",
+        "retry real spawned subagents when transport or capacity fails",
+        "request user acceptance only after degradation policy is explicitly enabled",
+        "keep role_simulation blocked under spawned_subagents_required policy",
+        "re-run validation after fixing missing fields or blockers"
+      ],
+      "state_transitions": [
+        "scenario matrix draft ready to scenario review passed",
+        "scenario review passed to user confirmed freeze",
+        "planned obligations ready to test coverage review passed",
+        "implementation evidence ready to test implementation review passed",
+        "review blocked to blocked_with_reason without closure mutation"
+      ]
+    }
+  },
+  "open_spec_draft_ready": true,
+  "open_spec_freeze": {
+    "approved_at": "2026-07-02T10:40:35+08:00",
+    "approved_by_user": true,
+    "confirmation_artifact_path": "artifacts/user-confirmations/open_spec_freeze.md"
+  },
+  "paused": false,
+  "pending_confirmations": {},
+  "planned_e2e_obligations": {
+    "accepted": true,
+    "accepted_by_user": false,
+    "artifact_path": "artifacts/planned-e2e-obligations.md",
+    "exemptions": [],
+    "obligations": [
+      {
+        "acceptance_criteria": "AC-V11-001",
+        "acceptance_role": "Supporting",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-001",
+            "assertion_target": "review profile lookup returns scenario, test_coverage, and test_implementation responsibilities",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-001",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-001"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-001",
+        "obligation_id": "OBL-V11-TC-001",
+        "scenario_id": "SC-V11-001",
+        "semantic_assertions": [
+          "review profile lookup returns scenario, test_coverage, and test_implementation responsibilities"
+        ],
+        "task": "TASK-001, TASK-007",
+        "test_id": "TC-001",
+        "test_layer": "unit",
+        "user_story": "US-V11-001",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-002",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-002",
+            "assertion_target": "non-UI input snapshot references current feature artifacts and behavior evidence anchors",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-002",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-002"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-001",
+        "obligation_id": "OBL-V11-TC-002",
+        "scenario_id": "SC-V11-001",
+        "semantic_assertions": [
+          "non-UI input snapshot references current feature artifacts and behavior evidence anchors"
+        ],
+        "task": "TASK-001, TASK-007",
+        "test_id": "TC-002",
+        "test_layer": "unit",
+        "user_story": "US-V11-001",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-003",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-003",
+            "assertion_target": "valid scenario review records deliberation and advances the scenario gate",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-003",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-003"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-001",
+        "obligation_id": "OBL-V11-TC-003",
+        "scenario_id": "SC-V11-001",
+        "semantic_assertions": [
+          "valid scenario review records deliberation and advances the scenario gate"
+        ],
+        "task": "TASK-001, TASK-003, TASK-007",
+        "test_id": "TC-003",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-001",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-004",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-004",
+            "assertion_target": "scenario review with blocking findings fails closed before freeze",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-004",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-004"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-001",
+        "obligation_id": "OBL-V11-TC-004",
+        "scenario_id": "SC-V11-001",
+        "semantic_assertions": [
+          "scenario review with blocking findings fails closed before freeze"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-004",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-001",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-005",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-005",
+            "assertion_target": "test_coverage review accepts complete US/J/SC/AC/TASK/TC mapping",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-005",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-005"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-002",
+        "obligation_id": "OBL-V11-TC-005",
+        "scenario_id": "SC-V11-002",
+        "semantic_assertions": [
+          "test_coverage review accepts complete US/J/SC/AC/TASK/TC mapping"
+        ],
+        "task": "TASK-002, TASK-007",
+        "test_id": "TC-005",
+        "test_layer": "unit",
+        "user_story": "US-V11-002",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-006",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-006",
+            "assertion_target": "missing trace targets or executable assertions keep handoff blocked",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-006",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-006"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-002",
+        "obligation_id": "OBL-V11-TC-006",
+        "scenario_id": "SC-V11-002",
+        "semantic_assertions": [
+          "missing trace targets or executable assertions keep handoff blocked"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-006",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-002",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-007",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-007",
+            "assertion_target": "wrong review type cannot satisfy split review gates",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-007",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-007"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-002",
+        "obligation_id": "OBL-V11-TC-007",
+        "scenario_id": "SC-V11-002",
+        "semantic_assertions": [
+          "wrong review type cannot satisfy split review gates"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-007",
+        "test_layer": "unit",
+        "user_story": "US-V11-002",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-008",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-008",
+            "assertion_target": "test_implementation review requires real test code and execution evidence paths",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-008",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-008"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-003",
+        "obligation_id": "OBL-V11-TC-008",
+        "scenario_id": "SC-V11-003",
+        "semantic_assertions": [
+          "test_implementation review requires real test code and execution evidence paths"
+        ],
+        "task": "TASK-002, TASK-003, TASK-007",
+        "test_id": "TC-008",
+        "test_layer": "unit",
+        "user_story": "US-V11-003",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-009",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-009",
+            "assertion_target": "test_implementation review without executable assertion evidence fails closure readiness",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-009",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-009"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-003",
+        "obligation_id": "OBL-V11-TC-009",
+        "scenario_id": "SC-V11-003",
+        "semantic_assertions": [
+          "test_implementation review without executable assertion evidence fails closure readiness"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-009",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-003",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-010",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-010",
+            "assertion_target": "legacy missing review_mode remains readable while new V1.1 records persist review_mode",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-010",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-010"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-004",
+        "obligation_id": "OBL-V11-TC-010",
+        "scenario_id": "SC-V11-004",
+        "semantic_assertions": [
+          "legacy missing review_mode remains readable while new V1.1 records persist review_mode"
+        ],
+        "task": "TASK-002, TASK-003, TASK-004, TASK-007",
+        "test_id": "TC-010",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-004",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-011",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-011",
+            "assertion_target": "role_simulation remains rejected under spawned_subagents_required even with user acceptance alone",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-011",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-011"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-004",
+        "obligation_id": "OBL-V11-TC-011",
+        "scenario_id": "SC-V11-004",
+        "semantic_assertions": [
+          "role_simulation remains rejected under spawned_subagents_required even with user acceptance alone"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-011",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-004",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-012",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-012",
+            "assertion_target": "blocked_with_reason records visible reason and fails closed",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-012",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-012"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-004",
+        "obligation_id": "OBL-V11-TC-012",
+        "scenario_id": "SC-V11-004",
+        "semantic_assertions": [
+          "blocked_with_reason records visible reason and fails closed"
+        ],
+        "task": "TASK-001, TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-012",
+        "test_layer": "unit",
+        "user_story": "US-V11-004",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-013",
+        "acceptance_role": "Supporting",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-013",
+            "assertion_target": "review artifact validation rejects missing deliberation sections",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-013",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-013"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-001",
+        "obligation_id": "OBL-V11-TC-013",
+        "scenario_id": "SC-V11-001",
+        "semantic_assertions": [
+          "review artifact validation rejects missing deliberation sections"
+        ],
+        "task": "TASK-002, TASK-004, TASK-007",
+        "test_id": "TC-013",
+        "test_layer": "unit",
+        "user_story": "US-V11-001",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-014",
+        "acceptance_role": "Supporting",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-014",
+            "assertion_target": "accepted V1.1 review preserves artifact path, review id, version, mode, and status",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-014",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-014"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-001",
+        "obligation_id": "OBL-V11-TC-014",
+        "scenario_id": "SC-V11-001",
+        "semantic_assertions": [
+          "accepted V1.1 review preserves artifact path, review id, version, mode, and status"
+        ],
+        "task": "TASK-003, TASK-004, TASK-007",
+        "test_id": "TC-014",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-001",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-015",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-015",
+            "assertion_target": "V1.0.10 and V1.0.11 review state remains readable with documented gate failures only",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-015",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-015"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-005",
+        "obligation_id": "OBL-V11-TC-015",
+        "scenario_id": "SC-V11-005",
+        "semantic_assertions": [
+          "V1.0.10 and V1.0.11 review state remains readable with documented gate failures only"
+        ],
+        "task": "TASK-004, TASK-007",
+        "test_id": "TC-015",
+        "test_layer": "unit",
+        "user_story": "US-V11-005",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-016",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-016",
+            "assertion_target": "branch evidence selection separates non-UI behavior evidence from UI prototype evidence",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-016",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-016"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-008",
+        "obligation_id": "OBL-V11-TC-016",
+        "scenario_id": "SC-V11-008",
+        "semantic_assertions": [
+          "branch evidence selection separates non-UI behavior evidence from UI prototype evidence"
+        ],
+        "task": "TASK-001, TASK-007",
+        "test_id": "TC-016",
+        "test_layer": "unit",
+        "user_story": "US-V11-008",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-017",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-017",
+            "assertion_target": "collection coverage passes only when each declared item has item-level assertions",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-017",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-017"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-002",
+        "obligation_id": "OBL-V11-TC-017",
+        "scenario_id": "SC-V11-002",
+        "semantic_assertions": [
+          "collection coverage passes only when each declared item has item-level assertions"
+        ],
+        "task": "TASK-002, TASK-007",
+        "test_id": "TC-017",
+        "test_layer": "unit",
+        "user_story": "US-V11-002",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-018",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-018",
+            "assertion_target": "collection coverage fails when any declared item lacks concrete coverage or assertion evidence",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-018",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-018"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-002",
+        "obligation_id": "OBL-V11-TC-018",
+        "scenario_id": "SC-V11-002",
+        "semantic_assertions": [
+          "collection coverage fails when any declared item lacks concrete coverage or assertion evidence"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-018",
+        "test_layer": "unit",
+        "user_story": "US-V11-002",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-019",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI unit test TC-019",
+            "assertion_target": "shallow assertions are classified as unresolved false-positive risks",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-019",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-019"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-003",
+        "obligation_id": "OBL-V11-TC-019",
+        "scenario_id": "SC-V11-003",
+        "semantic_assertions": [
+          "shallow assertions are classified as unresolved false-positive risks"
+        ],
+        "task": "TASK-002, TASK-005, TASK-007",
+        "test_id": "TC-019",
+        "test_layer": "unit",
+        "user_story": "US-V11-003",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-020",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-020",
+            "assertion_target": "workflow helper routes valid and invalid review artifacts through canonical validation",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-020",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-020"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-006",
+        "obligation_id": "OBL-V11-TC-020",
+        "scenario_id": "SC-V11-006",
+        "semantic_assertions": [
+          "workflow helper routes valid and invalid review artifacts through canonical validation"
+        ],
+        "task": "TASK-003, TASK-007",
+        "test_id": "TC-020",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-006",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-021",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI packaging_smoke test TC-021",
+            "assertion_target": "packaged plugin runtime, skill text, and templates include V1.1 split gate rules",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-021",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-021"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-005",
+        "obligation_id": "OBL-V11-TC-021",
+        "scenario_id": "SC-V11-005",
+        "semantic_assertions": [
+          "packaged plugin runtime, skill text, and templates include V1.1 split gate rules"
+        ],
+        "task": "TASK-006, TASK-007",
+        "test_id": "TC-021",
+        "test_layer": "packaging_smoke",
+        "user_story": "US-V11-005",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-022",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI runtime_integration test TC-022",
+            "assertion_target": "legacy generic test review remains readable but cannot satisfy V1.1 split gates",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-022",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-022"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-005",
+        "obligation_id": "OBL-V11-TC-022",
+        "scenario_id": "SC-V11-005",
+        "semantic_assertions": [
+          "legacy generic test review remains readable but cannot satisfy V1.1 split gates"
+        ],
+        "task": "TASK-002, TASK-005, TASK-006, TASK-007",
+        "test_id": "TC-022",
+        "test_layer": "runtime_integration",
+        "user_story": "US-V11-005",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-023",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI gatekeeper test TC-023",
+            "assertion_target": "non-UI pre-handoff and pre-closure derive split review blockers independently",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-023",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-023"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-007",
+        "obligation_id": "OBL-V11-TC-023",
+        "scenario_id": "SC-V11-007",
+        "semantic_assertions": [
+          "non-UI pre-handoff and pre-closure derive split review blockers independently"
+        ],
+        "task": "TASK-005, TASK-007",
+        "test_id": "TC-023",
+        "test_layer": "gatekeeper",
+        "user_story": "US-V11-007",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-024",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI gatekeeper test TC-024",
+            "assertion_target": "supporting evidence and incomplete canonical-looking records cannot replace structured reviews",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-024",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-024"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-007",
+        "obligation_id": "OBL-V11-TC-024",
+        "scenario_id": "SC-V11-007",
+        "semantic_assertions": [
+          "supporting evidence and incomplete canonical-looking records cannot replace structured reviews"
+        ],
+        "task": "TASK-005, TASK-006, TASK-007",
+        "test_id": "TC-024",
+        "test_layer": "gatekeeper",
+        "user_story": "US-V11-007",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-025",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI static_contract test TC-025",
+            "assertion_target": "generated outputs keep non-UI planned evidence terminology and exclude dashboard or external integration behavior",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-025",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-025"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-008",
+        "obligation_id": "OBL-V11-TC-025",
+        "scenario_id": "SC-V11-008",
+        "semantic_assertions": [
+          "generated outputs keep non-UI planned evidence terminology and exclude dashboard or external integration behavior"
+        ],
+        "task": "TASK-006, TASK-007",
+        "test_id": "TC-025",
+        "test_layer": "static_contract",
+        "user_story": "US-V11-008",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      },
+      {
+        "acceptance_criteria": "AC-V11-026",
+        "acceptance_role": "Acceptance",
+        "action_assertions": [
+          {
+            "action_entry": "execute planned non-UI release_gate test TC-026",
+            "assertion_target": "release and closure remain not eligible before tasks, tests, and formal closure evidence exist",
+            "expected_real_surface": "Product Delivery runtime, gatekeeper, packaging, static contract, or release derivation behavior",
+            "item_id": "TC-026",
+            "semantic_depth": "real_behavior"
+          }
+        ],
+        "coverage_items": [
+          "TC-026"
+        ],
+        "exemption_status": "none",
+        "expected_artifact_pattern": "tests/test_*v11*.py or packaging/closure verification output",
+        "false_positive_guards": [
+          "reject marker-only",
+          "reject function-name-only",
+          "reject static-panel-only",
+          "reject first-button-only"
+        ],
+        "journey": "J-V11-006",
+        "obligation_id": "OBL-V11-TC-026",
+        "scenario_id": "SC-V11-006",
+        "semantic_assertions": [
+          "release and closure remain not eligible before tasks, tests, and formal closure evidence exist"
+        ],
+        "task": "TASK-005, TASK-006, TASK-007",
+        "test_id": "TC-026",
+        "test_layer": "release_gate",
+        "user_story": "US-V11-006",
+        "visible_exception": "gate remains blocked or review claim is rejected when evidence is incomplete"
+      }
+    ]
+  },
+  "project_type": "non_ui",
+  "required_artifacts": [
+    "docs/open-spec/v1.1-multi-agent-review-orchestration/",
+    ".product-delivery/artifacts/non-ui-behavior-contract.md"
+  ],
+  "required_skill_gates": {
+    "active_mode_startup": [
+      "superpowers:using-superpowers",
+      "planning-with-files",
+      "waygate-product-delivery"
+    ],
+    "open_spec_planning": [
+      "open-spec"
+    ]
+  },
+  "scenario_matrix": {
+    "artifact_path": "artifacts/scope-scenario-matrix.md",
+    "draft_ready": true,
+    "rows": [
+      {
+        "acceptance_anchors": "AC-V11-001, AC-V11-002, AC-V11-003, AC-V11-004, AC-V11-013, AC-V11-014, AC-V11-024",
+        "blocking_level": "pre-freeze blocker",
+        "journey": "Lead requests scenario review and receives independent positions, challenges, revisions, adjudication, and blockers",
+        "journey_id": "J-V11-001",
+        "negative_boundary": "chat, session, status-only, Open Spec/progress summary, or custom artifact cannot replace structured scenario review artifact",
+        "path_type": "main",
+        "planned_e2e_case": "TC-001, TC-002, TC-003, TC-004, TC-013, TC-014, TC-024",
+        "review_status": "draft",
+        "risk_level": "high",
+        "role": "Product Delivery Lead",
+        "scenario_id": "SC-V11-001",
+        "user_story": "US-V11-001 build scenario review orchestration with fixed reviewers"
+      },
+      {
+        "acceptance_anchors": "AC-V11-005, AC-V11-006, AC-V11-007, AC-V11-017, AC-V11-018, AC-V11-023, AC-V11-024",
+        "blocking_level": "pre-handoff blocker",
+        "journey": "QA checks US/J/SC/AC/TASK/TC mapping, collection coverage, and executable assertions",
+        "journey_id": "J-V11-002",
+        "negative_boundary": "legacy generic test review, scenario review, status-only claim, or custom artifact cannot satisfy test_coverage gate",
+        "path_type": "main",
+        "planned_e2e_case": "TC-005, TC-006, TC-007, TC-017, TC-018, TC-023, TC-024",
+        "review_status": "draft",
+        "risk_level": "high",
+        "role": "QA Reviewer",
+        "scenario_id": "SC-V11-002",
+        "user_story": "US-V11-002 review planned test coverage before implementation authorization"
+      },
+      {
+        "acceptance_anchors": "AC-V11-008, AC-V11-009, AC-V11-019, AC-V11-023, AC-V11-024",
+        "blocking_level": "pre-closure blocker",
+        "journey": "QA checks real test code paths, execution evidence paths, reviewed test IDs, and verified action assertions",
+        "journey_id": "J-V11-003",
+        "negative_boundary": "marker-only, first-button-only, status-only, or custom-only evidence cannot satisfy implementation review",
+        "path_type": "main",
+        "planned_e2e_case": "TC-008, TC-009, TC-019, TC-023, TC-024",
+        "review_status": "draft",
+        "risk_level": "high",
+        "role": "QA Reviewer",
+        "scenario_id": "SC-V11-003",
+        "user_story": "US-V11-003 review implemented tests before formal closure"
+      },
+      {
+        "acceptance_anchors": "AC-V11-010, AC-V11-011, AC-V11-012",
+        "blocking_level": "review-mode blocker",
+        "journey": "Role simulation is requested and rejected under spawned_subagents_required; it can pass only in a future degradation-allowed policy with explicit user acceptance",
+        "journey_id": "J-V11-004",
+        "negative_boundary": "role_simulation cannot be silently promoted to spawned_subagents evidence and cannot pass in this current policy",
+        "path_type": "exception",
+        "planned_e2e_case": "TC-010, TC-011, TC-012",
+        "review_status": "draft",
+        "risk_level": "high",
+        "role": "User / Product Delivery Lead",
+        "scenario_id": "SC-V11-004",
+        "user_story": "US-V11-004 explicitly control degraded review mode"
+      },
+      {
+        "acceptance_anchors": "AC-V11-015, AC-V11-021, AC-V11-022, AC-V11-025",
+        "blocking_level": "release blocker",
+        "journey": "Maintainer loads legacy review state, verifies split gates remain authoritative, and packages V1.1 rules",
+        "journey_id": "J-V11-005",
+        "negative_boundary": "V1.1 metadata must not make V1.0.11 artifacts unreadable or stronger than recorded",
+        "path_type": "regression",
+        "planned_e2e_case": "TC-015, TC-021, TC-022, TC-025",
+        "review_status": "draft",
+        "risk_level": "medium",
+        "role": "Maintainer",
+        "scenario_id": "SC-V11-005",
+        "user_story": "US-V11-005 preserve compatibility and package rules"
+      },
+      {
+        "acceptance_anchors": "AC-V11-020, AC-V11-021, AC-V11-022, AC-V11-026",
+        "blocking_level": "closure blocker",
+        "journey": "Release owner sees TASKs not started and tests not run, so release remains Draft / Not Released",
+        "journey_id": "J-V11-006",
+        "negative_boundary": "do not mark release or closure passed before implementation, tests, and formal closure evidence",
+        "path_type": "boundary",
+        "planned_e2e_case": "TC-020, TC-021, TC-022, TC-026",
+        "review_status": "draft",
+        "risk_level": "high",
+        "role": "Release Owner",
+        "scenario_id": "SC-V11-006",
+        "user_story": "US-V11-006 keep release and closure blocked until evidence exists"
+      },
+      {
+        "acceptance_anchors": "AC-V11-023, AC-V11-024",
+        "blocking_level": "pre-handoff and pre-closure blocker",
+        "journey": "Gatekeeper derives non-UI pre-handoff and pre-closure blockers and rejects missing or substituted split review artifacts",
+        "journey_id": "J-V11-007",
+        "negative_boundary": "generic test, wrong split review, status-only claim, or custom artifact cannot clear non-UI split gates",
+        "path_type": "boundary",
+        "planned_e2e_case": "TC-023, TC-024",
+        "review_status": "draft",
+        "risk_level": "high",
+        "role": "Gatekeeper",
+        "scenario_id": "SC-V11-007",
+        "user_story": "US-V11-007 enforce non-UI split review authority"
+      },
+      {
+        "acceptance_anchors": "AC-V11-011, AC-V11-012, AC-V11-016, AC-V11-024, AC-V11-025, AC-V11-026",
+        "blocking_level": "release blocker",
+        "journey": "Maintainer verifies blocked_with_reason, role_simulation, dashboard/external/API non-goals, and non-UI behavior terminology remain explicit in package text",
+        "journey_id": "J-V11-008",
+        "negative_boundary": "blocked_with_reason, role_simulation under spawned_subagents_required, dashboard/external integration, or standalone Runtime API scope cannot pass V1.1 gates",
+        "path_type": "exception",
+        "planned_e2e_case": "TC-011, TC-012, TC-016, TC-024, TC-025, TC-026",
+        "review_status": "draft",
+        "risk_level": "medium",
+        "role": "Maintainer / Release Owner",
+        "scenario_id": "SC-V11-008",
+        "user_story": "US-V11-008 preserve review-mode and scope boundaries"
+      }
+    ]
+  },
+  "scenario_matrix_draft_ready": true,
+  "stage": "multi_agent_test_coverage_review_passed",
+  "ui_prototype": {
+    "confirmation_source": null,
+    "confirmed_by_user": false,
+    "generated": false,
+    "reviewed_by_agent": false
+  },
+  "updated_at": "2026-07-02T02:46:42+00:00",
+  "user_confirmations": {
+    "open_spec_freeze": {
+      "artifact_path": ".product-delivery/artifacts/multi-agent-scenario-review.md",
+      "artifact_version": "v1.1-scenario-review-rev-20260701-02",
+      "confirmation_artifact_path": "artifacts/user-confirmations/open_spec_freeze.md",
+      "confirmation_id": "CONF-V11-open-spec-freeze-20260701",
+      "confirmation_source": "chat_user_reply",
+      "confirmed_at": "2026-07-02T10:40:35+08:00",
+      "confirmed_by": "user",
+      "decision": "approved",
+      "target": "open_spec_freeze",
+      "user_message": "\u786e\u8ba4\u51bb\u7ed3\u5f53\u524d V1.1 scenario package \u548c TC-001..TC-026 \u6d4b\u8bd5\u8986\u76d6\u8bbe\u8ba1"
+    }
+  }
+}

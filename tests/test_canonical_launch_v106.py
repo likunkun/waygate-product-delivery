@@ -8,6 +8,7 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.finalization import run_finalize_cli
 from product_delivery_agent.gatekeeper import GatekeeperError, derive_blockers
+from product_delivery_agent.handoff import HandoffError
 from product_delivery_agent.hooks import (
     build_prompt_context,
     build_resume_context,
@@ -326,59 +327,81 @@ class CanonicalLaunchV106Tests(unittest.TestCase):
                 )
             self.assertEqual(exit_code, 1)
 
-    def test_handoff_requires_canonical_launch_authorization(self):
+    def test_handoff_auto_records_canonical_launch_authorization(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = workflow_ready_for_launch(project_root)
-
-            with self.assertRaises(GatekeeperError) as caught:
-                workflow.generate_codex_goal_handoff(
-                    scope="Implement the frozen package",
-                    verification_commands=["pytest"],
-                    planned_tasks=planned_tasks(),
-                )
-
-            self.assertIn("implementation_launch_authorization", str(caught.exception))
-
-            state = workflow.record_implementation_launch_authorization(
-                user_message="确认按当前交付包开始实现",
-                scope="Implement the frozen package",
-                verification_commands=["pytest"],
-                planned_tasks=planned_tasks(),
-            )
-            self.assertEqual(
-                state["implementation_launch_authorization"]["status"],
-                "authorized",
-            )
 
             state = workflow.generate_codex_goal_handoff(
                 scope="Implement the frozen package",
                 verification_commands=["pytest"],
                 planned_tasks=planned_tasks(),
             )
+            authorization = state["implementation_launch_authorization"]
+            self.assertEqual(authorization["status"], "authorized")
+            self.assertEqual(authorization["authorization_source"], "runtime_auto")
+            self.assertEqual(
+                authorization["launch_package_hash"],
+                state["delivery_goal"]["launch_package_hash"],
+            )
+            self.assertNotIn(
+                "implementation_launch_authorization",
+                state["user_confirmations"],
+            )
             self.assertEqual(state["delivery_goal"]["status"], "active")
             self.assertEqual(state["status"], "implementation_goal_active")
 
-    def test_launch_authorization_is_stale_when_task_queue_changes(self):
+    def test_failed_handoff_does_not_leave_launch_authorization_artifact_or_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_ready_for_launch(project_root)
+
+            with self.assertRaises(HandoffError):
+                workflow.generate_codex_goal_handoff(
+                    scope="Implement the frozen package",
+                    verification_commands=[],
+                    planned_tasks=planned_tasks(),
+                )
+
+            state = load_state(project_root)
+            self.assertNotIn("implementation_launch_authorization", state)
+            self.assertIsNone(state.get("delivery_goal"))
+            self.assertFalse(
+                (
+                    project_root
+                    / ARTIFACT_ROOT
+                    / "artifacts"
+                    / "implementation-launch-authorization.md"
+                ).exists()
+            )
+
+    def test_launch_authorization_refreshes_when_task_queue_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = workflow_ready_for_launch(Path(tmp))
-            workflow.record_implementation_launch_authorization(
-                user_message="确认按当前交付包开始实现",
+            first = workflow.record_implementation_launch_authorization(
                 scope="Implement the frozen package",
                 verification_commands=["pytest"],
                 planned_tasks=planned_tasks(),
             )
+            first_hash = first["implementation_launch_authorization"][
+                "launch_package_hash"
+            ]
 
-            with self.assertRaises(GatekeeperError) as caught:
-                workflow.generate_codex_goal_handoff(
-                    scope="Implement the frozen package",
-                    verification_commands=["pytest"],
-                    planned_tasks=planned_tasks(extra=True),
-                )
+            state = workflow.generate_codex_goal_handoff(
+                scope="Implement the frozen package",
+                verification_commands=["pytest"],
+                planned_tasks=planned_tasks(extra=True),
+            )
 
-            self.assertIn("implementation_launch_authorization", str(caught.exception))
+            refreshed = state["implementation_launch_authorization"]
+            self.assertNotEqual(first_hash, refreshed["launch_package_hash"])
+            self.assertEqual(
+                refreshed["launch_package_hash"],
+                state["delivery_goal"]["launch_package_hash"],
+            )
+            self.assertEqual(refreshed["authorization_source"], "runtime_auto")
 
-    def test_role_simulation_review_requires_separate_user_acceptance(self):
+    def test_role_simulation_review_uses_start_time_degradation_acceptance(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
             workflow.start(
@@ -392,22 +415,15 @@ class CanonicalLaunchV106Tests(unittest.TestCase):
                 role_simulation_user_accepted=True,
             )
 
-            with self.assertRaises(ReviewGateError) as caught:
-                workflow.record_multi_agent_review("scenario", review)
-
-            self.assertIn("role_simulation", str(caught.exception))
-
-            workflow.record_user_confirmation(
-                user_confirmation(
-                    "role_simulation_review_acceptance",
-                    user_message="确认接受 role_simulation 弱证据",
-                )
-            )
             state = workflow.record_multi_agent_review("scenario", review)
 
             self.assertEqual(
                 state["multi_agent_reviews"]["scenario"]["review_mode"],
                 "role_simulation",
+            )
+            self.assertNotIn(
+                "role_simulation_review_acceptance",
+                state["user_confirmations"],
             )
 
 

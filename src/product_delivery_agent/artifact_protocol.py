@@ -129,6 +129,10 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
             "status": "missing",
             "records": [],
         },
+        "executed_behavior_evidence": {
+            "status": "missing",
+            "records": [],
+        },
         "closure_validation": {
             "status": "not_run",
             "errors": [],

@@ -6,7 +6,7 @@ Create a clean independent project under `<waygate-product-delivery-repo>` for d
 
 ## Current Phase
 
-Waygate Product Delivery V1.0.11 release consistency patch is implemented in this branch: runtime/package metadata, README references, changelog, and the simplified post-1.0 roadmap are aligned around the next meaningful capability version, V1.1 multi-agent review orchestration.
+Waygate Product Delivery V1.1 delivery has started for `v1.1-multi-agent-review-orchestration`. Product Delivery canonical state is active, requires real spawned subagents, and is blocked before implementation on current-feature Open Spec, project type confirmation, and planning-file alignment.
 
 ## Phases
 
@@ -636,6 +636,36 @@ Waygate Product Delivery V1.0.11 release consistency patch is implemented in thi
 - [x] Regenerate `plugins/waygate-product-delivery/` and `dist/waygate-product-delivery-1.0.11.tar.gz`.
 - [x] Run focused release consistency tests, full unit discovery, runtime compilation, plugin validation, and packaged validator smoke.
 - **Status:** complete; current source/package version `1.0.11`.
+
+### Phase 48 - Waygate Product Delivery V1.1 Multi-Agent Review Orchestration
+
+- [x] Start Product Delivery mode for feature slug `v1.1-multi-agent-review-orchestration`.
+- [x] Record canonical `.product-delivery/state.json` with `multi_agent_policy.mode=spawned_subagents_required`.
+- [x] Restore planning context and confirm the current repository detects as `non_ui`.
+- [x] Confirm project type `non_ui` and delivery scope with the user before implementation.
+- [x] Generate current-feature Open Spec requirements package under `docs/open-spec/v1.1-multi-agent-review-orchestration/`.
+- [x] Complete Open Spec specification, solution, planning, testing, and release draft documents.
+- [x] Produce scenario matrix and structured multi-agent scenario review artifact.
+- [x] Record user-confirmed freeze for the current scenario package and TC-001..TC-026 coverage design.
+- [x] Add runtime condition check so non-UI planned obligations can use behavior evidence layers without being mislabeled as browser E2E.
+- [x] Record canonical non-UI planned test obligations and structured spawned-subagent test coverage review artifact.
+- [ ] Obtain user confirmation for the reviewed TC-001..TC-026 planned coverage obligations.
+- [ ] Create implementation launch authorization before coding.
+- [ ] Implement V1.1 orchestration runtime, tests, packaging, installation, and closure evidence.
+- **Status:** in progress; scenario review and test coverage review passed with spawned subagents. Canonical non-UI planned obligations cover TC-001..TC-026, but `accepted_by_user=false`; implementation remains blocked until the user confirms planned coverage and later grants launch authorization.
+
+### Phase 49 - Waygate Product Delivery V2.x OpenCode Support Planning
+
+- [x] Discuss OpenCode support needs and feasibility.
+- [x] Split OpenCode support into staged versions instead of one broad V2 bucket.
+- [x] Keep Product Delivery canonical state, gates, transition journal, and closure validator as the only authority.
+- [x] Plan V2.0.0 as OpenCode native plugin MVP.
+- [x] Plan V2.1.0 as execution target abstraction.
+- [x] Plan V2.2.0 as OpenCode evidence ingestion.
+- [x] Plan V2.3.0 as OpenCode multi-agent / external orchestration support.
+- [x] Update `ROADMAP.md` with the retained V2 OpenCode plan.
+- [x] Revert accidental V2 implementation changes and generated OpenCode package assets after user clarified this turn was planning-only.
+- **Status:** complete for planning only; no V2 OpenCode runtime/plugin implementation is retained.
 
 ## Out Of Scope For V0.1
 

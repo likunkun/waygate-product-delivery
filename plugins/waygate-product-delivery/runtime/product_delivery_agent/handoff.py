@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from product_delivery_agent.confirmation_policy import USER_CONFIRMATION_TARGETS
+
 
 class HandoffError(RuntimeError):
     """Raised when Codex Goal handoff cannot be generated."""
@@ -142,10 +144,15 @@ def render_codex_goal_prompt(handoff: dict[str, Any]) -> str:
 
 
 def _confirmation_results(state: dict[str, Any]) -> dict[str, bool]:
-    confirmations = state.get("confirmation_points", {})
+    confirmations = state.get("user_confirmations", {})
+    ui = state.get("ui_prototype", {})
     return {
-        name: bool(record.get("confirmed"))
-        for name, record in confirmations.items()
+        name: (
+            bool(ui.get("confirmed_by_user"))
+            if name == "ui_prototype"
+            else name in confirmations
+        )
+        for name in sorted(USER_CONFIRMATION_TARGETS)
     }
 
 

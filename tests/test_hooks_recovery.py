@@ -33,6 +33,19 @@ class HooksRecoveryTests(unittest.TestCase):
             self.assertIn("next_gate=ui_prototype_review", result.message)
             self.assertIn("ui_prototype_confirmation", result.message)
 
+    def test_resume_context_does_not_list_internal_confirmation_points_as_pending(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start()
+
+            result = build_resume_context(project_root)
+
+            self.assertTrue(result.active)
+            self.assertNotIn("pending=", result.message)
+            self.assertNotIn("handoff", result.message)
+            self.assertNotIn("test_coverage_audit", result.message)
+
     def test_prompt_context_adds_current_stage_for_active_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -98,10 +111,11 @@ class HooksRecoveryTests(unittest.TestCase):
 
             self.assertTrue(result.active)
             self.assertFalse(result.passed)
-            self.assertIn("confirmation:version_scope", result.missing_items)
-            self.assertIn("confirmation:ui_prototype_review", result.missing_items)
+            self.assertNotIn("confirmation:version_scope", result.missing_items)
+            self.assertNotIn("confirmation:ui_prototype_review", result.missing_items)
             self.assertIn("artifact:version_scope", result.missing_items)
             self.assertIn("artifact:ui_prototype_review", result.missing_items)
+            self.assertIn("next_gate:ui_prototype_review", result.missing_items)
 
     def test_stop_guardrail_uses_non_ui_branch_requirements(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -114,10 +128,14 @@ class HooksRecoveryTests(unittest.TestCase):
             result = check_stop_guardrail(project_root)
 
             self.assertFalse(result.passed)
-            self.assertIn("confirmation:version_scope", result.missing_items)
-            self.assertIn("confirmation:non_ui_behavior_contract", result.missing_items)
+            self.assertNotIn("confirmation:version_scope", result.missing_items)
+            self.assertNotIn(
+                "confirmation:non_ui_behavior_contract",
+                result.missing_items,
+            )
             self.assertIn("artifact:version_scope", result.missing_items)
             self.assertIn("artifact:non_ui_behavior_contract", result.missing_items)
+            self.assertIn("next_gate:non_ui_behavior_contract", result.missing_items)
 
     def test_inactive_projects_are_silent_for_all_hooks(self):
         with tempfile.TemporaryDirectory() as tmp:

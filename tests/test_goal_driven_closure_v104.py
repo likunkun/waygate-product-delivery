@@ -274,7 +274,6 @@ def workflow_ready_for_handoff(project_root):
 
 def authorize_launch(workflow):
     workflow.record_implementation_launch_authorization(
-        user_message="确认按当前交付包开始实现",
         scope="Implement the frozen delivery scope",
         verification_commands=["pytest"],
         planned_tasks=planned_tasks(),
@@ -457,6 +456,35 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             self.assertEqual(state["delivery_goal"]["status"], "complete")
             self.assertEqual(allowed["stop_guard"]["status"], "allowed")
             self.assertEqual(state["closure_validation"]["status"], "passed")
+
+    def test_executed_browser_evidence_change_stales_implementation_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_ready_for_handoff(project_root)
+            authorize_launch(workflow)
+            workflow.generate_codex_goal_handoff(
+                scope="Implement the frozen delivery scope",
+                verification_commands=["pytest"],
+                planned_tasks=planned_tasks(),
+            )
+            workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            workflow.record_multi_agent_review(
+                "test_implementation",
+                multi_agent_review("test_implementation"),
+            )
+
+            updated_evidence = browser_evidence(project_root)
+            updated_evidence["semantic_assertions"] = ["updated semantic assertion"]
+            state = workflow.record_executed_browser_evidence([updated_evidence])
+
+            self.assertEqual(
+                state["multi_agent_reviews"]["test_implementation"]["status"],
+                "stale",
+            )
+            self.assertIn(
+                "stale_multi_agent_test_implementation_review",
+                state["blocked_until"],
+            )
 
     def test_revised_unconfirmed_prototype_blocks_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:

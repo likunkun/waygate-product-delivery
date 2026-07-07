@@ -236,7 +236,6 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = workflow_ready_for_handoff(project_root)
             workflow.record_implementation_launch_authorization(
-                user_message="确认按当前交付包开始实现",
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
                 planned_tasks=[

@@ -226,7 +226,6 @@ def ready_workflow(project_root):
     workflow.record_multi_agent_review("test_coverage", multi_agent_review("test_coverage"))
     workflow.record_multi_agent_review("test", multi_agent_review("test"))
     workflow.record_implementation_launch_authorization(
-        user_message="确认按当前交付包开始实现",
         scope="Implement classroom dashboard",
         verification_commands=["PYTHONPATH=src python3 -m unittest discover -s tests"],
         prohibited_work=["Do not mutate Waygate state"],

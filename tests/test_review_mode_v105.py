@@ -58,20 +58,6 @@ class ReviewModeV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
             workflow.start()
-            workflow.record_user_confirmation(
-                {
-                    "confirmation_id": "CONF-role-simulation",
-                    "target": "role_simulation_review_acceptance",
-                    "artifact_path": ".product-delivery/artifacts/multi-agent-scenario-review.md",
-                    "artifact_version": "review-v1",
-                    "artifact_hash": "hash",
-                    "confirmed_by": "user",
-                    "confirmation_source": "chat_user_reply",
-                    "confirmed_at": "2026-06-30T00:00:00+00:00",
-                    "decision": "approved",
-                    "user_message": "允许降级评审",
-                }
-            )
 
             with self.assertRaises(ReviewGateError) as caught:
                 workflow.record_multi_agent_review(
@@ -84,24 +70,10 @@ class ReviewModeV105Tests(unittest.TestCase):
 
             self.assertIn("spawned_subagents_required", str(caught.exception))
 
-    def test_workflow_accepts_role_simulation_when_degradation_is_enabled_and_confirmed(self):
+    def test_workflow_accepts_role_simulation_when_degradation_is_enabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
             workflow.start(allow_review_degradation=True)
-            workflow.record_user_confirmation(
-                {
-                    "confirmation_id": "CONF-role-simulation",
-                    "target": "role_simulation_review_acceptance",
-                    "artifact_path": ".product-delivery/artifacts/multi-agent-scenario-review.md",
-                    "artifact_version": "review-v1",
-                    "artifact_hash": "hash",
-                    "confirmed_by": "user",
-                    "confirmation_source": "chat_user_reply",
-                    "confirmed_at": "2026-06-30T00:00:00+00:00",
-                    "decision": "approved",
-                    "user_message": "允许降级评审",
-                }
-            )
 
             state = workflow.record_multi_agent_review(
                 "scenario",
@@ -114,6 +86,10 @@ class ReviewModeV105Tests(unittest.TestCase):
             self.assertEqual(
                 state["multi_agent_reviews"]["scenario"]["review_mode"],
                 "role_simulation",
+            )
+            self.assertNotIn(
+                "role_simulation_review_acceptance",
+                state["user_confirmations"],
             )
 
 

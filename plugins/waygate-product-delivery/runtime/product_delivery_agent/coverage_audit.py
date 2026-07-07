@@ -31,7 +31,18 @@ REQUIRED_ROW_FIELDS = (
 )
 
 UI_BROWSER_E2E_LAYERS = {"browser_e2e"}
-NON_UI_E2E_LAYERS = {"api_e2e", "service_e2e", "cli_e2e"}
+NON_UI_BEHAVIOR_EVIDENCE_LAYERS = {"api_e2e", "service_e2e", "cli_e2e"}
+NON_UI_PLANNED_EVIDENCE_LAYERS = {
+    "unit",
+    "runtime_integration",
+    "gatekeeper",
+    "packaging_smoke",
+    "static_contract",
+    "release_gate",
+    "api_e2e",
+    "service_e2e",
+    "cli_e2e",
+}
 
 REQUIRED_PLANNED_OBLIGATION_FIELDS = (
     "obligation_id",
@@ -185,12 +196,14 @@ def render_coverage_audit(audit: dict[str, Any]) -> str:
 def build_planned_e2e_obligations(
     obligations: list[dict[str, Any]],
     exemptions: list[dict[str, Any]] | None = None,
+    *,
+    project_type: str = "ui",
 ) -> dict[str, Any]:
     """Validate implementation-prep E2E obligations without requiring evidence."""
     if not obligations:
         raise CoverageAuditError("planned E2E obligations require at least one row")
     exemption_records = list(exemptions or [])
-    _validate_planned_obligations(obligations)
+    _validate_planned_obligations(obligations, project_type=project_type)
     _validate_structured_exemptions(exemption_records)
     exempted_ids = {record["object_id"] for record in exemption_records}
     for obligation in obligations:
@@ -327,7 +340,7 @@ def _validate_project_evidence(
         for obligation in downstream.get("behavior_evidence_candidates", []):
             matching = [row for row in rows if row["obligation_ref"] == obligation]
             if not any(
-                row["test_layer"] in NON_UI_E2E_LAYERS
+                row["test_layer"] in NON_UI_BEHAVIOR_EVIDENCE_LAYERS
                 and row["evidence_type"] == "behavior_evidence"
                 and _covered_or_exempted(row)
                 for row in matching
@@ -375,7 +388,13 @@ def _has_value(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _validate_planned_obligations(obligations: list[dict[str, Any]]) -> None:
+def _validate_planned_obligations(
+    obligations: list[dict[str, Any]],
+    *,
+    project_type: str,
+) -> None:
+    if project_type not in {"ui", "non_ui"}:
+        raise CoverageAuditError("project_type must be ui or non_ui")
     for index, obligation in enumerate(obligations, start=1):
         missing = []
         for field_name in REQUIRED_PLANNED_OBLIGATION_FIELDS:
@@ -390,8 +409,14 @@ def _validate_planned_obligations(obligations: list[dict[str, Any]]) -> None:
                 f"planned obligation row {index} missing fields: "
                 + ", ".join(missing)
             )
-        if obligation["test_layer"] != "browser_e2e":
+        test_layer = obligation["test_layer"]
+        if project_type == "ui" and test_layer != "browser_e2e":
             raise CoverageAuditError("UI planned obligation must target browser_e2e")
+        if project_type == "non_ui" and test_layer not in NON_UI_PLANNED_EVIDENCE_LAYERS:
+            raise CoverageAuditError(
+                "non-UI planned obligation must target one of "
+                + ", ".join(sorted(NON_UI_PLANNED_EVIDENCE_LAYERS))
+            )
         _validate_obligation_action_assertions(index, obligation)
 
 

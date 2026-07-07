@@ -32,6 +32,21 @@
   - pre-handoff evidence: `superpowers:verification-before-completion`;
   - later implementation and review skills are documented as downstream responsibilities.
 
+## 2026-07-01 V1.1 Multi-Agent Delivery Start
+
+- Current feature slug: `v1.1-multi-agent-review-orchestration`.
+- Product Delivery mode is active and requires `spawned_subagents` review evidence by default.
+- Current session exposes `multi_agent_v1` spawned subagent tooling, so V1.1 can use real subagents for Open Spec and review artifacts instead of role simulation.
+- The current repository detects as `non_ui`; V1.1 is a plugin/runtime orchestration capability, not a user-facing UI project.
+- V1.1 should focus on reusable orchestration mechanics:
+  - fixed reviewer responsibilities;
+  - feature-specific prompt generation;
+  - real spawned subagent evidence as the strong path;
+  - explicit user-accepted degradation before any `role_simulation`;
+  - separate scenario, test coverage, and test implementation reviews;
+  - structured artifacts containing independent positions, cross challenges, revisions, adjudication, and blocking findings.
+- Open Spec and implementation remain blocked until the user confirms project type and delivery scope.
+
 ## 2026-06-22 Open Spec Package Generation
 
 - Created versioned Open Spec packages under `docs/open-spec/` for V0.1 through V1.0.
@@ -915,3 +930,34 @@
   - `test_implementation` after implementation/E2E and before closure, focused on real test code, Playwright/browser scripts, logs, screenshots, traces, and action-level assertions.
 - If coverage gaps are found, the first repair step should be RED test补齐: make the current shallow implementation fail before changing UI or E2E code.
 - The V1.0.9 repo-local plugin package now builds `dist/waygate-product-delivery-1.0.9.tar.gz` and installs as `waygate-product-delivery@repo-local` version `1.0.9+codex.20260629071804`.
+
+## 2026-07-01 V1.1 Scenario Review Findings
+
+- V1.1 feature slug remains `v1.1-multi-agent-review-orchestration`; project type is `non_ui`.
+- Product Delivery policy is `spawned_subagents_required`; `role_simulation` is not accepted for this delivery run.
+- Scenario review needed multiple revisions before pass:
+  - FR-016/FR-017 and NFR-006 now cover non-UI split review gates and structured artifact authority.
+  - TC-023 through TC-026 now cover non-UI split gate blockers, status/custom artifact bypass, non-UI terminology, and release-not-eligible boundaries.
+  - SC-V11-001 through SC-V11-008 now have stable `J-V11-*` and `AC-V11-*` anchors with mapped planned tests.
+  - TC-011 rejects user-acceptance-only `role_simulation` under `spawned_subagents_required`.
+  - TC-024 rejects deceptive records with the right review type but missing canonical fields.
+  - TC-025/TC-026 explicitly reject dashboard UI behavior, external workflow/controller integration behavior, and standalone Runtime API versioning behavior.
+- Canonical scenario review passed via spawned subagents and is recorded at `.product-delivery/artifacts/multi-agent-scenario-review.md` with `review_id=MR-V11-SCENARIO-20260701-001`.
+- This pass is only the scenario review gate. Implementation, test run evidence, release, and Product Delivery finalization remain not eligible until later gates pass.
+- User freeze confirmation is now canonical for the current scenario package and TC-001..TC-026 test coverage design.
+- Runtime blocker discovered after freeze: `build_planned_e2e_obligations` currently rejects non-UI planned behavior/test layers such as `service_e2e` with `UI planned obligation must target browser_e2e`. Do not satisfy this gate by recording V1.1 non-UI obligations as browser E2E; TC-025 explicitly requires non-UI planned evidence terminology.
+- 2026-07-02 update: the layer-validation blocker is fixed in source with project-type conditional validation. `ui` still requires `browser_e2e`; `non_ui` now requires `api_e2e`, `cli_e2e`, or `service_e2e`. The workflow gate itself remains intentionally skipped/pending per user direction.
+- Later 2026-07-02 review refined that finding: non-UI planned coverage must not force every TC into service/CLI E2E. The accepted planned layer set now includes real non-UI planned evidence layers such as `unit`, `runtime_integration`, `gatekeeper`, `packaging_smoke`, `static_contract`, and `release_gate`, while `browser_e2e` remains rejected for non-UI planned obligations.
+- Spawned-subagent `test_coverage` review initially blocked on traceability and artifact/state drift, then passed after fixes. The final accepted scope is coverage design only: no implementation, test execution, release readiness, closure readiness, or user confirmation is implied.
+
+## 2026-07-04 V2.x OpenCode Support Findings
+
+- OpenCode support should be implemented as a future native OpenCode plugin surface, but not as a second Product Delivery authority.
+- A future generated OpenCode plugin should register Product Delivery skill paths, inject startup/state/closure authority rules, and expose status/start/stop/closure-validation tools.
+- The Python runtime remains the canonical owner for `.product-delivery/state.json`, handoff state, evidence ingestion, transition journal entries, and closure validation.
+- OpenCode execution handoff needs an explicit `execution_target`; future `codex_goal` and `opencode_run` targets can share the same pre-handoff readiness gate while rendering target-specific artifacts.
+- OpenCode output must remain supporting evidence until runtime ingestion verifies concrete records, existing artifact paths, passing exit codes, evidence hashes, and semantic assertions.
+- Summary-only, chat-only, and OpenCode-session-only output must fail closed for Product Delivery closure.
+- OpenCode should participate in external multi-agent review as reviewer, worker, or judge only by adapting output into the V1.1 structured review artifact schema.
+- Failed OpenCode orchestration should become `blocked_with_reason`; it must not silently downgrade to a passing review.
+- Packaging must include both Codex and OpenCode assets in the generated plugin and dist archive so the two execution surfaces stay version-aligned.

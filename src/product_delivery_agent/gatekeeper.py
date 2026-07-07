@@ -21,7 +21,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.10"
-PLUGIN_VERSION = "1.0.11"
+PLUGIN_VERSION = "1.0.12"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -29,6 +29,128 @@ IMPLEMENTATION_STATUSES = {
     "implementation_tasks_complete",
     "implementation_blocked",
 }
+
+
+def stable_state_hash(value: Any) -> str:
+    """Return a stable hash for protocol state fragments."""
+    import json
+
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
+def scenario_input_hash(state: dict[str, Any]) -> str:
+    """Hash the current requirements/scenario package reviewed before handoff."""
+    scenario_matrix = state.get("scenario_matrix") or {}
+    return stable_state_hash(
+        {
+            "feature_slug": state.get("feature_slug"),
+            "open_spec_draft_ready": bool(state.get("open_spec_draft_ready")),
+            "scenario_matrix_draft_ready": bool(
+                state.get("scenario_matrix_draft_ready")
+            ),
+            "scenario_rows": scenario_matrix.get("rows", []),
+        }
+    )
+
+
+def surface_input_hash(state: dict[str, Any]) -> str:
+    """Hash the current UI prototype or non-UI behavior contract package."""
+    if state.get("project_type") == "non_ui":
+        contract = state.get("non_ui_behavior_contract") or {}
+        return stable_state_hash({"project_type": "non_ui", "contract": contract})
+    ui = state.get("ui_prototype") or {}
+    return stable_state_hash(
+        {
+            "project_type": "ui",
+            "prototype_path": ui.get("prototype_path"),
+            "artifact_hash": ui.get("artifact_hash"),
+            "artifact_version": ui.get("artifact_version"),
+            "prototype_revision": ui.get("prototype_revision"),
+            "confirmed_by_user": bool(ui.get("confirmed_by_user")),
+            "confirmation_artifact_path": ui.get("confirmation_artifact_path"),
+        }
+    )
+
+
+def planned_e2e_input_hash(state: dict[str, Any]) -> str:
+    """Hash planned test obligations without user-confirmation state."""
+    planned = state.get("planned_e2e_obligations") or {}
+    return stable_state_hash(
+        {
+            "obligations": planned.get("obligations", []),
+            "exemptions": planned.get("exemptions", []),
+            "accepted": bool(planned.get("accepted")),
+            "artifact_path": planned.get("artifact_path"),
+        }
+    )
+
+
+def coverage_audit_input_hash(state: dict[str, Any]) -> str:
+    """Hash coverage audit content relevant to planned review gates."""
+    audit = state.get("test_coverage_audit") or {}
+    return stable_state_hash(
+        {
+            "passed": bool(audit.get("passed")),
+            "matrix_range": audit.get("matrix_range"),
+            "latest_test_case": audit.get("latest_test_case"),
+            "rows": audit.get("rows", []),
+            "negative_guard_records": audit.get("negative_guard_records", []),
+        }
+    )
+
+
+def review_input_hash(state: dict[str, Any], review_type: str) -> str:
+    """Hash the current input package a review type is supposed to judge."""
+    if review_type == "scenario":
+        return scenario_input_hash(state)
+    if review_type in {"test", "test_coverage"}:
+        return stable_state_hash(
+            {
+                "scenario": scenario_input_hash(state),
+                "surface": surface_input_hash(state),
+                "planned_e2e": planned_e2e_input_hash(state),
+                "coverage_audit": coverage_audit_input_hash(state),
+            }
+        )
+    if review_type == "test_implementation":
+        return stable_state_hash(
+            {
+                "planned_e2e": planned_e2e_input_hash(state),
+                "executed_browser_evidence": state.get("executed_browser_evidence"),
+                "executed_behavior_evidence": state.get("executed_behavior_evidence"),
+            }
+        )
+    return stable_state_hash({"review_type": review_type})
+
+
+def requirements_e2e_confirmation_hash(state: dict[str, Any]) -> str:
+    """Hash the package covered by the combined user confirmation."""
+    reviews = state.get("multi_agent_reviews") or {}
+    review_summary = {
+        review_type: {
+            "status": review.get("status"),
+            "review_id": review.get("review_id"),
+            "artifact_version": review.get("artifact_version"),
+            "input_snapshot_hash": review.get("input_snapshot_hash"),
+            "review_mode": review.get("review_mode"),
+        }
+        for review_type, review in sorted(reviews.items())
+        if review_type in {"scenario", "test", "test_coverage"}
+    }
+    return stable_state_hash(
+        {
+            "feature_slug": state.get("feature_slug"),
+            "scenario": scenario_input_hash(state),
+            "surface": surface_input_hash(state),
+            "planned_e2e": planned_e2e_input_hash(state),
+            "coverage_audit": coverage_audit_input_hash(state),
+            "reviews": review_summary,
+        }
+    )
 
 
 def normalize_project_type(raw: Any) -> tuple[str | None, str | None]:
@@ -315,14 +437,7 @@ def derive_blockers(
         or not normalized.get("scenario_matrix", {}).get("draft_ready"),
         "scenario_matrix_draft",
     )
-    _append_if(
-        blockers,
-        normalized.get("multi_agent_reviews", {})
-        .get("scenario", {})
-        .get("status")
-        != "passed",
-        "multi_agent_scenario_review",
-    )
+    _append_review_blocker(blockers, normalized, "scenario")
     _append_if(
         blockers,
         not normalized.get("open_spec_freeze", {}).get("approved_by_user")
@@ -368,21 +483,15 @@ def derive_blockers(
         or "planned_e2e_obligations" not in normalized.get("user_confirmations", {}),
         "planned_e2e_user_confirmation",
     )
-    _append_if(
-        blockers,
-        normalized.get("multi_agent_reviews", {}).get("test", {}).get("status")
-        != "passed",
-        "multi_agent_test_review",
-    )
-    if project_type == "ui":
-        _append_if(
-            blockers,
-            normalized.get("multi_agent_reviews", {})
-            .get("test_coverage", {})
-            .get("status")
-            != "passed",
-            "multi_agent_test_coverage_review",
-        )
+    confirmation = normalized.get("user_confirmations", {}).get("open_spec_freeze", {})
+    if (
+        confirmation.get("snapshot_hash")
+        and confirmation.get("snapshot_hash")
+        != requirements_e2e_confirmation_hash(normalized)
+    ):
+        _append_if(blockers, True, "stale_requirements_e2e_confirmation")
+    _append_review_blocker(blockers, normalized, "test")
+    _append_review_blocker(blockers, normalized, "test_coverage")
     _append_if(
         blockers,
         not normalized.get("test_coverage_audit", {}).get("passed"),
@@ -397,6 +506,33 @@ def derive_blockers(
         _append_if(blockers, True, error)
 
     return blockers
+
+
+def _append_review_blocker(
+    blockers: list[str],
+    state: dict[str, Any],
+    review_type: str,
+) -> None:
+    review = (state.get("multi_agent_reviews") or {}).get(review_type) or {}
+    generic = f"multi_agent_{review_type}_review"
+    stale = f"stale_multi_agent_{review_type}_review"
+    if review.get("status") == "stale":
+        _append_if(blockers, True, stale)
+        return
+    if review.get("status") != "passed":
+        _append_if(blockers, True, generic)
+        return
+    snapshot_hash = review.get("input_snapshot_hash")
+    if not snapshot_hash or snapshot_hash != review_input_hash(state, review_type):
+        _append_if(blockers, True, stale)
+
+
+def _review_is_current(state: dict[str, Any], review_type: str) -> bool:
+    review = (state.get("multi_agent_reviews") or {}).get(review_type) or {}
+    if review.get("status") != "passed":
+        return False
+    snapshot_hash = review.get("input_snapshot_hash")
+    return bool(snapshot_hash) and snapshot_hash == review_input_hash(state, review_type)
 
 
 def docs_ahead_of_state_errors(
@@ -485,21 +621,20 @@ def assert_pre_closure_ready(
         raise GatekeeperError("passed test coverage audit is required before closure")
 
     planned = _unexempted_planned_obligations(state)
-    executed = state.get("executed_browser_evidence", {})
-    if project_type == "ui":
-        if executed.get("status") != "passed":
-            raise GatekeeperError("executed_browser_evidence must pass before closure")
-        _assert_executed_covers_planned(planned, executed.get("records", []))
-        _assert_closure_covers_executed(closure_artifact, planned, executed)
-        if (
-            state.get("multi_agent_reviews", {})
-            .get("test_implementation", {})
-            .get("status")
-            != "passed"
-        ):
-            raise GatekeeperError(
-                "multi_agent_test_implementation_review is required before closure"
-            )
+    evidence_key = (
+        "executed_browser_evidence"
+        if project_type == "ui"
+        else "executed_behavior_evidence"
+    )
+    executed = state.get(evidence_key, {})
+    if executed.get("status") != "passed":
+        raise GatekeeperError(f"{evidence_key} must pass before closure")
+    _assert_executed_covers_planned(planned, executed.get("records", []))
+    _assert_closure_covers_executed(closure_artifact, planned, executed)
+    if not _review_is_current(state, "test_implementation"):
+        raise GatekeeperError(
+            "multi_agent_test_implementation_review is required before closure"
+        )
 
 
 def assert_executed_evidence_covers_planned(

@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.11")
+            self.assertEqual(manifest["version"], "1.0.12")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -77,6 +77,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "scripts/formal-gate-validation-plan.md",
                 "runtime/product_delivery_agent/finalization.py",
                 "runtime/product_delivery_agent/gatekeeper.py",
+                "runtime/product_delivery_agent/continuation.py",
                 "runtime/product_delivery_agent/transition_journal.py",
                 "policies/lifecycle.json",
                 "policies/upgrade-retention.md",
@@ -109,7 +110,12 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("review_mode", skill_markdown)
             self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
             self.assertIn("启动交付，允许降级评审", skill_markdown)
-            self.assertIn("确认按当前交付包开始实现", skill_markdown)
+            self.assertIn("用户面对的确认只保留两次", skill_markdown)
+            self.assertIn(
+                "combined requirements freeze + planned E2E coverage 确认",
+                skill_markdown,
+            )
+            self.assertNotIn("确认按当前交付包开始实现", skill_markdown)
             self.assertIn("implementation_launch_authorization", skill_markdown)
             self.assertIn("custom artifact", skill_markdown)
             self.assertIn("target-specific validator", skill_markdown)
@@ -125,11 +131,21 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("closure validator", skill_markdown)
             self.assertIn(".product-delivery/state.json", skill_markdown)
             self.assertIn("不能替代 Product Delivery 主流程", skill_markdown)
+            self.assertIn("Main Flow Continuation", skill_markdown)
+            self.assertIn("continuation guard", skill_markdown)
+            self.assertIn("must_continue", skill_markdown)
+            self.assertIn("wait_for_user", skill_markdown)
+            self.assertIn("canonical_closure_plugin_version", skill_markdown)
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
             self.assertIn("planning-with-files", required_skills)
             self.assertIn("open-spec-feature-closure", required_skills)
+            scenario_template = (
+                root / "templates" / "scope-scenario-matrix.md"
+            ).read_text("utf-8")
+            self.assertIn("Journey ID", scenario_template)
+            self.assertIn("Acceptance Anchors", scenario_template)
             closure_template = json.loads(
                 (root / "templates" / "closure-artifact-template.json").read_text(
                     "utf-8"
@@ -146,7 +162,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.11")
+            self.assertEqual(closure_template["plugin_version"], "1.0.12")
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
             validator_script = (
@@ -187,7 +203,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.11.tar.gz",
+                "waygate-product-delivery-1.0.12.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

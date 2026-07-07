@@ -80,6 +80,8 @@ def planned_obligation(**overrides):
         "test_id": "TC-V008-001",
         "user_story": "US-001",
         "journey": "J-001",
+        "acceptance_criteria": "AC-001",
+        "task": "TASK-001",
         "visible_exception": "duplicate classroom name",
         "test_layer": "browser_e2e",
         "semantic_assertions": [
@@ -107,6 +109,27 @@ def planned_obligation(**overrides):
     }
     obligation.update(overrides)
     return obligation
+
+
+def coverage_row(**overrides):
+    row = {
+        "tc_id": "TC-V008-001",
+        "fr": "FR-001",
+        "nfr": "NFR-001",
+        "us": "US-001",
+        "journey": "J-001",
+        "acceptance_criteria": "AC-001",
+        "task": "TASK-001",
+        "test_layer": "browser_e2e",
+        "evidence_type": "browser_e2e",
+        "semantic_marker": "ui-browser-e2e-required",
+        "coverage_status": "covered",
+        "exemption_status": "none",
+        "obligation_ref": "J-001",
+        "critical": True,
+    }
+    row.update(overrides)
+    return row
 
 
 def ui_review_payload(prototype_path):
@@ -174,6 +197,173 @@ def browser_evidence(project_root, **overrides):
 
 
 class DeliveryHardeningGateTests(unittest.TestCase):
+    def _confirmed_ui_workflow_with_planned_e2e(self, project_root: Path):
+        prototype_path = "docs/prototypes/v2.4.1-alert-triage-whitelist-prototype.html"
+        prototype = project_root / prototype_path
+        prototype.parent.mkdir(parents=True, exist_ok=True)
+        prototype.write_text("<html>prototype</html>", encoding="utf-8")
+        workflow = ProductDeliveryWorkflow(project_root)
+        workflow.start(feature_slug="v2.4.1-alert-triage-whitelist")
+        workflow.record_scenario_matrix([scenario_row()])
+        workflow.record_multi_agent_review("scenario", scenario_review())
+        workflow.select_project_type("ui")
+        state = workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+        pending = state["pending_confirmations"]["ui_prototype"]
+        workflow.confirm_ui_prototype(
+            "确认本地 HTML 原型符合预期，nonce=" + pending["nonce"],
+            prototype_path,
+            nonce=pending["nonce"],
+        )
+        workflow.record_planned_e2e_obligations([planned_obligation()])
+        return workflow
+
+    def _record_coverage_and_test_reviews(self, workflow: ProductDeliveryWorkflow):
+        workflow.record_test_coverage_audit(
+            [coverage_row()],
+            negative_guard_records=["student billing remains absent"],
+        )
+        workflow.record_multi_agent_review("test_coverage", scenario_review(
+            review_id="MR-COVERAGE-001",
+            review_type="test_coverage",
+            artifact_version="coverage-review-v1",
+            traceability_reviewed=["US", "J", "SC", "AC", "TASK", "TC"],
+            coverage_gaps=[],
+            title_overbreadth_findings=[],
+            missing_executable_assertions=[],
+            false_positive_risks=[],
+            collection_coverage=[
+                {
+                    "collection_id": "classroom-create",
+                    "required_items": ["classroom-create"],
+                    "covered_items": ["classroom-create"],
+                    "item_level_assertions": {
+                        "classroom-create": "click create classroom and assert duplicate-name error",
+                    },
+                }
+            ],
+        ))
+        workflow.record_multi_agent_review("test", scenario_review(
+            review_id="MR-TEST-001",
+            review_type="test",
+            artifact_version="test-review-v1",
+        ))
+
+    def test_combined_requirements_and_e2e_confirmation_clears_both_user_gates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = self._confirmed_ui_workflow_with_planned_e2e(project_root)
+            self._record_coverage_and_test_reviews(workflow)
+
+            state = workflow.confirm_requirements_and_e2e_plan(
+                "确认需求冻结和 planned E2E 覆盖计划",
+            )
+
+            self.assertTrue(state["open_spec_freeze"]["approved_by_user"])
+            self.assertTrue(state["planned_e2e_obligations"]["accepted_by_user"])
+            self.assertNotIn("user_confirmed_freeze", state["blocked_until"])
+            self.assertNotIn("planned_e2e_user_confirmation", state["blocked_until"])
+            open_spec_confirmation = state["user_confirmations"]["open_spec_freeze"]
+            planned_confirmation = state["user_confirmations"]["planned_e2e_obligations"]
+            self.assertEqual(
+                open_spec_confirmation["confirmation_artifact_path"],
+                planned_confirmation["confirmation_artifact_path"],
+            )
+            self.assertEqual(
+                open_spec_confirmation["snapshot_hash"],
+                planned_confirmation["snapshot_hash"],
+            )
+            self.assertTrue(
+                (
+                    project_root
+                    / ARTIFACT_ROOT
+                    / open_spec_confirmation["confirmation_artifact_path"]
+                ).is_file()
+            )
+
+    def test_scenario_review_routes_to_surface_gate_not_standalone_freeze(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist")
+            workflow.record_scenario_matrix([scenario_row()])
+
+            state = workflow.record_multi_agent_review("scenario", scenario_review())
+
+            self.assertEqual(state["next_gate"], "ui_or_non_ui_confirmation")
+            self.assertIn("user_confirmed_freeze", state["blocked_until"])
+
+    def test_reconfirming_requirements_e2e_plan_preserves_prior_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = self._confirmed_ui_workflow_with_planned_e2e(project_root)
+            self._record_coverage_and_test_reviews(workflow)
+            first = workflow.confirm_requirements_and_e2e_plan(
+                "确认需求冻结和 planned E2E 覆盖计划",
+            )
+            first_record = first["user_confirmations"]["open_spec_freeze"]
+            first_path = (
+                project_root
+                / ARTIFACT_ROOT
+                / first_record["confirmation_artifact_path"]
+            )
+
+            workflow.record_planned_e2e_obligations(
+                [
+                    planned_obligation(
+                        obligation_id="OBL-002",
+                        visible_exception="updated duplicate classroom name",
+                    )
+                ]
+            )
+            self._record_coverage_and_test_reviews(workflow)
+            second = workflow.confirm_requirements_and_e2e_plan(
+                "确认修订后的需求冻结和 planned E2E 覆盖计划",
+            )
+            second_record = second["user_confirmations"]["open_spec_freeze"]
+            second_path = (
+                project_root
+                / ARTIFACT_ROOT
+                / second_record["confirmation_artifact_path"]
+            )
+
+            self.assertTrue(first_path.is_file())
+            self.assertTrue(second_path.is_file())
+            self.assertNotEqual(first_path, second_path)
+            stale_targets = second["stale_user_confirmations"][-1]["targets"]
+            self.assertEqual(
+                sorted(stale_targets),
+                ["open_spec_freeze", "planned_e2e_obligations"],
+            )
+
+    def test_coverage_audit_change_stales_reviews_confirmation_and_authorization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = self._confirmed_ui_workflow_with_planned_e2e(project_root)
+            self._record_coverage_and_test_reviews(workflow)
+            workflow.confirm_requirements_and_e2e_plan(
+                "确认需求冻结和 planned E2E 覆盖计划",
+            )
+
+            state = workflow.record_test_coverage_audit(
+                [
+                    coverage_row(
+                        semantic_marker="ui-browser-e2e-updated",
+                    )
+                ],
+                negative_guard_records=["student billing remains absent"],
+            )
+
+            self.assertEqual(
+                state["multi_agent_reviews"]["test_coverage"]["status"],
+                "stale",
+            )
+            self.assertEqual(state["multi_agent_reviews"]["test"]["status"], "stale")
+            self.assertIn("stale_multi_agent_test_coverage_review", state["blocked_until"])
+            self.assertIn("stale_multi_agent_test_review", state["blocked_until"])
+            self.assertIn("user_confirmed_freeze", state["blocked_until"])
+            self.assertIn("planned_e2e_user_confirmation", state["blocked_until"])
+            self.assertNotIn("open_spec_freeze", state["user_confirmations"])
+            self.assertNotIn("planned_e2e_obligations", state["user_confirmations"])
+
     def test_scenario_matrix_draft_ready_is_not_user_confirmed_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -193,6 +383,34 @@ class DeliveryHardeningGateTests(unittest.TestCase):
                 / "scope-scenario-matrix.md"
             )
             self.assertTrue(artifact.is_file())
+
+    def test_scenario_matrix_renders_journey_and_acceptance_anchors_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist")
+
+            workflow.record_scenario_matrix(
+                [
+                    scenario_row(
+                        journey_id="J-001",
+                        acceptance_anchors="AC-001, AC-002",
+                        planned_e2e_case="TC-001, TC-002",
+                    )
+                ]
+            )
+
+            artifact = (
+                project_root
+                / ARTIFACT_ROOT
+                / "artifacts"
+                / "scope-scenario-matrix.md"
+            )
+            text = artifact.read_text(encoding="utf-8")
+            self.assertIn("Journey ID", text)
+            self.assertIn("Acceptance Anchors", text)
+            self.assertIn("J-001", text)
+            self.assertIn("AC-001, AC-002", text)
 
     def test_missing_scenario_review_blocks_user_confirmed_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -304,6 +522,58 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             self.assertTrue(state["planned_e2e_obligations"]["accepted"])
             self.assertEqual(state["executed_browser_evidence"]["status"], "missing")
             self.assertIn("executed_browser_evidence", state["blocked_until"])
+
+    def test_non_ui_planned_obligations_accept_behavior_evidence_layer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+            workflow.start()
+            workflow.select_project_type("non_ui")
+
+            state = workflow.record_planned_e2e_obligations(
+                [
+                    planned_obligation(
+                        test_layer="unit",
+                        expected_artifact_pattern="tests/test_non_ui_behavior.py",
+                    )
+                ],
+                exemptions=[],
+            )
+
+            self.assertTrue(state["planned_e2e_obligations"]["accepted"])
+            self.assertEqual(
+                state["planned_e2e_obligations"]["obligations"][0]["test_layer"],
+                "unit",
+            )
+            self.assertNotIn("executed_browser_evidence", state["blocked_until"])
+            self.assertIn("executed_behavior_evidence", state["blocked_until"])
+            self.assertEqual(
+                state["executed_behavior_evidence"]["status"],
+                "missing",
+            )
+
+            artifact = (
+                project_root
+                / ARTIFACT_ROOT
+                / "artifacts"
+                / "planned-e2e-obligations.md"
+            )
+            text = artifact.read_text(encoding="utf-8")
+            self.assertIn("AC-001", text)
+            self.assertIn("TASK-001", text)
+            self.assertIn("click create classroom", text)
+            self.assertIn("reject marker-only", text)
+
+    def test_non_ui_planned_obligations_reject_browser_e2e_mislabeling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+            workflow.start()
+            workflow.select_project_type("non_ui")
+
+            with self.assertRaises(CoverageAuditError) as caught:
+                workflow.record_planned_e2e_obligations([planned_obligation()])
+
+            self.assertIn("non-UI planned obligation", str(caught.exception))
 
     def test_structured_exemption_requires_approval_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:

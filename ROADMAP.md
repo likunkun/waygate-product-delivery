@@ -209,19 +209,55 @@ Scope:
 - Add runtime entrypoints, schema adjustments, or reporting only when they directly support multi-agent orchestration.
 - Treat migration and dashboard work as implementation support unless a later user need proves they deserve their own product version.
 
-### V2.0 - External Workflow Integration
+### V2.0.0 - OpenCode Native Plugin MVP
 
-Goal: integrate with external execution or controller systems after local Product Delivery closure authority is stable.
+Goal: make Product Delivery load and operate from OpenCode as a native plugin while preserving the local canonical runtime.
 
 Scope:
 
-- Integrate Waygate/controller or another execution system as an optional external workflow target.
-- Keep Product Delivery's canonical closure authority local and non-replaceable.
-- Treat external validator outputs as supporting evidence unless Product Delivery explicitly adopts them.
+- Package an OpenCode JavaScript plugin under `.opencode/plugins/`.
+- Register Product Delivery skills through the OpenCode `config` hook.
+- Inject activation, state authority, and closure authority rules through OpenCode chat transforms.
+- Expose minimal OpenCode tools for status, start, stop, and closure validation.
+- Reuse the Python Product Delivery runtime; do not reimplement gate logic in JavaScript.
+
+### V2.1.0 - Execution Target Abstraction
+
+Goal: generalize the frozen implementation handoff beyond Codex Goal.
+
+Scope:
+
+- Add `execution_target` with `codex_goal` and `opencode_run`.
+- Preserve `generate_codex_goal_handoff` as a compatibility wrapper.
+- Generate OpenCode-specific prompt and execution contract artifacts.
+- Keep the same pre-handoff gate and implementation launch authorization for every execution target.
+
+### V2.2.0 - OpenCode Evidence Ingestion
+
+Goal: turn OpenCode execution output into Product Delivery evidence only through runtime ingestion.
+
+Scope:
+
+- Define and validate OpenCode execution evidence records.
+- Reject summary-only and chat-only OpenCode evidence.
+- Convert accepted OpenCode evidence into `executed_behavior_evidence` or `executed_browser_evidence`.
+- Record ingestion through the transition journal.
+
+### V2.3.0 - OpenCode Multi-Agent / External Orchestration
+
+Goal: allow OpenCode to participate in external multi-agent orchestration without becoming closure authority.
+
+Scope:
+
+- Adapt OpenCode review output into the V1.1 structured review artifact schema.
+- Record OpenCode as supporting external orchestration evidence.
+- Fail closed with `blocked_with_reason` when OpenCode orchestration fails.
+- Keep Product Delivery review artifacts and closure validation as the authoritative gates.
 
 ## Assumptions
 
 - The current phase only produces roadmap and version planning.
 - Detailed implementation design, public interfaces, test plans, and file schemas are scoped only when a version explicitly requires them.
-- The first implementation handoff target remains Codex Goal.
-- Waygate integration is deferred to V2.0 and does not directly mutate Waygate state in V1.
+- Codex Goal remains the current supported implementation handoff target.
+- OpenCode support is planned as a future `execution_target=opencode_run` capability.
+- Waygate/controller integration remains read-only unless a later version defines an official import route.

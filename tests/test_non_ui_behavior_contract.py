@@ -34,6 +34,44 @@ def complete_contract_payload():
     }
 
 
+def scenario_review_payload():
+    return {
+        "review_id": "MR-SCENARIO-001",
+        "review_type": "scenario",
+        "status": "passed",
+        "reviewers": ["agent-a", "agent-b"],
+        "artifact_version": "scenario-review-v1",
+        "independent_positions": ["A: no blocker", "B: no blocker"],
+        "cross_challenges": ["A challenged B on behavior coverage"],
+        "revisions": ["Added behavior coverage"],
+        "final_adjudication": "passed",
+        "conclusions": ["scenario review passed"],
+        "accepted_suggestions": [],
+        "rejected_suggestions": [],
+        "unresolved_questions": [],
+        "blocking_findings": [],
+    }
+
+
+def user_confirmation(target):
+    return {
+        "confirmation_id": f"CONF-{target}",
+        "target": target,
+        "artifact_path": f".product-delivery/artifacts/{target}.md",
+        "artifact_version": "v1",
+        "confirmed_by": "user",
+        "confirmation_source": "chat_user_reply",
+        "confirmed_at": "2026-07-05T00:00:00+00:00",
+        "decision": "approved",
+        "user_message": "确认",
+    }
+
+
+def confirm_scope(workflow):
+    workflow.record_multi_agent_review("scenario", scenario_review_payload())
+    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
+
+
 class NonUIBehaviorContractTests(unittest.TestCase):
     def test_non_ui_project_records_behavior_contract_and_downstream_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,8 +145,7 @@ class NonUIBehaviorContractTests(unittest.TestCase):
             workflow = ProductDeliveryWorkflow(Path(tmp))
             workflow.start()
             workflow.select_project_type("non_ui")
-            workflow.confirm("product_brief")
-            workflow.confirm("version_scope")
+            confirm_scope(workflow)
 
             with self.assertRaises(WorkflowError):
                 workflow.prepare_audit_and_handoff_drafts()

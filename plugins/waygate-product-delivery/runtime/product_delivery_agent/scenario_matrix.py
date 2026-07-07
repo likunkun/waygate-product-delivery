@@ -51,14 +51,20 @@ def render_scenario_matrix(rows: list[dict[str, Any]]) -> str:
         "",
         "Scope means version boundary and scenario mapping, not a scope-control failure finding.",
         "",
-        "| Scenario | Role | Story | Journey | Path | Risk | Blocking | Review | Boundary | Planned E2E |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Scenario | Role | Story | Journey ID | Journey | Acceptance Anchors | Path | Risk | Blocking | Review | Boundary | Planned Behavior Evidence / Tests |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in rows:
+        render_row = {
+            **row,
+            "journey_id": row.get("journey_id", ""),
+            "acceptance_anchors": row.get("acceptance_anchors", ""),
+        }
         lines.append(
-            "| {scenario_id} | {role} | {user_story} | {journey} | {path_type} | "
-            "{risk_level} | {blocking_level} | {review_status} | "
-            "{negative_boundary} | {planned_e2e_case} |".format(**row)
+            "| {scenario_id} | {role} | {user_story} | {journey_id} | "
+            "{journey} | {acceptance_anchors} | {path_type} | {risk_level} | "
+            "{blocking_level} | {review_status} | {negative_boundary} | "
+            "{planned_e2e_case} |".format(**render_row)
         )
     lines.append("")
     return "\n".join(lines)

@@ -2452,3 +2452,182 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - Packaged-root validator `--help` passed with source `PYTHONPATH` unset.
   - Installed-cache validator `--help` passed with source `PYTHONPATH` unset.
 - **Status:** complete.
+
+### Waygate Product Delivery V1.1 Delivery Start
+
+- Activated Product Delivery mode for `v1.1-multi-agent-review-orchestration`.
+- Created canonical `.product-delivery/state.json`.
+- Current state:
+  - `stage=product_blueprint`;
+  - `feature_slug=v1.1-multi-agent-review-orchestration`;
+  - `multi_agent_policy.mode=spawned_subagents_required`;
+  - `blocked_until=planning_files_ready, open_spec_current_feature, project_type_decision`.
+- Restored planning context by reading `task_plan.md`, `progress.md`, and `findings.md`.
+- Ran the available planning catchup script; it produced no recovery output.
+- Detected the current repository as `non_ui` using `product_delivery_agent.startup_guard.detect_project_type`.
+- Confirmed real spawned subagent tooling is available through `multi_agent_v1`; V1.1 can follow the strong evidence path and does not need `role_simulation` degradation.
+- Updated `task_plan.md` with Phase 48 for V1.1 multi-agent review orchestration.
+- Open Spec first-round gate conclusion:
+  - scenario: `new-feature`;
+  - known goal: productize multi-agent review as reusable orchestration;
+  - blocker: project type and delivery scope still need explicit user confirmation before Open Spec drafting and implementation can continue.
+- **Status:** blocked on user confirmation.
+
+### V1.1 Requirements Stage
+
+- User confirmed project type `non_ui`.
+- User confirmed scope is limited to `多 Agent 评审编排产品化`.
+- Updated canonical Product Delivery state with `project_type=non_ui`.
+- Spawned requirements subagent `019f1b5d-d740-75e0-822e-10005a15c71e`; result: PASS.
+- Created requirements-stage Open Spec files:
+  - `docs/open-spec/v1.1-multi-agent-review-orchestration/00-change-request.md`;
+  - `docs/open-spec/v1.1-multi-agent-review-orchestration/01-requirements.md`;
+  - `docs/open-spec/v1.1-multi-agent-review-orchestration/08-stage-handoff.md`;
+  - `docs/open-spec/memory/2026-07-01.md`.
+- Structure check confirmed the new files exist and contain V1.1 FR/NFR, non-UI scope, `spawned_subagents`, and `role_simulation` rules.
+- Spawned specification subagent `019f1b69-cff5-7413-a99c-8c32c860cd47`.
+- Specification subagent `019f1b69-cff5-7413-a99c-8c32c860cd47` failed with a transport/network decoding error before completion.
+- Recovery action: retry the current specification stage with a smaller handoff prompt; do not advance to solution until specification returns PASS.
+- Retried specification with subagent `019f1b74-6e2c-7eb3-a4e8-3be1b54b3d11`; result: PASS after interrupting a long read and requesting compact output.
+- Created `docs/open-spec/v1.1-multi-agent-review-orchestration/02-specification.md`.
+- Updated `08-stage-handoff.md` and `docs/open-spec/memory/2026-07-01.md` with specification stage PASS.
+- Local self-check confirmed key specification sections exist and FR-001 through FR-015 each appear in traceability plus acceptance mapping.
+- Spawned solution subagent `019f1b83-d29c-71e1-90fc-e42458ffb2d0`.
+- Solution subagent `019f1b83-d29c-71e1-90fc-e42458ffb2d0` failed with a transport/network decoding error before completion.
+- Recovery action: close the failed subagent and retry the current solution stage with a smaller prompt and fewer required source files.
+- Retried solution with subagent `019f1b8e-27c2-77b1-a0b7-168690dcbf94`; it also failed with a transport/network decoding error before completion.
+- Recovery action: switch the third solution attempt to a compact decision-only handoff, then merge full 03/04 documents in the lead session.
+- Third solution attempt used compact decision-only subagent `019f1b9b-0569-7e63-9322-ee907db9ad83`; result: PASS.
+- Created `docs/open-spec/v1.1-multi-agent-review-orchestration/03-technical-solution.md`.
+- Created `docs/open-spec/v1.1-multi-agent-review-orchestration/04-storage-design.md`.
+- Updated `08-stage-handoff.md` and `docs/open-spec/memory/2026-07-01.md` with solution stage PASS.
+- Read Open Spec planning reference and confirmed implementation must remain blocked until Product Delivery gates and implementation launch authorization pass.
+- Spawned planning subagent `019f1ba2-d673-7a11-a6a3-1f1a0732a6f9`.
+- Planning subagent timed out once; sent an interrupt requesting compact output.
+- Planning subagent `019f1ba2-d673-7a11-a6a3-1f1a0732a6f9` returned PASS.
+- Created `docs/open-spec/v1.1-multi-agent-review-orchestration/05-development-plan.md`.
+- Updated `08-stage-handoff.md` and `docs/open-spec/memory/2026-07-01.md` with planning stage PASS.
+- Test strategy reference was read for the next stage; companion check found `testing-strategy` and `webapp-testing` installed, while the named recommended skills `jest-vitest`, `cypress-testing`, `playwright-testing`, and `clean-code` were not installed. Current repo remains Python unittest-oriented, so no install was needed.
+- Spawned testing subagent `019f1bb2-531a-7170-ad6d-746b0efe49a7`.
+- Testing subagent `019f1bb2-531a-7170-ad6d-746b0efe49a7` returned PASS.
+- Created `docs/open-spec/v1.1-multi-agent-review-orchestration/06-test-cases.md`.
+- Updated `08-stage-handoff.md` and `docs/open-spec/memory/2026-07-01.md` with testing stage PASS.
+- Structure check confirmed Open Spec files `00` through `06` and `08` exist; 06 contains TC-001 through TC-022 and all execution records are `Not Run - implementation not started`.
+- Spawned release subagent `019f1bbc-8d3f-7af3-bf00-d94666c59f41`.
+- Release subagent `019f1bbc-8d3f-7af3-bf00-d94666c59f41` returned expected FAIL because implementation, test execution, release evidence, and Product Delivery closure evidence do not exist yet.
+- Created `docs/open-spec/v1.1-multi-agent-review-orchestration/07-release-retrospective.md`.
+- Open Spec structure check confirmed `00-change-request.md` through `08-stage-handoff.md` are present.
+- Recorded non-UI behavior contract through `ProductDeliveryWorkflow.record_non_ui_behavior_contract`.
+- Recorded scenario matrix through `ProductDeliveryWorkflow.record_scenario_matrix`; canonical state now has `open_spec_draft_ready=true` and `scenario_matrix_draft_ready=true`.
+- Spawned scenario reviewers:
+  - Product Intent Reviewer `019f1bce-0829-7883-84e2-74e8034c5002` returned PASS with a non-blocking naming risk around `Planned E2E` for a non-UI feature.
+  - Negative Boundary Reviewer `019f1bcf-d59f-7271-92d2-05dab861eb98` returned BLOCK with BF-1 non-UI pre-handoff/pre-closure fail-closed coverage not proven and BF-2 summary/status-only artifact replacement not independently enforced.
+  - Scenario Journey Reviewer `019f1bce-eb70-7052-ab56-3ab1ef37492c` failed with a transport/network decoding error before completion.
+- **Status:** scenario review blocked; retry Journey reviewer and revise Open Spec/test coverage before review can pass.
+
+### V1.1 Scenario Review Revision And Pass
+
+- Revised the V1.1 Open Spec package after spawned-subagent scenario review findings.
+- Added FR-016, FR-017, and NFR-006 for non-UI split review authority and structured artifact authority.
+- Added TC-023 through TC-026.
+- Updated `.product-delivery/artifacts/non-ui-behavior-contract.md` through `ProductDeliveryWorkflow.record_non_ui_behavior_contract`.
+- Updated `.product-delivery/artifacts/scope-scenario-matrix.md` through `ProductDeliveryWorkflow.record_scenario_matrix`, then expanded the Markdown evidence table with non-UI behavior/test wording and stable `J-V11-*` / `AC-V11-*` anchors.
+- Ran final spawned-subagent scenario review:
+  - Product Intent Reviewer `019f1c16-45ca-7f90-b76d-82f5d0dc5db3`: PASS.
+  - Scenario/Journey Reviewer `019f1c17-4910-7271-82c4-54184d9654b6`: initially BLOCK, then PASS after J/AC anchors and test assertions were added.
+  - Negative Boundary Reviewer `019f1c18-4c92-7160-90ee-23fc10b8267c`: PASS.
+- Completed independent positions, cross challenges, revision, and final adjudication.
+- Recorded canonical scenario review with `ProductDeliveryWorkflow.record_multi_agent_review("scenario", review)`.
+- Canonical scenario review artifact: `.product-delivery/artifacts/multi-agent-scenario-review.md`.
+- Canonical state now has `multi_agent_reviews.scenario.status=passed`, `review_mode=spawned_subagents`, and `next_gate=user_confirmed_freeze`.
+- Current blocker: user-confirmed freeze is still required before planned coverage and implementation gates. No implementation has started.
+
+### V1.1 Scenario Package Freeze Confirmation
+
+- User explicitly confirmed: `确认冻结当前 V1.1 scenario package 和 TC-001..TC-026 测试覆盖设计`.
+- Recorded canonical user confirmation through `ProductDeliveryWorkflow.record_user_confirmation`.
+- New confirmation artifact: `.product-delivery/artifacts/user-confirmations/open_spec_freeze.md`.
+- Canonical state now has `open_spec_freeze.approved_by_user=true` and `stage=open_spec_user_confirmed_freeze`.
+- Implementation remains blocked; no code changes for V1.1 runtime implementation have started.
+- Error encountered and resolved: initial runtime API call failed with `ModuleNotFoundError: No module named 'product_delivery_agent'`; reran successfully with `PYTHONPATH=src`.
+- Follow-up finding: current `record_planned_e2e_obligations` validation still forces `test_layer=browser_e2e`, so it cannot accurately record the V1.1 non-UI planned behavior/test obligations without mislabeling them as browser E2E. This remains a pre-implementation workflow blocker to resolve before canonical planned obligations/user confirmation can be accepted.
+
+### V1.1 Non-UI Planned Obligation Condition Fix
+
+- User directed to skip advancing the current planned-obligation gate for now and add a condition check in the runtime code.
+- Added RED tests in `tests/test_delivery_hardening_gates.py`:
+  - `non_ui` planned obligations accept a behavior evidence layer such as `service_e2e`;
+  - `non_ui` planned obligations reject `browser_e2e` mislabeling.
+- RED verification before implementation failed as expected:
+  - `service_e2e` raised `UI planned obligation must target browser_e2e`;
+  - `browser_e2e` incorrectly did not raise for `non_ui`.
+- Implemented a narrow conditional in `coverage_audit.build_planned_e2e_obligations`:
+  - default `project_type="ui"` keeps old browser E2E behavior;
+  - `project_type="non_ui"` requires one of `api_e2e`, `cli_e2e`, or `service_e2e`.
+- Updated `ProductDeliveryWorkflow.record_planned_e2e_obligations` to pass the canonical state `project_type` into the validator.
+- Verification:
+  - `PYTHONPATH=src python3 -m unittest tests/test_delivery_hardening_gates.py` passed: 13 tests.
+  - `PYTHONPATH=src python3 -m unittest tests/test_coverage_audit.py tests/test_multi_agent_test_coverage_review_v109.py` passed: 16 tests.
+  - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 151 tests.
+  - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
+  - Dry-run validation confirmed `project_type=non_ui` accepts `service_e2e` and rejects `browser_e2e`.
+- Canonical Product Delivery gate status was not advanced: planned obligations, test coverage review, implementation launch authorization, and V1.1 implementation remain pending.
+
+### V1.1 Planned Coverage Obligations And Test Coverage Review
+
+- User later directed to continue advancing the pre-implementation coverage gates.
+- Recorded canonical planned obligations through `ProductDeliveryWorkflow.record_planned_e2e_obligations`.
+- First spawned-subagent `test_coverage` review found blockers:
+  - missing AC continuity for TC-001, TC-002, TC-004, TC-013, TC-014, TC-016, TC-017, and TC-018;
+  - planned obligations lacked AC/TASK fields and overstated Unit/Static/Packaging tests as service/CLI E2E;
+  - non-UI state still used `executed_browser_evidence` blocker naming;
+  - standalone planned-obligation artifact lacked semantic/action assertions and false-positive guards;
+  - state embedded scenario matrix rows diverged from the updated artifact.
+- Applied RED-first runtime fixes:
+  - scenario matrix renderer now preserves optional Journey ID and Acceptance Anchors;
+  - non-UI planned evidence layers now include `unit`, `runtime_integration`, `gatekeeper`, `packaging_smoke`, `static_contract`, `release_gate`, and API/service/CLI behavior layers while rejecting `browser_e2e`;
+  - non-UI planned gate now uses `executed_behavior_evidence` blocker/state;
+  - planned-obligation artifact now renders AC, TASK, layer, semantic assertions, action assertions, and false-positive guards.
+- Updated Open Spec traceability:
+  - `02-specification.md` scenario acceptance trace now includes all TC-001..TC-026 continuity;
+  - `06-test-cases.md` now includes a Per-TC Trace And Planned Evidence Matrix.
+- Re-recorded scenario matrix, scenario review, freeze confirmation, and planned obligations through `ProductDeliveryWorkflow` so canonical state and artifacts are aligned.
+- Spawned subagent review results:
+  - Traceability reviewer first-pass BLOCK, re-review PASS, revision PASS.
+  - Non-UI evidence reviewer first-pass BLOCK, re-review PASS, revision PASS.
+  - Gate/negative-boundary reviewer PASS, cross-challenge found state/artifact divergence, re-check PASS, revision PASS.
+- Recorded canonical `test_coverage` review through `ProductDeliveryWorkflow.record_multi_agent_review("test_coverage", ...)`.
+- New artifact: `.product-delivery/artifacts/multi-agent-test_coverage-review.md`.
+- Canonical state now has `multi_agent_reviews.test_coverage.status=passed`, `review_mode=spawned_subagents`, and 26 planned obligations.
+- Important gate status: `planned_e2e_obligations.accepted_by_user=false`; no `planned_e2e_obligations` user confirmation exists. Implementation launch authorization is still absent and implementation remains blocked.
+- Verification:
+  - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 152 tests.
+  - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
+
+### V2.x OpenCode Support Planning And Reversion
+
+- User asked for V2 planning to support OpenCode.
+- Retained planning direction:
+  - V2.0.0 OpenCode native plugin MVP;
+  - V2.1.0 execution target abstraction;
+  - V2.2.0 OpenCode evidence ingestion;
+  - V2.3.0 OpenCode multi-agent / external orchestration support.
+- Updated `ROADMAP.md` with the staged OpenCode plan.
+- Recorded planning findings that OpenCode must remain a supporting execution surface and must not replace Product Delivery canonical state, gate, transition journal, or closure validator authority.
+- A V2 implementation was started by mistake after misreading the latest user intent.
+- User clarified: keep planning documents and revert code implementation.
+- Reverted the accidental V2 implementation surface:
+  - removed OpenCode native plugin/package assets;
+  - removed `opencode_support.py`;
+  - removed V2 OpenCode tests;
+  - removed OpenCode execution handoff/evidence ingestion from `workflow.py`;
+  - removed OpenCode package generation from `plugin_packaging.py`;
+  - reverted README and changelog claims that OpenCode is currently supported;
+  - regenerated the plugin package and dist archive without OpenCode assets.
+- Preserved V1.1 canonical gate status: the current V1.1 delivery remains blocked until planned coverage confirmation and launch authorization.
+- Verification after reversion:
+  - `PYTHONPATH=src python3 -m unittest discover -s tests` passed: 152 tests.
+  - `python3 -m py_compile src/product_delivery_agent/*.py` passed.
+  - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
+  - `env -u PYTHONPATH PYTHONNOUSERSITE=1 python3 plugins/waygate-product-delivery/scripts/validate-closure-artifact.py --help` passed.
+  - `tar -tzf dist/waygate-product-delivery-1.0.11.tar.gz` check confirmed no OpenCode assets or OpenCode `package.json` are packaged.

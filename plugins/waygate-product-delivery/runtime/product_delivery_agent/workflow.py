@@ -25,6 +25,9 @@ from product_delivery_agent.confirmation import (
     validate_confirmation_message,
     validate_user_confirmation,
 )
+from product_delivery_agent.confirmation_policy import (
+    is_recordable_user_confirmation_target,
+)
 from product_delivery_agent.coverage_audit import (
     build_executed_browser_evidence,
     build_planned_e2e_obligations,
@@ -53,7 +56,10 @@ from product_delivery_agent.gatekeeper import (
     assert_pre_closure_ready,
     assert_pre_handoff_ready,
     derive_blockers,
+    requirements_e2e_confirmation_hash,
     render_closure_validator_result,
+    review_input_hash,
+    stable_state_hash,
 )
 from product_delivery_agent.handoff import (
     build_codex_goal_handoff,
@@ -153,6 +159,10 @@ class ProductDeliveryWorkflow:
             "status": "missing",
             "records": [],
         }
+        state["executed_behavior_evidence"] = {
+            "status": "missing",
+            "records": [],
+        }
         state["closure_validation"] = {
             "status": "not_run",
             "errors": [],
@@ -190,6 +200,21 @@ class ProductDeliveryWorkflow:
             "rows": [dict(row) for row in rows],
             "artifact_path": "artifacts/scope-scenario-matrix.md",
         }
+        self._mark_reviews_stale(
+            state,
+            ("scenario", "test", "test_coverage"),
+            reason="scenario_matrix_changed",
+        )
+        self._invalidate_requirements_e2e_confirmation(
+            state,
+            reason="scenario_matrix_changed",
+            invalidate_open_spec=True,
+            invalidate_planned_e2e=True,
+        )
+        self._invalidate_launch_authorization(
+            state,
+            reason="scenario_matrix_changed",
+        )
         self._remove_blockers(state, "open_spec_current_feature")
         self._add_blockers(
             state,
@@ -216,15 +241,6 @@ class ProductDeliveryWorkflow:
             raise ReviewGateError(
                 "role_simulation review rejected by spawned_subagents_required policy"
             )
-        if (
-            review_mode == "role_simulation"
-            and "role_simulation_review_acceptance"
-            not in state.get("user_confirmations", {})
-        ):
-            raise ReviewGateError(
-                "role_simulation review requires separate user acceptance"
-            )
-
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         artifact_name = f"multi-agent-{review_type}-review.md"
@@ -238,12 +254,18 @@ class ProductDeliveryWorkflow:
             "review_id": review["review_id"],
             "artifact_version": review["artifact_version"],
             "review_mode": review_mode,
+            "input_snapshot_hash": review_input_hash(state, review_type),
         }
-        self._remove_blockers(state, f"multi_agent_{review_type}_review")
+        self._remove_blockers(
+            state,
+            f"multi_agent_{review_type}_review",
+            f"stale_multi_agent_{review_type}_review",
+        )
         state["stage"] = f"multi_agent_{review_type}_review_passed"
         next_gates = {
-            "scenario": "user_confirmed_freeze",
-            "test_coverage": "codex_goal_handoff",
+            "scenario": "ui_or_non_ui_confirmation",
+            "test": "requirements_e2e_user_confirmation",
+            "test_coverage": "requirements_e2e_user_confirmation",
             "test_implementation": "feature_closure_after_implementation",
         }
         state["next_gate"] = next_gates.get(review_type, "codex_goal_handoff")
@@ -252,18 +274,14 @@ class ProductDeliveryWorkflow:
     def record_implementation_launch_authorization(
         self,
         *,
-        user_message: str,
         scope: str,
         verification_commands: list[str] | None = None,
         planned_tasks: list[dict[str, Any]] | None = None,
         prohibited_work: list[str] | None = None,
+        user_message: str | None = None,
     ) -> dict[str, Any]:
-        """Record user authorization to start implementation for this package."""
+        """Record runtime authorization to start implementation for this package."""
         state = self._require_started()
-        if "确认按当前交付包开始实现" not in user_message:
-            raise ConfirmationError(
-                "implementation launch requires exact user authorization phrase"
-            )
         task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
         package = self._build_launch_package(
             state,
@@ -287,65 +305,12 @@ class ProductDeliveryWorkflow:
                 "implementation launch blocked: " + ", ".join(sorted(blockers))
             )
 
-        confirmation = {
-            "confirmation_id": "CONF-implementation_launch_authorization",
-            "target": "implementation_launch_authorization",
-            "artifact_path": ".product-delivery/artifacts/implementation-launch-authorization.md",
-            "artifact_version": package["launch_package_hash"],
-            "artifact_hash": package["launch_package_hash"],
-            "confirmed_by": "user",
-            "confirmation_source": "chat_user_reply",
-            "confirmed_at": self._timestamp_from_state(state),
-            "decision": "approved",
-            "user_message": user_message,
-            "nonce": package["nonce"],
-        }
-        confirmations_dir = (
-            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
+        state = self._record_runtime_launch_authorization(
+            state,
+            package,
+            scope=scope,
+            user_message=user_message,
         )
-        confirmations_dir.mkdir(parents=True, exist_ok=True)
-        launch_path = (
-            self.project_root
-            / ARTIFACT_ROOT
-            / "artifacts"
-            / "implementation-launch-authorization.md"
-        )
-        launch_path.write_text(
-            self._render_implementation_launch_authorization(package, confirmation),
-            encoding="utf-8",
-        )
-        confirmation_path = confirmations_dir / "implementation_launch_authorization.md"
-        confirmation_path.write_text(
-            render_user_confirmation(confirmation),
-            encoding="utf-8",
-        )
-
-        state["implementation_launch_authorization"] = {
-            "status": "authorized",
-            "feature_slug": state.get("feature_slug"),
-            "launch_package_hash": package["launch_package_hash"],
-            "nonce": package["nonce"],
-            "scope": scope,
-            "review_modes": package["review_modes"],
-            "prototype_hash": package["prototype_hash"],
-            "planned_e2e_hash": package["planned_e2e_hash"],
-            "task_queue_hash": package["task_queue_hash"],
-            "required_commands_hash": package["required_commands_hash"],
-            "authorization_artifact_path": (
-                "artifacts/implementation-launch-authorization.md"
-            ),
-            "confirmation_artifact_path": (
-                "artifacts/user-confirmations/implementation_launch_authorization.md"
-            ),
-            "authorized_at": confirmation["confirmed_at"],
-        }
-        state.setdefault("user_confirmations", {})
-        state["user_confirmations"]["implementation_launch_authorization"] = {
-            **confirmation,
-            "confirmation_artifact_path": (
-                "artifacts/user-confirmations/implementation_launch_authorization.md"
-            ),
-        }
         state["stage"] = "implementation_launch_authorized"
         state["next_gate"] = "codex_goal_handoff"
         return write_state(self.project_root, state)
@@ -357,6 +322,8 @@ class ProductDeliveryWorkflow:
         state = self._require_started()
         validate_user_confirmation(confirmation)
         target = confirmation["target"]
+        if not is_recordable_user_confirmation_target(target):
+            raise WorkflowError(f"{target} is not a user confirmation gate")
         if target == "open_spec_freeze":
             review = state.get("multi_agent_reviews", {}).get("scenario", {})
             if review.get("status") != "passed":
@@ -398,6 +365,119 @@ class ProductDeliveryWorkflow:
             state["stage"] = "planned_e2e_user_confirmed"
         else:
             state["stage"] = f"{target}_user_confirmed"
+        return write_state(self.project_root, state)
+
+    def confirm_requirements_and_e2e_plan(
+        self,
+        user_message: str,
+        *,
+        agent_explicitly_asked: bool = False,
+    ) -> dict[str, Any]:
+        """Confirm requirements freeze and planned E2E coverage with one artifact."""
+        state = self._require_started()
+        validate_confirmation_message(
+            user_message,
+            agent_explicitly_asked=agent_explicitly_asked,
+        )
+        if state.get("project_type") == "ui":
+            ui = state.get("ui_prototype", {})
+            if not ui.get("confirmed_by_user") or "ui_prototype" not in state.get(
+                "user_confirmations", {}
+            ):
+                raise WorkflowError("confirmed UI prototype is required before freeze")
+        elif state.get("project_type") == "non_ui":
+            if "non_ui_behavior_contract" not in state:
+                raise WorkflowError("non-UI behavior contract is required before freeze")
+        else:
+            raise WorkflowError("project type is required before freeze")
+        planned = state.get("planned_e2e_obligations", {})
+        if not planned.get("accepted") or not planned.get("obligations"):
+            raise WorkflowError("planned E2E obligations are required before freeze")
+        for review_type in ("scenario", "test_coverage", "test"):
+            review = state.get("multi_agent_reviews", {}).get(review_type, {})
+            if review.get("status") != "passed":
+                raise WorkflowError(f"multi-agent {review_type} review is required")
+            expected_hash = review_input_hash(state, review_type)
+            if review.get("input_snapshot_hash") != expected_hash:
+                raise WorkflowError(f"stale multi-agent {review_type} review")
+
+        snapshot_hash = requirements_e2e_confirmation_hash(state)
+        nonce = stable_state_hash(
+            {
+                "target": "requirements_e2e_plan",
+                "snapshot_hash": snapshot_hash,
+                "feature_slug": state.get("feature_slug"),
+            }
+        )[:16]
+        artifact_name = f"requirements-e2e-plan-{nonce}.md"
+        confirmation = {
+            "confirmation_id": "CONF-requirements_e2e_plan",
+            "target": "requirements_e2e_plan",
+            "artifact_path": f".product-delivery/artifacts/user-confirmations/{artifact_name}",
+            "artifact_version": snapshot_hash,
+            "artifact_hash": snapshot_hash,
+            "snapshot_hash": snapshot_hash,
+            "nonce": nonce,
+            "shared_confirmation_target": "requirements_e2e_plan",
+            "confirmed_by": "user",
+            "confirmation_source": "chat_user_reply",
+            "confirmed_at": self._timestamp_from_state(state),
+            "decision": "approved",
+            "user_message": user_message,
+        }
+        confirmations_dir = (
+            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
+        )
+        confirmations_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = confirmations_dir / artifact_name
+        artifact_text = render_user_confirmation(confirmation) + "\n".join(
+            [
+                "## Snapshot",
+                f"Snapshot Hash: {snapshot_hash}",
+                f"Shared Logical Gates: open_spec_freeze, planned_e2e_obligations",
+                "",
+            ]
+        )
+        artifact_path.write_text(artifact_text, encoding="utf-8")
+
+        relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
+        logical_confirmation = {
+            **confirmation,
+            "confirmation_artifact_path": relative_artifact_path,
+        }
+        state.setdefault("user_confirmations", {})
+        state["user_confirmations"]["open_spec_freeze"] = {
+            **logical_confirmation,
+            "target": "open_spec_freeze",
+        }
+        state["user_confirmations"]["planned_e2e_obligations"] = {
+            **logical_confirmation,
+            "target": "planned_e2e_obligations",
+        }
+        state["open_spec_freeze"] = {
+            "approved_by_user": True,
+            "approved_at": confirmation["confirmed_at"],
+            "confirmation_artifact_path": relative_artifact_path,
+            "snapshot_hash": snapshot_hash,
+        }
+        state.setdefault("planned_e2e_obligations", {})
+        state["planned_e2e_obligations"]["accepted_by_user"] = True
+        state["planned_e2e_obligations"]["confirmation_artifact_path"] = (
+            relative_artifact_path
+        )
+        state["planned_e2e_obligations"]["confirmation_snapshot_hash"] = snapshot_hash
+        state["freeze"] = {
+            **state.get("freeze", {}),
+            "frozen": True,
+        }
+        self._remove_blockers(
+            state,
+            "user_confirmed_freeze",
+            "planned_e2e_user_confirmation",
+            "stale_requirements_e2e_confirmation",
+        )
+        state["stage"] = "requirements_e2e_plan_user_confirmed"
+        state["next_gate"] = "codex_goal_handoff"
         return write_state(self.project_root, state)
 
     def status(self) -> dict[str, Any]:
@@ -563,6 +643,21 @@ class ProductDeliveryWorkflow:
         state.setdefault("pending_confirmations", {})
         state["pending_confirmations"]["ui_prototype"] = pending_confirmation
         state.setdefault("user_confirmations", {}).pop("ui_prototype", None)
+        self._mark_reviews_stale(
+            state,
+            ("test", "test_coverage"),
+            reason="ui_prototype_changed",
+        )
+        self._invalidate_requirements_e2e_confirmation(
+            state,
+            reason="ui_prototype_changed",
+            invalidate_open_spec=False,
+            invalidate_planned_e2e=True,
+        )
+        self._invalidate_launch_authorization(
+            state,
+            reason="ui_prototype_changed",
+        )
         self._add_blockers(state, "ui_html_prototype_confirmation")
         state.setdefault("handoff_inputs", {})
         state["handoff_inputs"]["ui_prototype_limitations"] = list(
@@ -693,6 +788,21 @@ class ProductDeliveryWorkflow:
         }
         state.setdefault("user_confirmations", {}).pop("ui_prototype", None)
         state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
+        self._mark_reviews_stale(
+            state,
+            ("test", "test_coverage"),
+            reason="ui_prototype_feedback",
+        )
+        self._invalidate_requirements_e2e_confirmation(
+            state,
+            reason="ui_prototype_feedback",
+            invalidate_open_spec=False,
+            invalidate_planned_e2e=True,
+        )
+        self._invalidate_launch_authorization(
+            state,
+            reason="ui_prototype_feedback",
+        )
         self._add_blockers(state, "ui_html_prototype_confirmation")
         state["stage"] = "ui_prototype_changes_requested"
         state["next_gate"] = "ui_prototype_revision_review"
@@ -792,6 +902,22 @@ class ProductDeliveryWorkflow:
                 f"artifacts/{CORE_ARTIFACTS['test_coverage_audit']}"
             ),
         }
+        self._mark_reviews_stale(
+            state,
+            ("test", "test_coverage"),
+            reason="test_coverage_audit_changed",
+        )
+        if self._has_snapshot_bound_requirements_e2e_confirmation(state):
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="test_coverage_audit_changed",
+                invalidate_open_spec=True,
+                invalidate_planned_e2e=True,
+            )
+        self._invalidate_launch_authorization(
+            state,
+            reason="test_coverage_audit_changed",
+        )
         state.setdefault("handoff_inputs", {})
         state["handoff_inputs"]["coverage_matrix_range"] = audit["matrix_range"]
         state["handoff_inputs"]["latest_test_case"] = audit["latest_test_case"]
@@ -809,7 +935,11 @@ class ProductDeliveryWorkflow:
         exemptions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         state = self._require_started()
-        planned = build_planned_e2e_obligations(obligations, exemptions)
+        planned = build_planned_e2e_obligations(
+            obligations,
+            exemptions,
+            project_type=state.get("project_type") or "ui",
+        )
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -823,14 +953,46 @@ class ProductDeliveryWorkflow:
             **planned,
             "artifact_path": "artifacts/planned-e2e-obligations.md",
         }
-        state["executed_browser_evidence"] = {
-            "status": "missing",
-            "records": [],
-        }
-        self._add_blockers(state, "planned_e2e_user_confirmation", "executed_browser_evidence")
+        self._mark_reviews_stale(
+            state,
+            ("test", "test_coverage"),
+            reason="planned_e2e_changed",
+        )
+        self._invalidate_requirements_e2e_confirmation(
+            state,
+            reason="planned_e2e_changed",
+            invalidate_open_spec=False,
+            invalidate_planned_e2e=True,
+        )
+        self._invalidate_launch_authorization(
+            state,
+            reason="planned_e2e_changed",
+        )
+        if state.get("project_type") == "non_ui":
+            state["executed_behavior_evidence"] = {
+                "status": "missing",
+                "records": [],
+            }
+            self._remove_blockers(state, "executed_browser_evidence")
+            self._add_blockers(
+                state,
+                "planned_e2e_user_confirmation",
+                "executed_behavior_evidence",
+            )
+        else:
+            state["executed_browser_evidence"] = {
+                "status": "missing",
+                "records": [],
+            }
+            self._remove_blockers(state, "executed_behavior_evidence")
+            self._add_blockers(
+                state,
+                "planned_e2e_user_confirmation",
+                "executed_browser_evidence",
+            )
         self._remove_blockers(state, "planned_e2e_obligations")
         state["stage"] = "planned_e2e_obligations_ready"
-        state["next_gate"] = "planned_e2e_user_confirmation"
+        state["next_gate"] = "multi_agent_test_coverage_review"
         return write_state(self.project_root, state)
 
     def record_executed_browser_evidence(
@@ -876,6 +1038,11 @@ class ProductDeliveryWorkflow:
                 "record_count": len(evidence.get("records", [])),
             },
         )
+        self._mark_reviews_stale(
+            state,
+            ("test_implementation",),
+            reason="executed_browser_evidence_changed",
+        )
         self._remove_blockers(state, "executed_browser_evidence")
         state["stage"] = "executed_browser_evidence_passed"
         state["next_gate"] = "multi_agent_test_implementation_review"
@@ -905,11 +1072,21 @@ class ProductDeliveryWorkflow:
             prohibited_work=prohibited_work,
             planned_tasks=task_queue,
         )
-        assert_pre_handoff_ready(
-            state,
-            self.project_root,
-            launch_package_hash=package["launch_package_hash"],
-        )
+        auth_ignored_blockers = [
+            blocker
+            for blocker in derive_blockers(
+                state,
+                self.project_root,
+                launch_package_hash=package["launch_package_hash"],
+            )
+            if blocker != "implementation_launch_authorization"
+            and blocker != "stale_implementation_launch_authorization"
+        ]
+        if auth_ignored_blockers:
+            raise GatekeeperError(
+                "pre-handoff gate blocked: "
+                + ", ".join(sorted(auth_ignored_blockers))
+            )
         delivery_goal = build_delivery_goal(
             feature_slug=state.get("feature_slug"),
             scope=scope,
@@ -923,6 +1100,16 @@ class ProductDeliveryWorkflow:
             verification_commands=verification_commands,
             prohibited_work=prohibited_work,
             planned_tasks=list(delivery_goal["planned_tasks"]),
+        )
+        state = self._record_runtime_launch_authorization(
+            state,
+            package,
+            scope=scope,
+        )
+        assert_pre_handoff_ready(
+            state,
+            self.project_root,
+            launch_package_hash=package["launch_package_hash"],
         )
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
@@ -1087,8 +1274,65 @@ class ProductDeliveryWorkflow:
                 **state.get("freeze", {}),
                 "frozen": False,
             }
+            self._mark_reviews_stale(
+                state,
+                ("scenario", "test", "test_coverage"),
+                reason=f"post_freeze_{change_type}",
+            )
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason=f"post_freeze_{change_type}",
+                invalidate_open_spec=True,
+                invalidate_planned_e2e=True,
+            )
+            self._invalidate_launch_authorization(
+                state,
+                reason=f"post_freeze_{change_type}",
+            )
+            self._supersede_active_implementation_package(
+                state,
+                reason=f"post_freeze_{change_type}",
+            )
             state["stage"] = "version_scope_confirmation"
+            state["status"] = "scope_revision"
             state["next_gate"] = "version_scope"
+        elif change_type == "test_gap":
+            self._mark_reviews_stale(
+                state,
+                ("test", "test_coverage"),
+                reason=f"post_freeze_{change_type}",
+            )
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason=f"post_freeze_{change_type}",
+                invalidate_open_spec=False,
+                invalidate_planned_e2e=True,
+            )
+            self._invalidate_launch_authorization(
+                state,
+                reason=f"post_freeze_{change_type}",
+            )
+            self._supersede_active_implementation_package(
+                state,
+                reason=f"post_freeze_{change_type}",
+            )
+            state["stage"] = "planned_e2e_obligations_revision"
+            state["status"] = "coverage_revision"
+            state["next_gate"] = "planned_e2e_obligations"
+        elif change_type == "acceptance_feedback":
+            self._mark_reviews_stale(
+                state,
+                ("test", "test_coverage"),
+                reason=f"post_freeze_{change_type}",
+            )
+            self._invalidate_launch_authorization(
+                state,
+                reason=f"post_freeze_{change_type}",
+            )
+            self._supersede_active_implementation_package(
+                state,
+                reason=f"post_freeze_{change_type}",
+            )
         return write_state(self.project_root, state)
 
     def record_superseded_closure(
@@ -1267,22 +1511,26 @@ class ProductDeliveryWorkflow:
         return state
 
     def _missing_required_confirmations(self, state: dict[str, Any]) -> list[str]:
-        required = ["product_brief", "version_scope"]
-        if state.get("project_type") == "ui":
-            required.append("ui_prototype_review")
-        elif state.get("project_type") == "non_ui":
-            required.append("non_ui_behavior_contract")
-        else:
-            required.append("project_type")
-
-        confirmation_points = state.get("confirmation_points", {})
         missing = []
-        for artifact_name in required:
-            if artifact_name == "project_type":
-                missing.append(artifact_name)
-                continue
-            if not confirmation_points.get(artifact_name, {}).get("confirmed"):
-                missing.append(artifact_name)
+        user_confirmations = state.get("user_confirmations", {})
+        if (
+            not state.get("open_spec_freeze", {}).get("approved_by_user")
+            or "open_spec_freeze" not in user_confirmations
+        ):
+            missing.append("open_spec_freeze")
+
+        if state.get("project_type") == "ui":
+            ui = state.get("ui_prototype", {})
+            if (
+                not ui.get("confirmed_by_user")
+                or "ui_prototype" not in user_confirmations
+            ):
+                missing.append("ui_prototype")
+        elif state.get("project_type") == "non_ui":
+            if "non_ui_behavior_contract" not in state:
+                missing.append("non_ui_behavior_contract")
+        else:
+            missing.append("project_type")
         return missing
 
     @staticmethod
@@ -1354,6 +1602,234 @@ class ProductDeliveryWorkflow:
             "nonce": f"launch-{package_hash[:16]}",
         }
 
+    def _record_runtime_launch_authorization(
+        self,
+        state: dict[str, Any],
+        package: dict[str, Any],
+        *,
+        scope: str,
+        user_message: str | None = None,
+    ) -> dict[str, Any]:
+        authorization = {
+            "authorization_id": "AUTH-implementation_launch_authorization",
+            "target": "implementation_launch_authorization",
+            "artifact_path": ".product-delivery/artifacts/implementation-launch-authorization.md",
+            "artifact_version": package["launch_package_hash"],
+            "artifact_hash": package["launch_package_hash"],
+            "authorized_by": "runtime",
+            "authorization_source": "runtime_auto",
+            "authorized_at": self._timestamp_from_state(state),
+            "decision": "authorized",
+            "user_message": user_message
+            or "Runtime auto-authorization after required user confirmation gates passed.",
+            "nonce": package["nonce"],
+        }
+        launch_path = (
+            self.project_root
+            / ARTIFACT_ROOT
+            / "artifacts"
+            / "implementation-launch-authorization.md"
+        )
+        launch_path.parent.mkdir(parents=True, exist_ok=True)
+        launch_path.write_text(
+            self._render_implementation_launch_authorization(
+                package,
+                authorization,
+            ),
+            encoding="utf-8",
+        )
+
+        state["implementation_launch_authorization"] = {
+            "status": "authorized",
+            "feature_slug": state.get("feature_slug"),
+            "launch_package_hash": package["launch_package_hash"],
+            "nonce": package["nonce"],
+            "scope": scope,
+            "review_modes": package["review_modes"],
+            "prototype_hash": package["prototype_hash"],
+            "planned_e2e_hash": package["planned_e2e_hash"],
+            "task_queue_hash": package["task_queue_hash"],
+            "required_commands_hash": package["required_commands_hash"],
+            "authorization_artifact_path": (
+                "artifacts/implementation-launch-authorization.md"
+            ),
+            "authorization_source": authorization["authorization_source"],
+            "authorized_by": authorization["authorized_by"],
+            "authorized_at": authorization["authorized_at"],
+        }
+        state.setdefault("user_confirmations", {}).pop(
+            "implementation_launch_authorization",
+            None,
+        )
+        state.setdefault("pending_confirmations", {}).pop(
+            "implementation_launch_authorization",
+            None,
+        )
+        return state
+
+    def _mark_reviews_stale(
+        self,
+        state: dict[str, Any],
+        review_types: tuple[str, ...],
+        *,
+        reason: str,
+    ) -> None:
+        reviews = state.setdefault("multi_agent_reviews", {})
+        stale_records = state.setdefault("stale_multi_agent_reviews", [])
+        stale_at = self._timestamp_from_state(state)
+        for review_type in review_types:
+            review = reviews.get(review_type, {})
+            if review.get("status") not in {"passed", "stale"}:
+                continue
+            if review.get("status") == "passed":
+                stale_records.append(
+                    {
+                        **review,
+                        "review_type": review_type,
+                        "stale_reason": reason,
+                        "stale_at": stale_at,
+                    }
+                )
+            reviews[review_type] = {
+                **review,
+                "status": "stale",
+                "stale_reason": reason,
+                "stale_at": stale_at,
+            }
+            self._add_blockers(state, f"stale_multi_agent_{review_type}_review")
+
+    def _invalidate_requirements_e2e_confirmation(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+        invalidate_open_spec: bool,
+        invalidate_planned_e2e: bool,
+    ) -> None:
+        confirmations = state.setdefault("user_confirmations", {})
+        targets = []
+        if invalidate_open_spec:
+            targets.append("open_spec_freeze")
+        if invalidate_planned_e2e:
+            targets.append("planned_e2e_obligations")
+        targets = self._expand_shared_requirements_e2e_targets(confirmations, targets)
+        existing = [confirmations.get(target) for target in targets]
+        stale = [confirmation for confirmation in existing if confirmation]
+        if stale:
+            state.setdefault("stale_user_confirmations", []).append(
+                {
+                    "targets": targets,
+                    "reason": reason,
+                    "stale_at": self._timestamp_from_state(state),
+                    "records": stale,
+                }
+            )
+        if invalidate_open_spec:
+            confirmations.pop("open_spec_freeze", None)
+            state["open_spec_freeze"] = {
+                **state.get("open_spec_freeze", {}),
+                "approved_by_user": False,
+                "approved_at": None,
+                "confirmation_artifact_path": None,
+                "stale_reason": reason,
+            }
+            self._add_blockers(state, "user_confirmed_freeze")
+        if invalidate_planned_e2e:
+            confirmations.pop("planned_e2e_obligations", None)
+            planned = state.setdefault("planned_e2e_obligations", {})
+            planned["accepted_by_user"] = False
+            planned.pop("confirmation_artifact_path", None)
+            planned.pop("confirmation_snapshot_hash", None)
+            self._add_blockers(state, "planned_e2e_user_confirmation")
+
+    @staticmethod
+    def _expand_shared_requirements_e2e_targets(
+        confirmations: dict[str, Any],
+        targets: list[str],
+    ) -> list[str]:
+        expanded = list(targets)
+        logical_targets = ("open_spec_freeze", "planned_e2e_obligations")
+        selected_records = [
+            confirmations.get(target)
+            for target in targets
+            if isinstance(confirmations.get(target), dict)
+        ]
+        shared_paths = {
+            record.get("confirmation_artifact_path")
+            for record in selected_records
+            if record.get("shared_confirmation_target") == "requirements_e2e_plan"
+            or record.get("snapshot_hash")
+        }
+        if not shared_paths:
+            return expanded
+        for logical_target in logical_targets:
+            record = confirmations.get(logical_target)
+            if (
+                isinstance(record, dict)
+                and record.get("confirmation_artifact_path") in shared_paths
+                and logical_target not in expanded
+            ):
+                expanded.append(logical_target)
+        return expanded
+
+    @staticmethod
+    def _has_snapshot_bound_requirements_e2e_confirmation(
+        state: dict[str, Any],
+    ) -> bool:
+        confirmations = state.get("user_confirmations") or {}
+        for target in ("open_spec_freeze", "planned_e2e_obligations"):
+            record = confirmations.get(target)
+            if isinstance(record, dict) and record.get("snapshot_hash"):
+                return True
+        return False
+
+    def _invalidate_launch_authorization(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        authorization = state.get("implementation_launch_authorization")
+        if not isinstance(authorization, dict) or not authorization:
+            return
+        state.setdefault("stale_implementation_launch_authorizations", []).append(
+            {
+                **authorization,
+                "stale_reason": reason,
+                "stale_at": self._timestamp_from_state(state),
+            }
+        )
+        state["implementation_launch_authorization"] = {
+            **authorization,
+            "status": "stale",
+            "stale_reason": reason,
+        }
+        self._add_blockers(state, "stale_implementation_launch_authorization")
+
+    def _supersede_active_implementation_package(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        package_keys = (
+            "handoff",
+            "delivery_goal",
+            "implementation",
+            "codex_goal_prompt",
+        )
+        if not any(state.get(key) for key in package_keys):
+            return
+        state.setdefault("superseded_implementation_packages", []).append(
+            {
+                "reason": reason,
+                "superseded_at": self._timestamp_from_state(state),
+                **{key: state.get(key) for key in package_keys if state.get(key)},
+            }
+        )
+        for key in package_keys:
+            state.pop(key, None)
+
     @staticmethod
     def _stable_hash(value: Any) -> str:
         return hashlib.sha256(
@@ -1363,7 +1839,7 @@ class ProductDeliveryWorkflow:
     @staticmethod
     def _render_implementation_launch_authorization(
         package: dict[str, Any],
-        confirmation: dict[str, Any],
+        authorization: dict[str, Any],
     ) -> str:
         lines = [
             "# Implementation Launch Authorization",
@@ -1377,7 +1853,9 @@ class ProductDeliveryWorkflow:
             f"Planned E2E Hash: {package['planned_e2e_hash']}",
             f"Task Queue Hash: {package['task_queue_hash']}",
             f"Required Commands Hash: {package['required_commands_hash']}",
-            f"Confirmed At: {confirmation['confirmed_at']}",
+            f"Authorization Source: {authorization['authorization_source']}",
+            f"Authorized By: {authorization['authorized_by']}",
+            f"Authorized At: {authorization['authorized_at']}",
             "",
             "## Review Modes",
         ]
@@ -1390,7 +1868,7 @@ class ProductDeliveryWorkflow:
             lines.append("- None")
         lines.extend(["", "## Task Queue"])
         lines.extend(f"- {task['task_id']}: {task['title']}" for task in package["task_queue"])
-        lines.extend(["", "## User Message", confirmation["user_message"], ""])
+        lines.extend(["", "## Authorization Note", authorization["user_message"], ""])
         return "\n".join(lines)
 
     def _artifact_hash(
@@ -1470,12 +1948,41 @@ class ProductDeliveryWorkflow:
 
     @staticmethod
     def _render_planned_e2e_obligations(planned: dict[str, Any]) -> str:
-        lines = ["# Planned E2E Obligations", "", "Status: Accepted", ""]
-        lines.extend(["## Obligations"])
+        lines = [
+            "# Planned E2E Obligations",
+            "",
+            "Status: Accepted",
+            "User Accepted: False",
+            "",
+            "## Obligations",
+            "",
+            "| Test | Scenario | User Story | Journey | AC | TASK | Layer | Assertions | Actions | False-Positive Guards |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
         for obligation in planned["obligations"]:
             lines.append(
-                "- {test_id} covers {scenario_id} with {test_layer}".format(
-                    **obligation
+                "| {test_id} | {scenario_id} | {user_story} | {journey} | {ac} | "
+                "{task} | {test_layer} | {semantic_assertions} | {actions} | "
+                "{false_positive_guards} |".format(
+                    test_id=obligation["test_id"],
+                    scenario_id=obligation["scenario_id"],
+                    user_story=obligation["user_story"],
+                    journey=obligation["journey"],
+                    ac=obligation.get("acceptance_criteria", ""),
+                    task=obligation.get("task", ""),
+                    test_layer=obligation["test_layer"],
+                    semantic_assertions="<br>".join(
+                        obligation.get("semantic_assertions", [])
+                    ),
+                    actions="<br>".join(
+                        "{action_entry} -> {assertion_target} ({semantic_depth})".format(
+                            **assertion
+                        )
+                        for assertion in obligation.get("action_assertions", [])
+                    ),
+                    false_positive_guards="<br>".join(
+                        obligation.get("false_positive_guards", [])
+                    ),
                 )
             )
         lines.extend(["", "## Exemptions"])

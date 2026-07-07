@@ -5,6 +5,8 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
 from product_delivery_agent.coverage_audit import CoverageAuditError
 from product_delivery_agent.gatekeeper import (
+    assert_pre_closure_ready,
+    derive_blockers,
     GatekeeperError,
     normalize_project_type,
     validate_state_invariants,
@@ -277,7 +279,6 @@ def ready_for_handoff(project_root):
     workflow.record_multi_agent_review("test_coverage", review("test_coverage"))
     workflow.record_multi_agent_review("test", review("test"))
     workflow.record_implementation_launch_authorization(
-        user_message="确认按当前交付包开始实现",
         scope="Implement owner operations",
         verification_commands=["pytest"],
     )
@@ -289,6 +290,159 @@ def ready_for_handoff(project_root):
 
 
 class GatekeeperV103Tests(unittest.TestCase):
+    def test_planned_e2e_change_after_test_coverage_review_marks_review_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = workflow_with_open_spec_and_scenario(project_root)
+            pending = workflow.status()["pending_confirmations"]["ui_prototype"]
+            workflow.confirm_ui_prototype(
+                "确认本地 HTML 原型符合预期",
+                "docs/prototypes/v2.5-prototype.html",
+                nonce=pending["nonce"],
+            )
+            workflow.record_planned_e2e_obligations([planned_obligation()])
+            workflow.record_test_coverage_audit(
+                [coverage_row()],
+                negative_guard_records=["student billing remains absent"],
+            )
+            workflow.record_multi_agent_review("test_coverage", review("test_coverage"))
+
+            state = workflow.record_planned_e2e_obligations(
+                [
+                    planned_obligation(
+                        test_id="TC-V008-002",
+                        obligation_id="OBL-002",
+                    )
+                ]
+            )
+
+            self.assertEqual(
+                state["multi_agent_reviews"]["test_coverage"]["status"],
+                "stale",
+            )
+            self.assertIn(
+                "stale_multi_agent_test_coverage_review",
+                derive_blockers(state, project_root),
+            )
+
+    def test_scenario_matrix_change_after_scenario_review_marks_review_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start(feature_slug="v2.5-key-owner-ops")
+            workflow.record_scenario_matrix([scenario_row()])
+            workflow.record_multi_agent_review("scenario", review("scenario"))
+
+            state = workflow.record_scenario_matrix(
+                [scenario_row(scenario_id="SC-002", planned_e2e_case="TC-V008-002")]
+            )
+
+            self.assertEqual(
+                state["multi_agent_reviews"]["scenario"]["status"],
+                "stale",
+            )
+            self.assertIn(
+                "stale_multi_agent_scenario_review",
+                derive_blockers(state, project_root),
+            )
+
+    def test_passed_review_without_snapshot_hash_blocks_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ready_for_handoff(project_root)
+            state = workflow.status()
+            state["multi_agent_reviews"]["test_coverage"].pop(
+                "input_snapshot_hash",
+                None,
+            )
+
+            blockers = derive_blockers(state, project_root)
+
+            self.assertIn("stale_multi_agent_test_coverage_review", blockers)
+
+    def test_non_ui_pre_closure_requires_behavior_evidence_and_implementation_review(self):
+        state = {
+            "project_type": "non_ui",
+            "handoff": {"handoff_artifact_path": "artifacts/handoff.md"},
+            "delivery_goal": {"status": "active"},
+            "test_coverage_audit": {"passed": True},
+            "planned_e2e_obligations": {
+                "obligations": [
+                    {
+                        "obligation_id": "OBL-001",
+                        "test_id": "TC-V008-001",
+                        "scenario_id": "SC-001",
+                        "user_story": "US-001",
+                        "journey": "J-001",
+                        "exemption_status": "none",
+                    }
+                ],
+                "exemptions": [],
+            },
+            "executed_behavior_evidence": {"status": "missing", "records": []},
+            "multi_agent_reviews": {
+                "test_implementation": {
+                    "status": "passed",
+                    "input_snapshot_hash": "not-current",
+                }
+            },
+        }
+
+        with self.assertRaises(GatekeeperError) as caught:
+            assert_pre_closure_ready(state, {})
+
+        self.assertIn("executed_behavior_evidence", str(caught.exception))
+
+    def test_pre_closure_rejects_stale_test_implementation_review(self):
+        state = {
+            "project_type": "ui",
+            "handoff": {"handoff_artifact_path": "artifacts/handoff.md"},
+            "delivery_goal": {"status": "active"},
+            "test_coverage_audit": {"passed": True},
+            "planned_e2e_obligations": {
+                "obligations": [
+                    {
+                        "obligation_id": "OBL-001",
+                        "test_id": "TC-V008-001",
+                        "scenario_id": "SC-001",
+                        "user_story": "US-001",
+                        "journey": "J-001",
+                        "exemption_status": "none",
+                    }
+                ],
+                "exemptions": [],
+            },
+            "executed_browser_evidence": {
+                "status": "passed",
+                "records": [
+                    {
+                        "obligation_id": "OBL-001",
+                        "test_id": "TC-V008-001",
+                        "evidence_path": ".product-delivery/artifacts/e2e/tc-v008-001.json",
+                    }
+                ],
+            },
+            "multi_agent_reviews": {
+                "test_implementation": {
+                    "status": "passed",
+                    "input_snapshot_hash": "not-current",
+                }
+            },
+        }
+        closure_artifact = {
+            "e2e_covered_tc": ["TC-V008-001"],
+            "covered_user_stories": ["US-001"],
+            "covered_journeys": ["J-001"],
+            "e2e_evidence_paths": [
+                ".product-delivery/artifacts/e2e/tc-v008-001.json"
+            ],
+        }
+
+        with self.assertRaises(GatekeeperError) as caught:
+            assert_pre_closure_ready(state, closure_artifact)
+
+        self.assertIn("multi_agent_test_implementation_review", str(caught.exception))
+
     def test_normalizes_web_system_to_ui_subtype(self):
         self.assertEqual(
             normalize_project_type("web_system"),

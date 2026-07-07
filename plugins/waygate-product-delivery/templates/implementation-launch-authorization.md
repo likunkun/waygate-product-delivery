@@ -4,11 +4,12 @@
 - feature_slug:
 - launch_package_hash:
 - nonce:
-- required_user_phrase: 确认按当前交付包开始实现
+- authorization_source: runtime_auto
+- authorized_by: runtime
 - review_modes:
 - prototype_hash:
 - planned_e2e_hash:
 - task_queue_hash:
 - required_commands_hash:
 
-Only canonical implementation_launch_authorization can enter implementation. A custom artifact can support review, but cannot authorize implementation.
+Only canonical runtime implementation_launch_authorization can enter implementation. This is an internal evidence artifact, not a user confirmation gate.

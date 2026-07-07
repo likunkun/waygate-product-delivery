@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, CORE_ARTIFACTS
+from product_delivery_agent.confirmation_policy import (
+    confirmed_user_confirmation_targets,
+    pending_user_confirmation_blockers,
+)
+from product_delivery_agent.continuation import derive_continuation_status
 from product_delivery_agent.gatekeeper import (
     closure_integrity_errors,
     implementation_integrity_errors,
@@ -114,15 +119,43 @@ def check_stop_guardrail(project_root: str | Path) -> HookResult:
     if invalid:
         return invalid
 
+    continuation = derive_continuation_status(state)
+    if continuation["status"] == "wait_for_user":
+        return HookResult(
+            active=True,
+            silent=False,
+            passed=True,
+            message="continuation_guard=wait_for_user",
+            missing_items=continuation["blockers"],
+        )
+    if continuation["status"] == "complete":
+        return HookResult(
+            active=True,
+            silent=False,
+            passed=True,
+            message="continuation_guard=complete",
+        )
+
     missing = _missing_stop_items(Path(project_root), state)
+    if not continuation["can_stop"]:
+        missing.extend(continuation["blockers"])
     return HookResult(
         active=True,
         silent=False,
         passed=not missing,
-        message="stop_guardrail=passed" if not missing else "stop_guardrail=blocked",
-        warnings=[] if not missing else ["Missing product delivery evidence before stop."],
+        message=(
+            "stop_guardrail=passed"
+            if not missing
+            else f"continuation_guard={continuation['status']}"
+        ),
+        warnings=[] if not missing else [_stop_guard_warning(continuation)],
         missing_items=missing,
     )
+
+
+def check_final_summary_guardrail(project_root: str | Path) -> HookResult:
+    """Check whether an active main flow may produce a final summary."""
+    return check_stop_guardrail(project_root)
 
 
 def _silent() -> HookResult:
@@ -185,17 +218,16 @@ def _state_summary(state: dict[str, Any], *, stage_label: str) -> str:
     if state.get("next_gate"):
         parts.append(f"next_gate={state['next_gate']}")
 
-    confirmations = state.get("confirmation_points", {})
-    confirmed = sorted(
-        artifact_name
-        for artifact_name, record in confirmations.items()
-        if record.get("confirmed")
-    )
-    pending = sorted(
-        artifact_name
-        for artifact_name, record in confirmations.items()
-        if not record.get("confirmed")
-    )
+    continuation = derive_continuation_status(state)
+    parts.append(f"continuation={continuation['status']}")
+    if continuation.get("next_action"):
+        parts.append(f"next_action={continuation['next_action']}")
+
+    confirmed = confirmed_user_confirmation_targets(state)
+    pending = [
+        blocker.removeprefix("pending_confirmation:")
+        for blocker in pending_user_confirmation_blockers(state)
+    ]
     if confirmed:
         parts.append("confirmed=" + ",".join(confirmed))
     if pending:
@@ -206,6 +238,14 @@ def _state_summary(state: dict[str, Any], *, stage_label: str) -> str:
         parts.append("skill_records=" + ",".join(skill_records))
 
     return "; ".join(parts)
+
+
+def _stop_guard_warning(continuation: dict[str, Any]) -> str:
+    if continuation["status"] == "must_continue":
+        return "Product Delivery main flow has an actionable next gate."
+    if continuation["status"] == "blocked":
+        return "Product Delivery state is blocked."
+    return "Missing product delivery evidence before stop."
 
 
 def _missing_stop_items(project_root: Path, state: dict[str, Any]) -> list[str]:
@@ -219,12 +259,8 @@ def _missing_stop_items(project_root: Path, state: dict[str, Any]) -> list[str]:
         return ["confirmation:project_type"]
 
     missing: list[str] = []
-    confirmations = state.get("confirmation_points", {})
     artifact_paths = state.get("artifact_paths", {})
     for artifact_name in required:
-        if not confirmations.get(artifact_name, {}).get("confirmed"):
-            missing.append(f"confirmation:{artifact_name}")
-
         artifact_path = artifact_paths.get(
             artifact_name,
             f"artifacts/{CORE_ARTIFACTS[artifact_name]}",

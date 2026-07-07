@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.12
+
+- Limits Product Delivery user confirmation gates to scope freeze, UI prototype, and planned test coverage.
+- Converts implementation launch authorization into canonical runtime evidence that auto-refreshes before handoff.
+- Keeps the main flow moving through review, handoff, implementation, evidence, and closure unless a real blocker remains.
+
 ## 1.0.11
 
 - Release consistency patch for the post-`1.0.10` line.
