@@ -10,12 +10,18 @@
   "created_fake_controller_state": false,
   "e2e_covered_tc": [],
   "e2e_evidence_paths": [],
+  "full_stack_browser_evidence": {
+    "business_api_mock_findings": [],
+    "evidence_strength": "full_stack_browser_e2e",
+    "probe_artifact_paths": [],
+    "required_for_ui_journeys": true
+  },
   "high_risk_gate_subresults": {},
   "latest_test_case": "TC-V008-001",
   "matrix_range": "TC-V008-001..TC-V008-001",
   "negative_scope_guard_result": "passed",
   "passed": true,
-  "plugin_version": "1.0.12",
+  "plugin_version": "1.0.14",
   "required_commands": [
     {
       "command": "PYTHONPATH=src python3 -m unittest discover -s tests",

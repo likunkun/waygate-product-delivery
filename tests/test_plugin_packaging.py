@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.12")
+            self.assertEqual(manifest["version"], "1.0.14")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -136,6 +136,12 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("must_continue", skill_markdown)
             self.assertIn("wait_for_user", skill_markdown)
             self.assertIn("canonical_closure_plugin_version", skill_markdown)
+            self.assertIn("full_stack_browser_e2e", skill_markdown)
+            self.assertIn("mocked_api_browser_e2e", skill_markdown)
+            self.assertIn("business API", skill_markdown)
+            self.assertIn("ui_change_type", skill_markdown)
+            self.assertIn("baseline_entry_path", skill_markdown)
+            self.assertIn("incremental_existing_surface", skill_markdown)
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
@@ -146,6 +152,19 @@ class PluginPackagingTests(unittest.TestCase):
             ).read_text("utf-8")
             self.assertIn("Journey ID", scenario_template)
             self.assertIn("Acceptance Anchors", scenario_template)
+            ui_template = (
+                root / "templates" / "ui-prototype-gate.md"
+            ).read_text("utf-8")
+            self.assertIn("ui_change_type", ui_template)
+            self.assertIn("continuity_mapping", ui_template)
+            scenario_review_template = (
+                root / "templates" / "multi-agent-scenario-review.md"
+            ).read_text("utf-8")
+            self.assertIn("baseline_inheritance_review", scenario_review_template)
+            planned_template = (
+                root / "templates" / "planned-e2e-obligations.md"
+            ).read_text("utf-8")
+            self.assertIn("baseline_entry_path", planned_template)
             closure_template = json.loads(
                 (root / "templates" / "closure-artifact-template.json").read_text(
                     "utf-8"
@@ -162,7 +181,8 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.12")
+            self.assertEqual(closure_template["plugin_version"], "1.0.14")
+            self.assertIn("full_stack_browser_evidence", closure_template)
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
             validator_script = (
@@ -203,7 +223,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.12.tar.gz",
+                "waygate-product-delivery-1.0.14.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

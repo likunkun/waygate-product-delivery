@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from product_delivery_agent.coverage_audit import FULL_STACK_BROWSER_E2E
 from product_delivery_agent.transition_journal import (
     has_transition,
     journal_integrity_errors,
@@ -21,7 +22,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.10"
-PLUGIN_VERSION = "1.0.12"
+PLUGIN_VERSION = "1.0.14"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -63,6 +64,7 @@ def surface_input_hash(state: dict[str, Any]) -> str:
         contract = state.get("non_ui_behavior_contract") or {}
         return stable_state_hash({"project_type": "non_ui", "contract": contract})
     ui = state.get("ui_prototype") or {}
+    review = state.get("ui_prototype_review") or {}
     return stable_state_hash(
         {
             "project_type": "ui",
@@ -72,6 +74,20 @@ def surface_input_hash(state: dict[str, Any]) -> str:
             "prototype_revision": ui.get("prototype_revision"),
             "confirmed_by_user": bool(ui.get("confirmed_by_user")),
             "confirmation_artifact_path": ui.get("confirmation_artifact_path"),
+            "ui_change_type": review.get("ui_change_type") or ui.get("ui_change_type"),
+            "baseline_feature_slug": (
+                review.get("baseline_feature_slug") or ui.get("baseline_feature_slug")
+            ),
+            "baseline_surface_paths": (
+                review.get("baseline_surface_paths")
+                or ui.get("baseline_surface_paths")
+                or []
+            ),
+            "baseline_user_journey": (
+                review.get("baseline_user_journey") or ui.get("baseline_user_journey")
+            ),
+            "continuity_mapping": review.get("continuity_mapping") or [],
+            "prototype_delta_summary": review.get("prototype_delta_summary") or [],
         }
     )
 
@@ -630,11 +646,13 @@ def assert_pre_closure_ready(
     if executed.get("status") != "passed":
         raise GatekeeperError(f"{evidence_key} must pass before closure")
     _assert_executed_covers_planned(planned, executed.get("records", []))
-    _assert_closure_covers_executed(closure_artifact, planned, executed)
     if not _review_is_current(state, "test_implementation"):
         raise GatekeeperError(
             "multi_agent_test_implementation_review is required before closure"
         )
+    if project_type == "ui":
+        _assert_ui_executed_evidence_is_full_stack(planned, executed.get("records", []))
+    _assert_closure_covers_executed(closure_artifact, planned, executed)
 
 
 def assert_executed_evidence_covers_planned(
@@ -712,6 +730,32 @@ def _assert_executed_covers_planned(
         raise GatekeeperError(
             "planned E2E obligation missing executed evidence: "
             + ", ".join(missing)
+        )
+
+
+def _assert_ui_executed_evidence_is_full_stack(
+    planned: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+) -> None:
+    records_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for record in records:
+        records_by_key.setdefault(
+            (record.get("obligation_id"), record.get("test_id")),
+            [],
+        ).append(record)
+    weak = []
+    for obligation in planned:
+        key = (obligation.get("obligation_id"), obligation.get("test_id"))
+        matching = records_by_key.get(key, [])
+        if not any(
+            record.get("evidence_strength") == FULL_STACK_BROWSER_E2E
+            for record in matching
+        ):
+            weak.append(f"{key[0]}:{key[1]}")
+    if weak:
+        raise GatekeeperError(
+            "UI planned E2E obligation requires full_stack_browser_e2e evidence: "
+            + ", ".join(weak)
         )
 
 

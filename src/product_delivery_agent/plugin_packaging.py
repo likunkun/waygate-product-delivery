@@ -185,6 +185,12 @@ def _write_templates(templates_dir: Path) -> None:
                 "artifact_root": ".product-delivery/artifacts",
                 "artifact_generation_command": "product-delivery formal-closure",
                 "e2e_evidence_paths": [],
+                "full_stack_browser_evidence": {
+                    "required_for_ui_journeys": True,
+                    "evidence_strength": "full_stack_browser_e2e",
+                    "probe_artifact_paths": [],
+                    "business_api_mock_findings": [],
+                },
                 "high_risk_gate_subresults": {},
                 "negative_scope_guard_result": "passed",
                 "required_commands": [
@@ -248,6 +254,13 @@ def _write_templates(templates_dir: Path) -> None:
             "- Expected path: `docs/prototypes/<feature-slug>-prototype.html`.\n"
             "- Alternative path: `.product-delivery/artifacts/<feature-slug>-prototype.html`.\n"
             "- Use `ui-ux-pro-max` for prototype review and `webapp-testing` for browser verification.\n"
+            "- Record `ui_change_type`: `incremental_existing_surface`, "
+            "`new_surface_in_existing_product`, `greenfield_ui`, or `non_ui`.\n"
+            "- Incremental existing-surface UI must include `baseline_feature_slug`, "
+            "`baseline_surface_paths`, `baseline_user_journey`, `continuity_mapping`, "
+            "and `prototype_delta_summary`.\n"
+            "- New surfaces must include meaningful `new_surface_justification` and "
+            "explicit user confirmation; generic justifications do not satisfy this gate.\n"
             "- Implementation is blocked until the user explicitly confirms the prototype through `confirm_ui_prototype`.\n"
         ),
         "scope-scenario-matrix.md": (
@@ -268,7 +281,12 @@ def _write_templates(templates_dir: Path) -> None:
             "- cross_challenges: []\n"
             "- revisions: []\n"
             "- final_adjudication:\n"
+            "- baseline_inheritance_review: {}\n"
+            "- ui_continuity_findings: []\n"
             "- blocking_findings: []\n"
+            "\nFor incremental existing-surface UI, `baseline_inheritance_review` must prove "
+            "the scenario inherits the previous real entry path and does not replace it "
+            "with a parallel page.\n"
         ),
         "multi-agent-test-review.md": (
             "# Multi-Agent Test Review\n\n"
@@ -309,11 +327,14 @@ def _write_templates(templates_dir: Path) -> None:
             "- reviewed_test_ids: []\n"
             "- verified_action_assertions: []\n"
             "- false_positive_risks: []\n"
-            "- supporting_evidence_only: []\n\n"
+            "- supporting_evidence_only: []\n"
+            "- business_api_mock_findings: []\n\n"
             "This gate reviews the actual test code, Playwright/browser scripts, "
             "logs, screenshots, and traces after implementation. Marker existence, "
             "function-name checks, static explanation panels, and first-button-only "
-            "checks are false-positive risks.\n"
+            "checks are false-positive risks. Business API route mocks must be "
+            "recorded as structured findings and cannot close UI journey coverage "
+            "unless a structured exemption explicitly allows closure.\n"
         ),
         "user-confirmation.md": (
             "# User Confirmation\n\n"
@@ -333,16 +354,16 @@ def _write_templates(templates_dir: Path) -> None:
             "- feature_slug:\n"
             "- artifact_version:\n"
             "- generated_at:\n\n"
-            "| obligation_id | scenario_id | test_id | user_story | journey | visible_exception | test_layer | semantic_assertions | coverage_items | action_assertions | false_positive_guards | exemption_status |\n"
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            "| obligation_id | scenario_id | test_id | user_story | journey | baseline_entry_path | visible_exception | test_layer | semantic_assertions | coverage_items | action_assertions | false_positive_guards | exemption_status |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
         ),
         "executed-browser-evidence.md": (
             "# Executed Browser Evidence\n\n"
             "- feature_slug:\n"
             "- artifact_version:\n"
             "- generated_at:\n\n"
-            "| test_id | obligation_id | command | exit_code | evidence_path | evidence_sha256 |\n"
-            "| --- | --- | --- | --- | --- | --- |\n"
+            "| test_id | obligation_id | evidence_strength | acceptance_url | api_health_url | api_health_identity | business_api_requests | mocked_routes | evidence_path | evidence_sha256 | probe_artifact_path | probe_artifact_sha256 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
         ),
         "closure-validator-result.md": (
             "# Closure Validator Result\n\n"
@@ -442,12 +463,26 @@ def _skill_markdown() -> str:
         "用户反馈导致 prototype 文件、截图或 review evidence 变化时，旧 confirmation 自动失效。"
         "`confirm_ui_prototype` 只能确认当前 pending confirmation 的 artifact hash、"
         "prototype revision 和 nonce；裸 `继续` 不能替代当前版本确认。\n\n"
+        "V1.0.14 起，UI prototype review 必须声明 `ui_change_type`。"
+        "默认增量 UI 是 `incremental_existing_surface`，必须记录上一版 feature、"
+        "baseline surface paths、baseline user journey、continuity mapping 和 prototype delta summary。"
+        "增量 UI 不得用独立工作台或平行新页面替代上一版真实主路径。"
+        "`new_surface_in_existing_product` 和 `greenfield_ui` 只有在记录有意义的 "
+        "`new_surface_justification` 且有显式用户确认时才允许作为例外。"
+        "用户反馈或已有 prototype revision 后，旧 prototype confirmation、scenario/test review、"
+        "planned E2E confirmation 和实现授权必须 stale；重新 review 前不得进入实现。\n\n"
         "多 agent scenario/test review 必须落成结构化 artifact，包含 independent positions、"
         "cross challenges、revisions、final adjudication 和 blocking findings。"
         "session log、Open Spec 摘要、quick review 不能替代这些 artifact。\n\n"
         "planned E2E、executed browser evidence、coverage audit 和 closure artifact "
         "必须按 `scenario_id`、`obligation_id`、`test_id`、user story、journey 对账；"
-        "supporting evidence 不能替代 UI journey browser E2E。\n\n"
+        "UI planned E2E obligation 必须记录 `baseline_entry_path`，测试必须从上一版真实入口进入；"
+        "supporting evidence 不能替代 UI journey browser E2E。"
+        "V1.0.13 起，UI journey closure 只接受 `full_stack_browser_e2e`。"
+        "`mocked_api_browser_e2e` 和 `static_or_prototype_browser_check` 只能作为 supporting evidence，"
+        "除非有结构化豁免允许 closure。executed browser evidence 必须记录 acceptance URL、"
+        "API health identity、network probe artifact、business API request summary 和 `mocked_routes`；"
+        "未豁免 business API mock 必须阻塞 closure。\n\n"
         "用户面对的确认只保留两次：`ui_prototype` 原型确认，以及 "
         "combined requirements freeze + planned E2E coverage 确认。后者必须一次写入 "
         "`open_spec_freeze` 需求范围和 `planned_e2e_obligations` 测试用例覆盖情况"
@@ -463,6 +498,9 @@ def _skill_markdown() -> str:
         "实现和 E2E 运行后、formal closure 前必须通过 `multi_agent_test_implementation_review`，"
         "评审对象是真实测试代码、Playwright/browser 脚本、执行日志、截图和 trace。"
         "`marker exists`、函数名存在、静态说明面板、只点第一个按钮，都必须标记为 false-positive risk。"
+        "如果发现 Playwright、MSW、service worker、fetch/XHR patch 或 fixture server mock 了当前 journey "
+        "依赖的 business API，却仍声称覆盖 UI journey，必须作为 blocking finding，"
+        "并记录在 `business_api_mock_findings`。"
         "如果发现 coverage gap，必须先补 RED test 让当前浅实现失败，再继续修 UI 或 E2E。\n\n"
         "## Main Flow Continuation\n\n"
         "active mode 下每次准备 final summary、普通 stop guard 或交付总结前，"

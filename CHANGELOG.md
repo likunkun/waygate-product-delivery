@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.14
+
+- Adds the UI baseline continuity gate with `ui_change_type` classification.
+- Requires incremental existing-surface prototypes to bind `baseline_feature_slug`, `baseline_surface_paths`, `baseline_user_journey`, `continuity_mapping`, and `prototype_delta_summary`.
+- Requires UI planned E2E obligations to include `baseline_entry_path`, so browser journeys enter through the previous real product surface instead of a parallel prototype page.
+- Makes prototype feedback and existing prototype revisions stale prior scenario/test review, planned E2E confirmation, and launch authorization.
+
+## 1.0.13
+
+- Adds the `full_stack_browser_e2e` evidence strength gate for UI journey closure.
+- Rejects mocked business API browser tests as closure evidence unless a structured exemption explicitly allows closure.
+- Requires executed browser evidence to bind acceptance URL, API health identity, network probe artifacts, business API request summaries, and mocked route classification.
+
 ## 1.0.12
 
 - Limits Product Delivery user confirmation gates to scope freeze, UI prototype, and planned test coverage.

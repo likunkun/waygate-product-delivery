@@ -81,6 +81,7 @@ def multi_agent_review(review_type):
             }
         ],
         "supporting_evidence_only": [],
+        "business_api_mock_findings": [],
     }
 
 
@@ -118,6 +119,16 @@ def ui_review_payload():
         "limitations": ["static fixture data"],
         "browser_e2e_candidates": ["J-001"],
         "negative_scope_guard_candidates": ["student billing is absent"],
+        "ui_change_type": "incremental_existing_surface",
+        "baseline_feature_slug": "v0-existing-classroom",
+        "baseline_surface_paths": ["prototype/index.html"],
+        "baseline_user_journey": "teacher opens the existing classroom dashboard",
+        "continuity_mapping": [
+            "prototype keeps the existing classroom dashboard entry path",
+        ],
+        "prototype_delta_summary": [
+            "adds classroom creation controls to the existing dashboard",
+        ],
     }
 
 
@@ -133,6 +144,7 @@ def planned_obligation():
         "semantic_assertions": ["teacher creates classroom"],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "baseline_entry_path": "teacher opens the existing classroom dashboard",
         "coverage_items": ["classroom-create"],
         "action_assertions": [
             {

@@ -9,4 +9,8 @@
 - cross_challenges: []
 - revisions: []
 - final_adjudication:
+- baseline_inheritance_review: {}
+- ui_continuity_findings: []
 - blocking_findings: []
+
+For incremental existing-surface UI, `baseline_inheritance_review` must prove the scenario inherits the previous real entry path and does not replace it with a parallel page.

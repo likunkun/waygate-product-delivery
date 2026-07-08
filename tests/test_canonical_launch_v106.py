@@ -109,6 +109,7 @@ def review_payload(review_type, **overrides):
             }
         ],
         "supporting_evidence_only": [],
+        "business_api_mock_findings": [],
     }
     payload.update(overrides)
     return payload
@@ -150,6 +151,16 @@ def ui_review_payload(prototype_path):
         "limitations": ["static fixture data"],
         "browser_e2e_candidates": ["J-001"],
         "negative_scope_guard_candidates": ["billing remains absent"],
+        "ui_change_type": "incremental_existing_surface",
+        "baseline_feature_slug": "v0-existing-owner-ops",
+        "baseline_surface_paths": [prototype_path],
+        "baseline_user_journey": "operator opens the existing owner edit surface",
+        "continuity_mapping": [
+            "prototype keeps the existing owner edit entry path",
+        ],
+        "prototype_delta_summary": [
+            "adds owner edit controls to the existing surface",
+        ],
     }
 
 
@@ -165,6 +176,7 @@ def planned_obligation():
         "semantic_assertions": ["operator edits ownership"],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "baseline_entry_path": "operator opens the existing owner edit surface",
         "coverage_items": ["owner-edit"],
         "action_assertions": [
             {

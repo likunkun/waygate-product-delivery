@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
@@ -89,6 +90,7 @@ def review(review_type, **overrides):
             }
         ],
         "supporting_evidence_only": [],
+        "business_api_mock_findings": [],
     }
     payload.update(overrides)
     return payload
@@ -130,6 +132,16 @@ def ui_review_payload():
         "limitations": ["static fixture data"],
         "browser_e2e_candidates": ["J-001"],
         "negative_scope_guard_candidates": ["student billing remains absent"],
+        "ui_change_type": "incremental_existing_surface",
+        "baseline_feature_slug": "v0-existing-owner-ops",
+        "baseline_surface_paths": ["docs/prototypes/v2.5-prototype.html"],
+        "baseline_user_journey": "teacher opens the existing owner operation dashboard",
+        "continuity_mapping": [
+            "prototype keeps the existing owner operation dashboard entry path",
+        ],
+        "prototype_delta_summary": [
+            "adds owner operation controls to the existing dashboard",
+        ],
     }
 
 
@@ -148,6 +160,7 @@ def planned_obligation(**overrides):
         ],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "baseline_entry_path": "teacher opens the existing owner operation dashboard",
         "coverage_items": ["teacher-owner-operation"],
         "action_assertions": [
             {
@@ -196,6 +209,29 @@ def browser_evidence(project_root, **overrides):
     )
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    probe_path = (
+        project_root / ARTIFACT_ROOT / "artifacts" / "e2e" / "tc-v008-001-probe.json"
+    )
+    probe_path.write_text(
+        json.dumps(
+            {
+                "acceptance_url": "http://127.0.0.1:15082/customer/owner-operation",
+                "api_health_url": "http://127.0.0.1:15082/api/health",
+                "api_health_identity": "owner-operation-api",
+                "health_response_content_type": "application/json",
+                "health_response_body_sample": '{"service":"owner-operation-api"}',
+                "business_api_requests": [
+                    {
+                        "method": "GET",
+                        "url": "http://127.0.0.1:15082/api/owner-operation",
+                        "status": 200,
+                        "source": "network",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     record = {
         "test_id": "TC-V008-001",
         "obligation_id": "OBL-001",
@@ -207,6 +243,16 @@ def browser_evidence(project_root, **overrides):
         "network_errors": [],
         "semantic_assertions": ["teacher sees the owner operation"],
         "evidence_path": ".product-delivery/artifacts/e2e/tc-v008-001.json",
+        "evidence_strength": "full_stack_browser_e2e",
+        "acceptance_url": "http://127.0.0.1:15082/customer/owner-operation",
+        "api_health_url": "http://127.0.0.1:15082/api/health",
+        "api_health_identity": "owner-operation-api",
+        "network_probe_summary": {
+            "business_api_request_count": 1,
+            "html_shell_health_response": False,
+        },
+        "mocked_routes": [],
+        "probe_artifact_path": ".product-delivery/artifacts/e2e/tc-v008-001-probe.json",
     }
     record.update(overrides)
     return record

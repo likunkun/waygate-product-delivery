@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -110,7 +111,23 @@ REQUIRED_BROWSER_EVIDENCE_FIELDS = (
     "network_errors",
     "semantic_assertions",
     "evidence_path",
+    "evidence_strength",
+    "acceptance_url",
+    "api_health_url",
+    "api_health_identity",
+    "network_probe_summary",
+    "mocked_routes",
+    "probe_artifact_path",
 )
+
+FULL_STACK_BROWSER_E2E = "full_stack_browser_e2e"
+MOCKED_API_BROWSER_E2E = "mocked_api_browser_e2e"
+STATIC_OR_PROTOTYPE_BROWSER_CHECK = "static_or_prototype_browser_check"
+ACCEPTED_BROWSER_EVIDENCE_STRENGTHS = {
+    FULL_STACK_BROWSER_E2E,
+    MOCKED_API_BROWSER_E2E,
+    STATIC_OR_PROTOTYPE_BROWSER_CHECK,
+}
 
 
 def build_coverage_audit(
@@ -244,14 +261,22 @@ def build_executed_browser_evidence(
     root = Path(project_root)
     hydrated = []
     for index, record in enumerate(records, start=1):
-        _validate_browser_evidence_record(index, record)
+        probe = _validate_browser_evidence_record(root, index, record)
         evidence_path = root / record["evidence_path"]
         if not evidence_path.is_file():
             raise CoverageAuditError(
                 f"evidence_path does not exist: {record['evidence_path']}"
             )
+        probe_path = root / record["probe_artifact_path"]
         next_record = dict(record)
         next_record["evidence_sha256"] = _sha256(evidence_path)
+        next_record["probe_artifact_sha256"] = _sha256(probe_path)
+        next_record["probe_artifact_summary"] = {
+            "acceptance_url": probe.get("acceptance_url"),
+            "api_health_url": probe.get("api_health_url"),
+            "api_health_identity": probe.get("api_health_identity"),
+            "business_api_request_count": len(probe.get("business_api_requests") or []),
+        }
         planned = planned_by_key.get(
             (record.get("obligation_id"), record.get("test_id"))
         )
@@ -412,6 +437,12 @@ def _validate_planned_obligations(
         test_layer = obligation["test_layer"]
         if project_type == "ui" and test_layer != "browser_e2e":
             raise CoverageAuditError("UI planned obligation must target browser_e2e")
+        if project_type == "ui" and not _has_value(
+            obligation.get("baseline_entry_path")
+        ):
+            raise CoverageAuditError(
+                f"planned obligation row {index} missing fields: baseline_entry_path"
+            )
         if project_type == "non_ui" and test_layer not in NON_UI_PLANNED_EVIDENCE_LAYERS:
             raise CoverageAuditError(
                 "non-UI planned obligation must target one of "
@@ -527,11 +558,21 @@ def _validate_structured_exemptions(exemptions: list[dict[str, Any]]) -> None:
             )
 
 
-def _validate_browser_evidence_record(index: int, record: dict[str, Any]) -> None:
+def _validate_browser_evidence_record(
+    root: Path,
+    index: int,
+    record: dict[str, Any],
+) -> dict[str, Any]:
     missing = []
     for field_name in REQUIRED_BROWSER_EVIDENCE_FIELDS:
         value = record.get(field_name)
         if field_name in {"console_errors", "network_errors"}:
+            if not isinstance(value, list):
+                missing.append(field_name)
+        elif field_name == "network_probe_summary":
+            if not isinstance(value, dict) or not value:
+                missing.append(field_name)
+        elif field_name == "mocked_routes":
             if not isinstance(value, list):
                 missing.append(field_name)
         elif field_name == "semantic_assertions":
@@ -546,6 +587,125 @@ def _validate_browser_evidence_record(index: int, record: dict[str, Any]) -> Non
         raise CoverageAuditError(
             f"browser evidence row {index} missing fields: " + ", ".join(missing)
         )
+    strength = record["evidence_strength"]
+    if strength not in ACCEPTED_BROWSER_EVIDENCE_STRENGTHS:
+        raise CoverageAuditError(
+            "browser evidence row "
+            f"{index} evidence_strength must be one of "
+            + ", ".join(sorted(ACCEPTED_BROWSER_EVIDENCE_STRENGTHS))
+        )
+    _validate_mocked_routes(index, record["mocked_routes"], strength=strength)
+    probe = _load_probe_artifact(root, index, record["probe_artifact_path"])
+    if strength == FULL_STACK_BROWSER_E2E:
+        _validate_full_stack_probe(index, record, probe)
+    return probe
+
+
+def _load_probe_artifact(root: Path, index: int, probe_artifact_path: str) -> dict[str, Any]:
+    path = root / probe_artifact_path
+    if not path.is_file():
+        raise CoverageAuditError(
+            f"browser evidence row {index} probe_artifact_path does not exist: "
+            + probe_artifact_path
+        )
+    try:
+        probe = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CoverageAuditError(
+            f"browser evidence row {index} probe_artifact_path is not valid JSON"
+        ) from exc
+    if not isinstance(probe, dict):
+        raise CoverageAuditError(
+            f"browser evidence row {index} probe_artifact_path must contain an object"
+        )
+    return probe
+
+
+def _validate_mocked_routes(
+    index: int,
+    routes: list[Any],
+    *,
+    strength: str,
+) -> None:
+    for route_index, route in enumerate(routes, start=1):
+        if not isinstance(route, dict):
+            raise CoverageAuditError(
+                f"browser evidence row {index} mocked_routes row {route_index} must be object"
+            )
+        missing = [
+            field_name
+            for field_name in ("mechanism", "pattern", "classification")
+            if not _has_value(route.get(field_name))
+        ]
+        if "is_business_api" not in route:
+            missing.append("is_business_api")
+        elif not isinstance(route["is_business_api"], bool):
+            raise CoverageAuditError(
+                f"browser evidence row {index} mocked_routes row {route_index} "
+                "is_business_api must be boolean"
+            )
+        if missing:
+            raise CoverageAuditError(
+                f"browser evidence row {index} mocked_routes row {route_index} "
+                "missing fields: "
+                + ", ".join(missing)
+            )
+        if (
+            strength == FULL_STACK_BROWSER_E2E
+            and _is_business_api_mock(route)
+            and not _has_value(route.get("exemption_ref"))
+        ):
+            raise CoverageAuditError(
+                f"browser evidence row {index} has unexempted business API mock: "
+                + str(route.get("pattern"))
+            )
+
+
+def _validate_full_stack_probe(
+    index: int,
+    record: dict[str, Any],
+    probe: dict[str, Any],
+) -> None:
+    for field_name in ("acceptance_url", "api_health_url", "api_health_identity"):
+        if not _has_value(probe.get(field_name)):
+            raise CoverageAuditError(
+                f"browser evidence row {index} probe missing {field_name}"
+            )
+        if probe[field_name] != record[field_name]:
+            raise CoverageAuditError(
+                f"browser evidence row {index} probe {field_name} does not match record"
+            )
+    if _probe_is_html_shell(probe):
+        raise CoverageAuditError(
+            f"browser evidence row {index} API health probe returned HTML shell"
+        )
+    summary = record["network_probe_summary"]
+    request_count = summary.get("business_api_request_count")
+    if not isinstance(request_count, int) or request_count < 1:
+        raise CoverageAuditError(
+            f"browser evidence row {index} network_probe_summary missing business API request"
+        )
+    business_requests = probe.get("business_api_requests")
+    if not isinstance(business_requests, list) or not business_requests:
+        raise CoverageAuditError(
+            f"browser evidence row {index} probe missing business API requests"
+        )
+
+
+def _probe_is_html_shell(probe: dict[str, Any]) -> bool:
+    content_type = str(probe.get("health_response_content_type", "")).lower()
+    body_sample = str(probe.get("health_response_body_sample", "")).strip().lower()
+    if "text/html" in content_type:
+        return True
+    return (
+        body_sample.startswith("<!doctype html")
+        or body_sample.startswith("<html")
+        or "<div id=\"root\"" in body_sample
+    )
+
+
+def _is_business_api_mock(route: dict[str, Any]) -> bool:
+    return bool(route.get("is_business_api")) or route.get("classification") == "business_api"
 
 
 def _planned_obligations_by_key(

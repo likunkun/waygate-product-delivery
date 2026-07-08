@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from product_delivery_agent.closure import ClosureGateError
@@ -79,6 +80,7 @@ def multi_agent_review(review_type):
             }
         ],
         "supporting_evidence_only": [],
+        "business_api_mock_findings": [],
     }
 
 
@@ -116,6 +118,16 @@ def ui_review_payload():
         "limitations": ["static fixture data"],
         "browser_e2e_candidates": ["J-001"],
         "negative_scope_guard_candidates": ["student billing is absent"],
+        "ui_change_type": "incremental_existing_surface",
+        "baseline_feature_slug": "v0-existing-classroom",
+        "baseline_surface_paths": ["prototype/index.html"],
+        "baseline_user_journey": "teacher opens the existing classroom dashboard",
+        "continuity_mapping": [
+            "prototype keeps the existing classroom dashboard entry path",
+        ],
+        "prototype_delta_summary": [
+            "adds classroom creation controls to the existing dashboard",
+        ],
     }
 
 
@@ -150,6 +162,7 @@ def planned_obligation():
         "semantic_assertions": ["teacher creates classroom"],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "baseline_entry_path": "teacher opens the existing classroom dashboard",
         "coverage_items": ["classroom-create"],
         "action_assertions": [
             {
@@ -169,7 +182,31 @@ def planned_obligation():
     }
 
 
-def browser_evidence():
+def browser_evidence(project_root):
+    evidence_path = project_root / ".product-delivery" / "artifacts" / "browser-e2e-results.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    probe_path = project_root / ".product-delivery" / "artifacts" / "browser-e2e-probe.json"
+    probe_path.write_text(
+        json.dumps(
+            {
+                "acceptance_url": "http://127.0.0.1:15082/customer/course-production",
+                "api_health_url": "http://127.0.0.1:15082/api/health",
+                "api_health_identity": "classroom-api",
+                "health_response_content_type": "application/json",
+                "health_response_body_sample": '{"service":"classroom-api"}',
+                "business_api_requests": [
+                    {
+                        "method": "GET",
+                        "url": "http://127.0.0.1:15082/api/classrooms",
+                        "status": 200,
+                        "source": "network",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     return {
         "test_id": "TC-V008-001",
         "obligation_id": "OBL-001",
@@ -181,6 +218,16 @@ def browser_evidence():
         "network_errors": [],
         "semantic_assertions": ["teacher creates classroom"],
         "evidence_path": ".product-delivery/artifacts/browser-e2e-results.json",
+        "evidence_strength": "full_stack_browser_e2e",
+        "acceptance_url": "http://127.0.0.1:15082/customer/course-production",
+        "api_health_url": "http://127.0.0.1:15082/api/health",
+        "api_health_identity": "classroom-api",
+        "network_probe_summary": {
+            "business_api_request_count": 1,
+            "html_shell_health_response": False,
+        },
+        "mocked_routes": [],
+        "probe_artifact_path": ".product-delivery/artifacts/browser-e2e-probe.json",
     }
 
 
@@ -242,10 +289,7 @@ def ready_workflow(project_root):
             "TASK-001",
         ),
     )
-    evidence_path = project_root / ".product-delivery" / "artifacts" / "browser-e2e-results.json"
-    evidence_path.parent.mkdir(parents=True, exist_ok=True)
-    evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
-    workflow.record_executed_browser_evidence([browser_evidence()])
+    workflow.record_executed_browser_evidence([browser_evidence(project_root)])
     workflow.record_multi_agent_review(
         "test_implementation",
         multi_agent_review("test_implementation"),

@@ -9,5 +9,6 @@
 - verified_action_assertions: []
 - false_positive_risks: []
 - supporting_evidence_only: []
+- business_api_mock_findings: []
 
-This gate reviews the actual test code, Playwright/browser scripts, logs, screenshots, and traces after implementation. Marker existence, function-name checks, static explanation panels, and first-button-only checks are false-positive risks.
+This gate reviews the actual test code, Playwright/browser scripts, logs, screenshots, and traces after implementation. Marker existence, function-name checks, static explanation panels, and first-button-only checks are false-positive risks. Business API route mocks must be recorded as structured findings and cannot close UI journey coverage unless a structured exemption explicitly allows closure.

@@ -28,6 +28,18 @@ REQUIRED_REVIEW_FIELDS = (
 )
 VALID_REVIEW_TYPES = {"scenario", "test", "test_coverage", "test_implementation"}
 VALID_REVIEW_MODES = {"spawned_subagents", "role_simulation", "blocked_with_reason"}
+UI_CONTINUITY_CHANGE_TYPES = {
+    "incremental_existing_surface",
+    "new_surface_in_existing_product",
+    "greenfield_ui",
+}
+BASELINE_INHERITANCE_FIELDS = (
+    "ui_change_type",
+    "baseline_feature_slug",
+    "baseline_entry_path",
+    "inherits_existing_surface",
+    "parallel_surface_replacement",
+)
 REQUIRED_TEST_COVERAGE_TRACE_TARGETS = {"US", "J", "SC", "AC", "TASK", "TC"}
 FALSE_POSITIVE_TERMS = {
     "marker",
@@ -40,7 +52,12 @@ FALSE_POSITIVE_TERMS = {
 }
 
 
-def validate_multi_agent_review(review_type: str, review: dict[str, Any]) -> None:
+def validate_multi_agent_review(
+    review_type: str,
+    review: dict[str, Any],
+    *,
+    ui_change_type: str | None = None,
+) -> None:
     """Validate visible multi-agent review output."""
     if review_type not in VALID_REVIEW_TYPES:
         raise ReviewGateError(
@@ -77,7 +94,9 @@ def validate_multi_agent_review(review_type: str, review: dict[str, Any]) -> Non
         raise ReviewGateError("multi-agent review must pass")
     if review.get("blocking_findings"):
         raise ReviewGateError("blocking review findings remain unresolved")
-    if review_type == "test_coverage":
+    if review_type == "scenario":
+        _validate_scenario_review(review, ui_change_type=ui_change_type)
+    elif review_type == "test_coverage":
         _validate_test_coverage_review(review)
     elif review_type == "test_implementation":
         _validate_test_implementation_review(review)
@@ -122,6 +141,17 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
         *_bullets(review["unresolved_questions"]),
         "",
     ]
+    if review["review_type"] == "scenario":
+        lines.extend(
+            [
+                "## UI Baseline Continuity",
+                "",
+                "```json",
+                json.dumps(_scenario_review_evidence(review), indent=2, sort_keys=True),
+                "```",
+                "",
+            ]
+        )
     if review["review_type"] in {"test_coverage", "test_implementation"}:
         lines.extend(
             [
@@ -134,6 +164,14 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _scenario_review_evidence(review: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "baseline_inheritance_review",
+        "ui_continuity_findings",
+    )
+    return {key: review[key] for key in keys if key in review}
 
 
 def _test_review_evidence(review: dict[str, Any]) -> dict[str, Any]:
@@ -149,6 +187,7 @@ def _test_review_evidence(review: dict[str, Any]) -> dict[str, Any]:
         "reviewed_test_ids",
         "verified_action_assertions",
         "supporting_evidence_only",
+        "business_api_mock_findings",
     )
     return {key: review[key] for key in keys if key in review}
 
@@ -157,6 +196,62 @@ def _has_values(value: Any) -> bool:
     return isinstance(value, list) and bool(value) and all(
         isinstance(item, str) and item.strip() for item in value
     )
+
+
+def _validate_scenario_review(
+    review: dict[str, Any],
+    *,
+    ui_change_type: str | None = None,
+) -> None:
+    continuity_fields_present = (
+        "baseline_inheritance_review" in review
+        or "ui_continuity_findings" in review
+        or ui_change_type in UI_CONTINUITY_CHANGE_TYPES
+    )
+    if not continuity_fields_present:
+        return
+
+    if review.get("ui_continuity_findings"):
+        raise ReviewGateError(
+            "unresolved ui_continuity_findings remain: "
+            + ", ".join(map(str, review.get("ui_continuity_findings") or []))
+        )
+    if not isinstance(review.get("ui_continuity_findings"), list):
+        raise ReviewGateError("missing scenario review fields: ui_continuity_findings")
+
+    inheritance = review.get("baseline_inheritance_review")
+    if not isinstance(inheritance, dict) or not inheritance:
+        raise ReviewGateError(
+            "missing scenario review fields: baseline_inheritance_review"
+        )
+    inheritance_change_type = inheritance.get("ui_change_type") or ui_change_type
+    if inheritance_change_type == "incremental_existing_surface":
+        missing = [
+            field_name
+            for field_name in BASELINE_INHERITANCE_FIELDS
+            if field_name not in inheritance
+        ]
+        if missing:
+            raise ReviewGateError(
+                "baseline_inheritance_review missing fields: "
+                + ", ".join(missing)
+            )
+        if not _non_empty_string(inheritance.get("baseline_feature_slug")):
+            raise ReviewGateError(
+                "baseline_inheritance_review missing fields: baseline_feature_slug"
+            )
+        if not _non_empty_string(inheritance.get("baseline_entry_path")):
+            raise ReviewGateError(
+                "baseline_inheritance_review missing fields: baseline_entry_path"
+            )
+        if inheritance.get("inherits_existing_surface") is not True:
+            raise ReviewGateError(
+                "baseline_inheritance_review must inherit existing surface"
+            )
+        if inheritance.get("parallel_surface_replacement") is True:
+            raise ReviewGateError(
+                "baseline_inheritance_review rejects parallel surface replacement"
+            )
 
 
 def _validate_test_coverage_review(review: dict[str, Any]) -> None:
@@ -199,6 +294,9 @@ def _validate_test_implementation_review(review: dict[str, Any]) -> None:
     ):
         if not _has_values(review.get(field_name)):
             missing.append(field_name)
+    for field_name in ("supporting_evidence_only", "business_api_mock_findings"):
+        if not isinstance(review.get(field_name), list):
+            missing.append(field_name)
     if not isinstance(review.get("verified_action_assertions"), list) or not review.get(
         "verified_action_assertions"
     ):
@@ -208,6 +306,9 @@ def _validate_test_implementation_review(review: dict[str, Any]) -> None:
             "missing test implementation review fields: " + ", ".join(missing)
         )
     _reject_unresolved_review_items(review, "false_positive_risks")
+    _reject_unexempted_business_api_mock_findings(
+        review.get("business_api_mock_findings")
+    )
     _validate_verified_action_assertions(review.get("verified_action_assertions"))
 
 
@@ -285,10 +386,41 @@ def _validate_verified_action_assertions(value: Any) -> None:
         )
 
 
+def _reject_unexempted_business_api_mock_findings(value: Any) -> None:
+    if not isinstance(value, list):
+        raise ReviewGateError("business_api_mock_findings must be a list")
+    blockers = []
+    for index, finding in enumerate(value, start=1):
+        if not isinstance(finding, dict):
+            raise ReviewGateError(
+                f"business_api_mock_findings row {index} must be object"
+            )
+        if finding.get("is_business_api") is True and not _non_empty_string(
+            finding.get("exemption_ref")
+        ):
+            blockers.append(
+                str(
+                    finding.get("route")
+                    or finding.get("pattern")
+                    or finding.get("test_id")
+                    or f"row {index}"
+                )
+            )
+    if blockers:
+        raise ReviewGateError(
+            "unexempted business API mock findings remain: "
+            + ", ".join(blockers)
+        )
+
+
 def _reject_false_positive_text(*values: str) -> None:
     haystack = " ".join(values).lower()
     if any(term in haystack for term in FALSE_POSITIVE_TERMS):
         raise ReviewGateError("false-positive test implementation assertion detected")
+
+
+def _non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _string_set(value: Any) -> set[str]:

@@ -88,6 +88,7 @@ def review_payload(review_type, **overrides):
             for item in WORKBENCH_ITEMS
         ],
         "supporting_evidence_only": [],
+        "business_api_mock_findings": [],
     }
     payload.update(overrides)
     return payload
@@ -110,6 +111,7 @@ def planned_workbench_obligation(**overrides):
         ],
         "expected_artifact_pattern": ".product-delivery/artifacts/v2.8-verification/*.json",
         "exemption_status": "none",
+        "baseline_entry_path": "operator opens the existing workbench surface",
         "coverage_items": WORKBENCH_ITEMS,
         "action_assertions": [
             {

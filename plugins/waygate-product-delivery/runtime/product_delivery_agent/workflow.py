@@ -231,7 +231,17 @@ class ProductDeliveryWorkflow:
         review: dict[str, Any],
     ) -> dict[str, Any]:
         state = self._require_started()
-        validate_multi_agent_review(review_type, review)
+        ui_change_type = None
+        if review_type == "scenario" and state.get("project_type") == "ui":
+            ui_change_type = (
+                state.get("ui_prototype_review", {}).get("ui_change_type")
+                or state.get("ui_prototype", {}).get("ui_change_type")
+            )
+        validate_multi_agent_review(
+            review_type,
+            review,
+            ui_change_type=ui_change_type,
+        )
         review_mode = review.get("review_mode", "spawned_subagents")
         policy_mode = state.get("multi_agent_policy", {}).get(
             "mode",
@@ -598,6 +608,10 @@ class ProductDeliveryWorkflow:
         revision_number = (
             int(state.get("ui_prototype", {}).get("revision_number") or 0) + 1
         )
+        stales_prior_scenario_review = bool(
+            state.get("ui_prototype", {}).get("prototype_revision")
+            or state.get("ui_prototype_feedback")
+        )
         prototype_revision = f"prototype-revision-{revision_number:03d}"
         pending_confirmation = self._build_pending_confirmation(
             target="ui_prototype",
@@ -618,6 +632,16 @@ class ProductDeliveryWorkflow:
                 for key, value in review["taxonomy"].items()
             },
             "limitations": list(review["limitations"]),
+            "ui_change_type": review.get("ui_change_type"),
+            "baseline_feature_slug": review.get("baseline_feature_slug"),
+            "baseline_surface_paths": list(review.get("baseline_surface_paths", [])),
+            "baseline_user_journey": review.get("baseline_user_journey"),
+            "continuity_mapping": list(review.get("continuity_mapping", [])),
+            "prototype_delta_summary": list(review.get("prototype_delta_summary", [])),
+            "new_surface_justification": review.get("new_surface_justification"),
+            "new_surface_user_confirmation": bool(
+                review.get("new_surface_user_confirmation")
+            ),
             "review_artifact_path": f"artifacts/{CORE_ARTIFACTS['ui_prototype_review']}",
         }
         state["downstream_inputs"] = {
@@ -636,6 +660,10 @@ class ProductDeliveryWorkflow:
             "artifact_version": prototype_revision,
             "prototype_revision": prototype_revision,
             "revision_number": revision_number,
+            "ui_change_type": review.get("ui_change_type"),
+            "baseline_feature_slug": review.get("baseline_feature_slug"),
+            "baseline_surface_paths": list(review.get("baseline_surface_paths", [])),
+            "baseline_user_journey": review.get("baseline_user_journey"),
             "confirmation_status": "pending_user_confirmation",
             "pending_confirmation_nonce": pending_confirmation["nonce"],
             "confirmation_source": None,
@@ -645,7 +673,11 @@ class ProductDeliveryWorkflow:
         state.setdefault("user_confirmations", {}).pop("ui_prototype", None)
         self._mark_reviews_stale(
             state,
-            ("test", "test_coverage"),
+            (
+                ("scenario", "test", "test_coverage")
+                if stales_prior_scenario_review
+                else ("test", "test_coverage")
+            ),
             reason="ui_prototype_changed",
         )
         self._invalidate_requirements_e2e_confirmation(
@@ -790,7 +822,7 @@ class ProductDeliveryWorkflow:
         state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
         self._mark_reviews_stale(
             state,
-            ("test", "test_coverage"),
+            ("scenario", "test", "test_coverage"),
             reason="ui_prototype_feedback",
         )
         self._invalidate_requirements_e2e_confirmation(
@@ -1956,18 +1988,20 @@ class ProductDeliveryWorkflow:
             "",
             "## Obligations",
             "",
-            "| Test | Scenario | User Story | Journey | AC | TASK | Layer | Assertions | Actions | False-Positive Guards |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Test | Scenario | User Story | Journey | Baseline Entry | AC | TASK | Layer | Assertions | Actions | False-Positive Guards |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for obligation in planned["obligations"]:
             lines.append(
-                "| {test_id} | {scenario_id} | {user_story} | {journey} | {ac} | "
-                "{task} | {test_layer} | {semantic_assertions} | {actions} | "
+                "| {test_id} | {scenario_id} | {user_story} | {journey} | "
+                "{baseline_entry_path} | {ac} | {task} | {test_layer} | "
+                "{semantic_assertions} | {actions} | "
                 "{false_positive_guards} |".format(
                     test_id=obligation["test_id"],
                     scenario_id=obligation["scenario_id"],
                     user_story=obligation["user_story"],
                     journey=obligation["journey"],
+                    baseline_entry_path=obligation.get("baseline_entry_path", ""),
                     ac=obligation.get("acceptance_criteria", ""),
                     task=obligation.get("task", ""),
                     test_layer=obligation["test_layer"],
@@ -2000,7 +2034,17 @@ class ProductDeliveryWorkflow:
         lines = ["# Executed Browser Evidence", "", "Status: Passed", ""]
         for record in evidence["records"]:
             lines.append(
-                "- {test_id}: {evidence_path} ({evidence_sha256})".format(**record)
+                (
+                    "- {test_id}: {evidence_strength} "
+                    "{evidence_path} ({evidence_sha256}); "
+                    "probe={probe_artifact_path} ({probe_artifact_sha256}); "
+                    "business_api_requests={business_api_request_count}"
+                ).format(
+                    business_api_request_count=record.get(
+                        "probe_artifact_summary", {}
+                    ).get("business_api_request_count", 0),
+                    **record,
+                )
             )
         lines.append("")
         return "\n".join(lines)

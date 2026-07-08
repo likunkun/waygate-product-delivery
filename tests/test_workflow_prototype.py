@@ -26,6 +26,16 @@ def ui_review_payload():
         "limitations": ["static fixture data"],
         "browser_e2e_candidates": ["teacher creates classroom"],
         "negative_scope_guard_candidates": ["student billing is absent"],
+        "ui_change_type": "incremental_existing_surface",
+        "baseline_feature_slug": "v0-existing-classroom",
+        "baseline_surface_paths": ["prototype/index.html"],
+        "baseline_user_journey": "teacher opens the existing classroom dashboard",
+        "continuity_mapping": [
+            "prototype keeps the existing classroom dashboard entry path",
+        ],
+        "prototype_delta_summary": [
+            "adds classroom creation controls to the existing dashboard",
+        ],
     }
 
 

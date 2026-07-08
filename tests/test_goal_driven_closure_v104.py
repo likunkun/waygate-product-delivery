@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
@@ -81,6 +82,7 @@ def multi_agent_review(review_type):
             }
         ],
         "supporting_evidence_only": [],
+        "business_api_mock_findings": [],
     }
 
 
@@ -118,6 +120,16 @@ def ui_review_payload(prototype_path):
         "limitations": ["static fixture data"],
         "browser_e2e_candidates": ["J-001"],
         "negative_scope_guard_candidates": ["billing remains absent"],
+        "ui_change_type": "incremental_existing_surface",
+        "baseline_feature_slug": "v0-existing-owner-ops",
+        "baseline_surface_paths": [prototype_path],
+        "baseline_user_journey": "operator opens the existing owner edit surface",
+        "continuity_mapping": [
+            "prototype keeps the existing owner edit entry path",
+        ],
+        "prototype_delta_summary": [
+            "adds owner edit controls to the existing surface",
+        ],
     }
 
 
@@ -133,6 +145,7 @@ def planned_obligation():
         "semantic_assertions": ["operator edits ownership"],
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
+        "baseline_entry_path": "operator opens the existing owner edit surface",
         "coverage_items": ["owner-edit"],
         "action_assertions": [
             {
@@ -195,6 +208,29 @@ def browser_evidence(project_root):
     )
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    probe_path = (
+        project_root / ARTIFACT_ROOT / "artifacts" / "e2e" / "tc-v008-001-probe.json"
+    )
+    probe_path.write_text(
+        json.dumps(
+            {
+                "acceptance_url": "http://127.0.0.1:15082/customer/owners",
+                "api_health_url": "http://127.0.0.1:15082/api/health",
+                "api_health_identity": "owner-api",
+                "health_response_content_type": "application/json",
+                "health_response_body_sample": '{"service":"owner-api"}',
+                "business_api_requests": [
+                    {
+                        "method": "GET",
+                        "url": "http://127.0.0.1:15082/api/owners",
+                        "status": 200,
+                        "source": "network",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     return {
         "test_id": "TC-V008-001",
         "obligation_id": "OBL-001",
@@ -206,6 +242,16 @@ def browser_evidence(project_root):
         "network_errors": [],
         "semantic_assertions": ["operator edits ownership"],
         "evidence_path": ".product-delivery/artifacts/e2e/tc-v008-001.json",
+        "evidence_strength": "full_stack_browser_e2e",
+        "acceptance_url": "http://127.0.0.1:15082/customer/owners",
+        "api_health_url": "http://127.0.0.1:15082/api/health",
+        "api_health_identity": "owner-api",
+        "network_probe_summary": {
+            "business_api_request_count": 1,
+            "html_shell_health_response": False,
+        },
+        "mocked_routes": [],
+        "probe_artifact_path": ".product-delivery/artifacts/e2e/tc-v008-001-probe.json",
     }
 
 
