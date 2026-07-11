@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from product_delivery_agent.gatekeeper import normalize_state_protocol
+from product_delivery_agent.gatekeeper import TERMINAL_STATUSES, normalize_state_protocol
 
 ARTIFACT_ROOT = ".product-delivery"
 
@@ -20,6 +20,14 @@ CORE_ARTIFACTS = {
     "test_coverage_audit": "test-coverage-audit.md",
     "handoff": "handoff.md",
 }
+
+AUTHORIZED_REVIEW_TYPES = [
+    "scenario",
+    "test",
+    "test_coverage",
+    "test_implementation",
+    "ui_conformance",
+]
 
 
 def initialize_workspace(
@@ -78,6 +86,11 @@ def write_state(project_root: str | Path, state: dict[str, Any]) -> dict[str, An
     return next_state
 
 
+def new_delivery_state(project_type: str | None = None) -> dict[str, Any]:
+    """Return a fresh delivery protocol state without prior feature data."""
+    return _new_state(project_type)
+
+
 def _new_state(project_type: str | None) -> dict[str, Any]:
     return {
         "active": False,
@@ -109,15 +122,31 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
                 "status": "missing",
                 "artifact": None,
             },
+            "ui_conformance": {
+                "status": "missing",
+                "artifact": None,
+            },
         },
         "multi_agent_policy": {
-            "mode": "spawned_subagents_required",
+            "mode": "authorization_pending",
+            "evidence_requirement": "mode_selection_required",
+            "execution_authorization": "pending",
+            "authorization_scope": "current_delivery",
+            "authorization_source": None,
+            "authorized_review_types": [],
         },
         "ui_prototype": {
             "generated": False,
             "reviewed_by_agent": False,
             "confirmed_by_user": False,
             "confirmation_source": None,
+        },
+        "prototype_contract": {
+            "status": "missing",
+        },
+        "prototype_production_conformance": {
+            "status": "missing",
+            "records": [],
         },
         "planned_e2e_obligations": {
             "accepted": False,
@@ -139,6 +168,7 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
         },
         "user_confirmations": {},
         "pending_confirmations": {},
+        "pending_user_decisions": {},
         "delivery_goal": None,
         "confirmation_points": {
             artifact_name: {
@@ -160,6 +190,7 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
 
 
 def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
+    is_terminal_history = state.get("status") in TERMINAL_STATUSES
     merged = normalize_state_protocol(dict(state))
     merged.setdefault("active", False)
     merged.setdefault("stage", "initialized")
@@ -195,14 +226,43 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
                 "status": "missing",
                 "artifact": None,
             },
+            "ui_conformance": {
+                "status": "missing",
+                "artifact": None,
+            },
         },
     )
-    merged.setdefault(
+    policy = merged.setdefault(
         "multi_agent_policy",
         {
-            "mode": "spawned_subagents_required",
+            "mode": "authorization_pending",
+            "evidence_requirement": "mode_selection_required",
+            "execution_authorization": "pending",
+            "authorization_scope": "current_delivery",
+            "authorization_source": None,
+            "authorized_review_types": [],
         },
     )
+    if not is_terminal_history and "execution_authorization" not in policy:
+        legacy_mode = policy.get("mode")
+        policy.update(
+            {
+                "evidence_requirement": (
+                    "structured_role_simulation"
+                    if legacy_mode == "role_simulation_allowed"
+                    else "spawned_subagents"
+                ),
+                "execution_authorization": "legacy_unverified",
+                "authorization_scope": "current_delivery",
+                "authorization_source": "legacy_state_migration",
+                "authorized_review_types": [],
+            }
+        )
+        merged["next_gate"] = "multi_agent_mode_selection"
+        merged.setdefault("pending_user_decisions", {})["multi_agent_mode"] = {
+            "status": "pending",
+            "reason": "legacy authorization could not be verified",
+        }
     merged["multi_agent_reviews"].setdefault(
         "scenario",
         {
@@ -231,6 +291,13 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
             "artifact": None,
         },
     )
+    merged["multi_agent_reviews"].setdefault(
+        "ui_conformance",
+        {
+            "status": "missing",
+            "artifact": None,
+        },
+    )
     merged.setdefault(
         "ui_prototype",
         {
@@ -238,6 +305,14 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
             "reviewed_by_agent": False,
             "confirmed_by_user": False,
             "confirmation_source": None,
+        },
+    )
+    merged.setdefault("prototype_contract", {"status": "missing"})
+    merged.setdefault(
+        "prototype_production_conformance",
+        {
+            "status": "missing",
+            "records": [],
         },
     )
     merged.setdefault(
@@ -265,6 +340,7 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     )
     merged.setdefault("user_confirmations", {})
     merged.setdefault("pending_confirmations", {})
+    merged.setdefault("pending_user_decisions", {})
     merged.setdefault("delivery_goal", None)
     merged.setdefault("confirmation_points", {})
     merged.setdefault("artifact_paths", {})

@@ -15,6 +15,7 @@
     "category": "Productivity",
     "defaultPrompt": [
       "\u542f\u52a8\u4ea4\u4ed8",
+      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u591a Agent \u6a21\u5f0f",
       "\u542f\u52a8\u4ea4\u4ed8\uff0c\u5141\u8bb8\u964d\u7ea7\u8bc4\u5ba1",
       "\u67e5\u770b\u72b6\u6001",
       "\u9a8c\u8bc1\u95ed\u5305",
@@ -38,5 +39,5 @@
   "name": "waygate-product-delivery",
   "repository": "https://example.com/waygate-product-delivery.git",
   "skills": "./skills/",
-  "version": "1.0.14+codex.20260708073644"
+  "version": "1.0.17+codex.20260711033552"
 }

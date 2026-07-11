@@ -6,7 +6,18 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from product_delivery_agent.coverage_audit import FULL_STACK_BROWSER_E2E
+from product_delivery_agent.coverage_audit import (
+    CoverageAuditError,
+    FULL_STACK_BROWSER_E2E,
+    INDEPENDENT_SEGMENT_PATH_KINDS,
+    build_prototype_production_conformance,
+)
+from product_delivery_agent.evidence_artifacts import (
+    EvidenceArtifactError,
+    load_json_artifact,
+    sha256_file,
+)
+from product_delivery_agent.ui_prototype import UIPrototypeError, build_prototype_contract
 from product_delivery_agent.transition_journal import (
     has_transition,
     journal_integrity_errors,
@@ -21,8 +32,8 @@ UI_SUBTYPES = {"web", "web_ui", "web_system", "frontend", "ui_system"}
 VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
-CANONICAL_SCHEMA_VERSION = "v0.10"
-PLUGIN_VERSION = "1.0.14"
+CANONICAL_SCHEMA_VERSION = "v0.11"
+PLUGIN_VERSION = "1.0.17"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -72,6 +83,10 @@ def surface_input_hash(state: dict[str, Any]) -> str:
             "artifact_hash": ui.get("artifact_hash"),
             "artifact_version": ui.get("artifact_version"),
             "prototype_revision": ui.get("prototype_revision"),
+            "prototype_contract_hash": ui.get("prototype_contract_hash"),
+            "prototype_screenshot_set_hash": ui.get(
+                "prototype_screenshot_set_hash"
+            ),
             "confirmed_by_user": bool(ui.get("confirmed_by_user")),
             "confirmation_artifact_path": ui.get("confirmation_artifact_path"),
             "ui_change_type": review.get("ui_change_type") or ui.get("ui_change_type"),
@@ -138,6 +153,19 @@ def review_input_hash(state: dict[str, Any], review_type: str) -> str:
                 "planned_e2e": planned_e2e_input_hash(state),
                 "executed_browser_evidence": state.get("executed_browser_evidence"),
                 "executed_behavior_evidence": state.get("executed_behavior_evidence"),
+            }
+        )
+    if review_type == "ui_conformance":
+        return stable_state_hash(
+            {
+                "surface": surface_input_hash(state),
+                "prototype_contract": state.get("prototype_contract"),
+                "prototype_production_conformance": state.get(
+                    "prototype_production_conformance"
+                ),
+                "executed_browser_evidence": state.get(
+                    "executed_browser_evidence"
+                ),
             }
         )
     return stable_state_hash({"review_type": review_type})
@@ -310,6 +338,19 @@ def closure_integrity_errors(state: dict[str, Any]) -> list[str]:
         executed = _as_dict(state.get("executed_browser_evidence"))
         if executed.get("status") != "passed":
             errors.append("executed_browser_evidence.status=passed")
+        if not _is_legacy_terminal_closure(state):
+            contract = _as_dict(state.get("prototype_contract"))
+            conformance = _as_dict(state.get("prototype_production_conformance"))
+            if contract.get("status") != "ready":
+                errors.append("prototype_contract.status=ready")
+            if conformance.get("status") != "passed":
+                errors.append("prototype_production_conformance.status=passed")
+            if not _review_is_current(state, "ui_conformance"):
+                errors.append("multi_agent_ui_conformance_review")
+            if feature_closure.get(
+                "prototype_conformance"
+            ) != prototype_conformance_closure_binding(state):
+                errors.append("canonical_prototype_conformance_binding")
     errors.extend(canonical_closure_integrity_errors(state))
     return errors
 
@@ -322,12 +363,17 @@ def canonical_closure_integrity_errors(state: dict[str, Any]) -> list[str]:
     closure_validation = _as_dict(state.get("closure_validation"))
     feature_closure = _as_dict(state.get("feature_closure"))
     errors: list[str] = []
+    legacy_terminal = _is_legacy_terminal_closure(state)
 
     if closure_validation.get("validator") != CANONICAL_VALIDATOR:
         errors.append("canonical_closure_validation")
-    if closure_validation.get("canonical_schema_version") != CANONICAL_SCHEMA_VERSION:
+    if (
+        not legacy_terminal
+        and closure_validation.get("canonical_schema_version")
+        != CANONICAL_SCHEMA_VERSION
+    ):
         errors.append("canonical_closure_schema_version")
-    if closure_validation.get("plugin_version") != PLUGIN_VERSION:
+    if not legacy_terminal and closure_validation.get("plugin_version") != PLUGIN_VERSION:
         errors.append("canonical_closure_plugin_version")
     if (
         closure_validation.get("feature_slug")
@@ -364,6 +410,18 @@ def canonical_closure_integrity_errors(state: dict[str, Any]) -> list[str]:
     if not has_transition(state, "goal_completed"):
         errors.append("canonical_goal_completion_transition")
     return _dedupe(errors)
+
+
+def _is_legacy_terminal_closure(state: dict[str, Any]) -> bool:
+    if state.get("status") not in TERMINAL_STATUSES:
+        return False
+    validation = _as_dict(state.get("closure_validation"))
+    return (
+        validation.get("status") == "passed"
+        and validation.get("validator") == CANONICAL_VALIDATOR
+        and validation.get("canonical_schema_version") in {"v0.10"}
+        and validation.get("plugin_version") in {"1.0.15"}
+    )
 
 
 def _is_closure_like_state(state: dict[str, Any]) -> bool:
@@ -441,6 +499,14 @@ def derive_blockers(
     if closure_validation.get("status") == "closure_failed":
         for error in closure_validation.get("errors", []):
             _append_if(blockers, True, error)
+    execution_authorization = _as_dict(
+        normalized.get("multi_agent_policy")
+    ).get("execution_authorization")
+    _append_if(
+        blockers,
+        execution_authorization in {"pending", "legacy_unverified", "invalidated"},
+        "multi_agent_mode_authorization",
+    )
     _append_if(blockers, not normalized.get("feature_slug"), "feature_slug")
     _append_if(
         blockers,
@@ -652,7 +718,135 @@ def assert_pre_closure_ready(
         )
     if project_type == "ui":
         _assert_ui_executed_evidence_is_full_stack(planned, executed.get("records", []))
+        _assert_ui_role_path_segment_evidence(planned, executed.get("records", []))
+        _assert_ui_prototype_conformance_current(
+            state,
+            closure_artifact,
+            project_root,
+        )
     _assert_closure_covers_executed(closure_artifact, planned, executed)
+
+
+def _assert_ui_prototype_conformance_current(
+    state: dict[str, Any],
+    closure_artifact: dict[str, Any],
+    project_root: str | Path | None,
+) -> None:
+    if project_root is None:
+        raise GatekeeperError(
+            "project_root is required to validate prototype production conformance"
+        )
+    root = Path(project_root)
+    ui = _as_dict(state.get("ui_prototype"))
+    contract = _as_dict(state.get("prototype_contract"))
+    conformance = _as_dict(state.get("prototype_production_conformance"))
+    if not ui.get("confirmed_by_user"):
+        raise GatekeeperError("confirmed prototype contract is required before closure")
+    if contract.get("status") != "ready":
+        raise GatekeeperError("prototype_contract must be current before closure")
+    if conformance.get("status") != "passed":
+        raise GatekeeperError(
+            "prototype_production_conformance must pass before closure"
+        )
+    if not has_transition(state, "prototype_production_conformance_recorded"):
+        raise GatekeeperError(
+            "prototype_production_conformance canonical transition is required"
+        )
+
+    prototype_path = ui.get("prototype_path")
+    if not _non_empty_string(prototype_path):
+        raise GatekeeperError("canonical UI prototype path is required before closure")
+    resolved_prototype = root / str(prototype_path)
+    if not resolved_prototype.is_file() or _sha256(resolved_prototype) != ui.get(
+        "artifact_hash"
+    ):
+        raise GatekeeperError("canonical UI prototype hash changed before closure")
+
+    try:
+        contract_payload, contract_metadata = load_json_artifact(
+            root,
+            _workspace_artifact_path(contract.get("artifact_path")),
+        )
+        rebuilt_contract = build_prototype_contract(root, contract_payload)
+    except (EvidenceArtifactError, UIPrototypeError) as cause:
+        raise GatekeeperError(f"prototype contract is stale: {cause}") from cause
+    if not _non_empty_string(contract.get("artifact_sha256")):
+        raise GatekeeperError("prototype contract artifact hash is required before closure")
+    if contract_metadata["sha256"] != contract.get("artifact_sha256"):
+        raise GatekeeperError("prototype contract artifact hash changed before closure")
+    if rebuilt_contract.get("contract_sha256") != contract.get("contract_sha256"):
+        raise GatekeeperError("prototype contract hash changed before closure")
+    if rebuilt_contract.get("prototype_screenshot_set_sha256") != contract.get(
+        "prototype_screenshot_set_sha256"
+    ):
+        raise GatekeeperError("prototype screenshot set changed before closure")
+    if ui.get("prototype_contract_hash") != contract.get("contract_sha256"):
+        raise GatekeeperError("confirmed prototype contract hash is stale")
+    if ui.get("prototype_screenshot_set_hash") != contract.get(
+        "prototype_screenshot_set_sha256"
+    ):
+        raise GatekeeperError("confirmed prototype screenshot set hash is stale")
+
+    try:
+        conformance_payload, conformance_metadata = load_json_artifact(
+            root,
+            _workspace_artifact_path(conformance.get("artifact_path")),
+        )
+        rebuilt_conformance = build_prototype_production_conformance(
+            root,
+            conformance_payload,
+            canonical_prototype=ui,
+            prototype_contract=rebuilt_contract,
+            executed_browser_evidence=state.get("executed_browser_evidence") or {},
+        )
+    except (EvidenceArtifactError, CoverageAuditError) as cause:
+        raise GatekeeperError(
+            f"production screenshot or semantic snapshot is stale: {cause}"
+        ) from cause
+    if conformance_metadata["sha256"] != conformance.get("artifact_sha256"):
+        raise GatekeeperError("prototype production conformance manifest hash changed")
+    if rebuilt_conformance.get("evidence_sha256") != conformance.get(
+        "evidence_sha256"
+    ):
+        raise GatekeeperError("prototype production conformance evidence hash changed")
+    if not _review_is_current(state, "ui_conformance"):
+        raise GatekeeperError(
+            "multi_agent_ui_conformance_review is required before closure"
+        )
+
+    expected_binding = prototype_conformance_closure_binding(state)
+    if closure_artifact.get("prototype_conformance") != expected_binding:
+        raise GatekeeperError(
+            "closure prototype_conformance must match canonical UI evidence"
+        )
+
+
+def prototype_conformance_closure_binding(state: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical v0.11 UI conformance binding for closure artifacts."""
+    ui = _as_dict(state.get("ui_prototype"))
+    contract = _as_dict(state.get("prototype_contract"))
+    conformance = _as_dict(state.get("prototype_production_conformance"))
+    review = _as_dict((state.get("multi_agent_reviews") or {}).get("ui_conformance"))
+    return {
+        "prototype_revision": ui.get("prototype_revision"),
+        "prototype_sha256": ui.get("artifact_hash"),
+        "prototype_contract_sha256": contract.get("contract_sha256"),
+        "prototype_screenshot_set_sha256": contract.get(
+            "prototype_screenshot_set_sha256"
+        ),
+        "conformance_evidence_sha256": conformance.get("evidence_sha256"),
+        "conformance_artifact_sha256": conformance.get("artifact_sha256"),
+        "ui_conformance_review_sha256": review.get("input_snapshot_hash"),
+        "covered_surface_ids": conformance.get("covered_surface_ids"),
+        "covered_region_ids": conformance.get("covered_region_ids"),
+    }
+
+
+def _workspace_artifact_path(value: Any) -> str:
+    path = str(value or "")
+    if path.startswith("artifacts/"):
+        return f".product-delivery/{path}"
+    return path
 
 
 def assert_executed_evidence_covers_planned(
@@ -759,6 +953,83 @@ def _assert_ui_executed_evidence_is_full_stack(
         )
 
 
+def _assert_ui_role_path_segment_evidence(
+    planned: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+) -> None:
+    records_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for record in records:
+        records_by_key.setdefault(
+            (record.get("obligation_id"), record.get("test_id")),
+            [],
+        ).append(record)
+    segment_owners: dict[str, str] = {}
+    duplicate_segments: list[str] = []
+    errors: list[str] = []
+    for obligation in planned:
+        obligation_id = str(obligation.get("obligation_id") or "")
+        test_id = str(obligation.get("test_id") or "")
+        key = (obligation_id, test_id)
+        matching = records_by_key.get(key, [])
+        required_roles = _string_set(obligation.get("required_actor_roles"))
+        if not required_roles:
+            errors.append(f"{obligation_id}:{test_id}:required_actor_roles")
+            continue
+        missing_record_fields = []
+        for record in matching:
+            for field_name in (
+                "executed_actor_roles",
+                "primary_actor_role",
+                "actor_identity_evidence",
+                "ordinary_path_observed",
+                "execution_segment_id",
+                "test_title_or_step",
+            ):
+                if not _has_evidence_value(record.get(field_name)):
+                    missing_record_fields.append(field_name)
+        if missing_record_fields:
+            errors.append(
+                f"{obligation_id}:{test_id}:missing "
+                + ",".join(sorted(set(missing_record_fields)))
+            )
+            continue
+        executed_roles = {
+            _normalize_actor_role(role)
+            for record in matching
+            for role in _string_list(record.get("executed_actor_roles"))
+        }
+        missing_roles = sorted(required_roles - executed_roles)
+        if missing_roles:
+            errors.append(
+                f"{obligation_id}:{test_id}:actor role "
+                + ",".join(missing_roles)
+            )
+        if not any(record.get("ordinary_path_observed") is True for record in matching):
+            errors.append(f"{obligation_id}:{test_id}:ordinary_path_observed")
+        path_kind = str(obligation.get("path_kind") or "")
+        if path_kind in INDEPENDENT_SEGMENT_PATH_KINDS:
+            segments = [
+                str(record.get("execution_segment_id") or "").strip()
+                for record in matching
+                if str(record.get("execution_segment_id") or "").strip()
+            ]
+            if not segments:
+                errors.append(f"{obligation_id}:{test_id}:execution_segment_id")
+                continue
+            owner = f"{obligation_id}:{test_id}"
+            segment = segments[0]
+            previous = segment_owners.get(segment)
+            if previous and previous != owner:
+                duplicate_segments.append(f"{segment} ({previous}, {owner})")
+            segment_owners[segment] = owner
+    if duplicate_segments:
+        errors.append("duplicate execution_segment_id: " + ", ".join(duplicate_segments))
+    if errors:
+        raise GatekeeperError(
+            "UI role-accurate browser evidence required: " + "; ".join(errors)
+        )
+
+
 def _assert_closure_covers_executed(
     closure_artifact: dict[str, Any],
     planned: list[dict[str, Any]],
@@ -809,6 +1080,36 @@ def _read_candidate(path: Path) -> str:
 def _append_if(blockers: list[str], condition: bool, blocker: str) -> None:
     if condition and blocker not in blockers:
         blockers.append(blocker)
+
+
+def _has_evidence_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value)
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, bool):
+        return True
+    return False
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        item.strip()
+        for item in value
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _string_set(value: Any) -> set[str]:
+    return {_normalize_actor_role(item) for item in _string_list(value)}
+
+
+def _normalize_actor_role(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_")
 
 
 def _ui_prototype_confirmation_is_stale(

@@ -5,6 +5,17 @@ from pathlib import Path
 
 from product_delivery_agent.closure import ClosureGateError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from product_delivery_agent.gatekeeper import (
+    CANONICAL_SCHEMA_VERSION,
+    CANONICAL_VALIDATOR,
+    PLUGIN_VERSION,
+    prototype_conformance_closure_binding,
+)
+from tests.conformance_fixtures import (
+    prototype_contract,
+    record_ui_conformance,
+    write_prototype_screenshot,
+)
 
 
 def scenario_row():
@@ -64,6 +75,20 @@ def multi_agent_review(review_type):
                 },
             }
         ],
+        "role_journey_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "required_actor_roles": ["teacher"],
+                "journey": "J-001",
+            }
+        ],
+        "ordinary_path_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "ordinary_entry_path": "teacher opens the existing classroom dashboard",
+            }
+        ],
+        "scenario_granularity_findings": [],
         "actual_test_code_paths": ["tests/e2e/classroom.spec.ts"],
         "execution_evidence_paths": [
             ".product-delivery/artifacts/browser-e2e-results.json",
@@ -81,6 +106,10 @@ def multi_agent_review(review_type):
         ],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
 
 
@@ -100,6 +129,7 @@ def user_confirmation(target):
 
 def ui_review_payload():
     return {
+        "prototype_contract": prototype_contract(),
         "prototype_path": "prototype/index.html",
         "pages": ["dashboard"],
         "states": ["empty", "loading", "error", "success"],
@@ -163,6 +193,10 @@ def planned_obligation():
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "teacher opens the existing classroom dashboard",
+        "required_actor_roles": ["teacher"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "teacher opens the existing classroom dashboard",
+        "data_state_contract": "teacher account with permission to create classrooms",
         "coverage_items": ["classroom-create"],
         "action_assertions": [
             {
@@ -228,6 +262,12 @@ def browser_evidence(project_root):
         },
         "mocked_routes": [],
         "probe_artifact_path": ".product-delivery/artifacts/browser-e2e-probe.json",
+        "executed_actor_roles": ["teacher"],
+        "primary_actor_role": "teacher",
+        "actor_identity_evidence": {"role": "teacher", "user_id": "teacher-1"},
+        "ordinary_path_observed": True,
+        "execution_segment_id": "teacher-create-classroom",
+        "test_title_or_step": "teacher creates classroom from dashboard",
     }
 
 
@@ -249,8 +289,9 @@ def ready_workflow(project_root):
     prototype = project_root / "prototype" / "index.html"
     prototype.parent.mkdir(parents=True, exist_ok=True)
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
+    write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v2.5-key-owner-ops")
+    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -294,14 +335,18 @@ def ready_workflow(project_root):
         "test_implementation",
         multi_agent_review("test_implementation"),
     )
+    record_ui_conformance(workflow, project_root)
     return workflow
 
 
-def valid_closure_artifact():
-    return {
+def valid_closure_artifact(state=None):
+    artifact = {
         "status": "passed",
         "passed": True,
-        "closure_flag": "v0.10-feature-closure-passed",
+        "canonical_validator": CANONICAL_VALIDATOR,
+        "canonical_schema_version": CANONICAL_SCHEMA_VERSION,
+        "plugin_version": PLUGIN_VERSION,
+        "closure_flag": "v0.11-feature-closure-passed",
         "latest_test_case": "TC-V008-001",
         "matrix_range": "TC-V008-001..TC-V008-001",
         "e2e_covered_tc": ["TC-V008-001"],
@@ -327,6 +372,11 @@ def valid_closure_artifact():
         "controller_session_modified": False,
         "created_fake_controller_state": False,
     }
+    if state is not None:
+        artifact["prototype_conformance"] = prototype_conformance_closure_binding(
+            state
+        )
+    return artifact
 
 
 class FeatureClosureGateTests(unittest.TestCase):
@@ -335,7 +385,7 @@ class FeatureClosureGateTests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = ready_workflow(project_root)
 
-            result = workflow.record_feature_closure(valid_closure_artifact())
+            result = workflow.record_feature_closure(valid_closure_artifact(workflow.status()))
 
             self.assertEqual(result["stage"], "feature_closure_passed")
             self.assertTrue(result["feature_closure"]["passed"])
@@ -351,6 +401,8 @@ class FeatureClosureGateTests(unittest.TestCase):
             self.assertIn("Artifact Metadata", closure_text)
             self.assertIn(".product-delivery/artifacts", closure_text)
             self.assertIn("browser-e2e-results.json", closure_text)
+            self.assertIn("Prototype Conformance", closure_text)
+            self.assertIn("primary-surface", closure_text)
 
     def test_summary_only_completion_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -364,7 +416,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_range_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["matrix_range"] = "TC-V008-001..TC-V008-002"
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -375,7 +427,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_missing_e2e_coverage_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["covered_journeys"] = []
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -386,7 +438,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_missing_artifact_metadata_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["e2e_evidence_paths"] = []
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -397,7 +449,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_missing_or_failed_high_risk_subresults_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            missing_artifact = valid_closure_artifact()
+            missing_artifact = valid_closure_artifact(workflow.status())
             missing_artifact["high_risk_gate_subresults"] = {}
 
             with self.assertRaises(ClosureGateError) as missing:
@@ -405,7 +457,7 @@ class FeatureClosureGateTests(unittest.TestCase):
 
             self.assertIn("high_risk_gate_subresults", str(missing.exception))
 
-            failed_artifact = valid_closure_artifact()
+            failed_artifact = valid_closure_artifact(workflow.status())
             failed_artifact["high_risk_gate_subresults"] = {
                 "ui-browser-e2e-required": "failed",
             }
@@ -418,7 +470,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_required_command_without_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["required_commands"][0]["output"] = ""
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -429,7 +481,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_failed_negative_scope_guard_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["negative_scope_guard_result"] = "failed"
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -440,7 +492,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_unsafe_integrity_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["controller_session_modified"] = True
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -451,7 +503,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_non_boolean_integrity_fields_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["secret_values_recorded"] = "false"
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -462,7 +514,7 @@ class FeatureClosureGateTests(unittest.TestCase):
     def test_superseded_closure_without_cr_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["superseded_by"] = "closure-v2"
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -474,7 +526,7 @@ class FeatureClosureGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ready_workflow(project_root)
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["superseded_by"] = "closure-v2"
             artifact["triggering_cr"] = "CR-010"
 

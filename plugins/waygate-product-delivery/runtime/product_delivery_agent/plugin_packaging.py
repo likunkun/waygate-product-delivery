@@ -128,6 +128,7 @@ def _plugin_manifest() -> dict[str, Any]:
             "termsOfServiceURL": "https://example.com/terms",
             "defaultPrompt": [
                 "启动交付",
+                "启动交付，多 Agent 模式",
                 "启动交付，允许降级评审",
                 "查看状态",
                 "验证闭包",
@@ -188,8 +189,24 @@ def _write_templates(templates_dir: Path) -> None:
                 "full_stack_browser_evidence": {
                     "required_for_ui_journeys": True,
                     "evidence_strength": "full_stack_browser_e2e",
+                    "role_accurate_required": True,
+                    "ordinary_path_required": True,
+                    "independent_execution_segments_required": True,
                     "probe_artifact_paths": [],
+                    "actor_identity_evidence": [],
+                    "execution_segment_ids": [],
                     "business_api_mock_findings": [],
+                },
+                "prototype_conformance": {
+                    "prototype_revision": "",
+                    "prototype_sha256": "",
+                    "prototype_contract_sha256": "",
+                    "prototype_screenshot_set_sha256": "",
+                    "conformance_evidence_sha256": "",
+                    "conformance_artifact_sha256": "",
+                    "ui_conformance_review_sha256": "",
+                    "covered_surface_ids": [],
+                    "covered_region_ids": [],
                 },
                 "high_risk_gate_subresults": {},
                 "negative_scope_guard_result": "passed",
@@ -238,7 +255,8 @@ def _write_templates(templates_dir: Path) -> None:
             "- Read or create `task_plan.md`, `findings.md`, and `progress.md`.\n"
             "- Create or recover `.product-delivery/state.json`.\n"
             "- Record the current feature slug and blocked gates in state.\n"
-            "- Default multi-agent policy is `spawned_subagents_required`.\n"
+            "- Plain startup enters `authorization_pending` and asks for a mode immediately.\n"
+            "- `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.\n"
         ),
         "required-skills-checklist.md": _required_skills_checklist(),
         "open-spec-gate.md": (
@@ -262,6 +280,39 @@ def _write_templates(templates_dir: Path) -> None:
             "- New surfaces must include meaningful `new_surface_justification` and "
             "explicit user confirmation; generic justifications do not satisfy this gate.\n"
             "- Implementation is blocked until the user explicitly confirms the prototype through `confirm_ui_prototype`.\n"
+        ),
+        "ui-prototype-contract.json": json.dumps(
+            {
+                "contract_version": "v1",
+                "prototype_screenshot_paths": [],
+                "surfaces": [
+                    {
+                        "surface_id": "",
+                        "route": "",
+                        "state_id": "",
+                        "required_viewports": ["desktop"],
+                        "critical_regions": [],
+                        "critical_relationships": [],
+                        "critical_interactions": [],
+                    }
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        "prototype-production-conformance.md": (
+            "# Prototype Production Conformance\n\n"
+            "- status: draft\n"
+            "- prototype_revision:\n"
+            "- prototype_contract_hash:\n"
+            "- evidence_sha256:\n"
+            "- covered_surface_ids: []\n"
+            "- covered_state_ids: []\n"
+            "- covered_region_ids: []\n\n"
+            "Each record binds a current full-stack Browser E2E segment, viewport PNG, "
+            "controlled semantic snapshot, production route/component provenance, "
+            "and complete observations.\n"
         ),
         "scope-scenario-matrix.md": (
             "# Scope Scenario Matrix\n\n"
@@ -311,10 +362,15 @@ def _write_templates(templates_dir: Path) -> None:
             "- title_overbreadth_findings: []\n"
             "- missing_executable_assertions: []\n"
             "- false_positive_risks: []\n\n"
+            "- role_journey_coverage: []\n"
+            "- ordinary_path_coverage: []\n"
+            "- scenario_granularity_findings: []\n\n"
             "## Collection Coverage\n\n"
             "| collection_id | required_items | covered_items | item_level_assertions |\n"
             "| --- | --- | --- | --- |\n\n"
             "This gate reviews test case coverage range before implementation. "
+            "It must prove every UI journey has the required actor role, ordinary entry path, "
+            "and scenario granularity before implementation starts. "
             "Scenario review, prototype review, and generic test review cannot replace it.\n"
         ),
         "multi-agent-test-implementation-review.md": (
@@ -329,12 +385,34 @@ def _write_templates(templates_dir: Path) -> None:
             "- false_positive_risks: []\n"
             "- supporting_evidence_only: []\n"
             "- business_api_mock_findings: []\n\n"
+            "- actor_role_findings: []\n"
+            "- evidence_distribution_findings: []\n"
+            "- annotation_only_findings: []\n"
+            "- ordinary_path_findings: []\n\n"
             "This gate reviews the actual test code, Playwright/browser scripts, "
             "logs, screenshots, and traces after implementation. Marker existence, "
             "function-name checks, static explanation panels, and first-button-only "
             "checks are false-positive risks. Business API route mocks must be "
             "recorded as structured findings and cannot close UI journey coverage "
-            "unless a structured exemption explicitly allows closure.\n"
+            "unless a structured exemption explicitly allows closure. The review must "
+            "cover every planned test id and every planned action assertion, not a sample.\n"
+        ),
+        "multi-agent-ui-conformance-review.md": (
+            "# Multi-Agent UI Conformance Review\n\n"
+            "- review_type: ui_conformance\n"
+            "- review_mode: spawned_subagents | role_simulation | blocked_with_reason\n"
+            "- status: draft\n"
+            "- reviewed_surface_ids: []\n"
+            "- reviewed_state_ids: []\n"
+            "- reviewed_region_ids: []\n"
+            "- structural_findings: []\n"
+            "- visual_findings: []\n"
+            "- interaction_findings: []\n"
+            "- legacy_reuse_findings: []\n"
+            "- unmapped_regions: []\n"
+            "- blocking_findings: []\n\n"
+            "Review every frozen surface, state, region, relationship, and interaction "
+            "against production PNG and controlled semantic snapshot evidence.\n"
         ),
         "user-confirmation.md": (
             "# User Confirmation\n\n"
@@ -354,22 +432,22 @@ def _write_templates(templates_dir: Path) -> None:
             "- feature_slug:\n"
             "- artifact_version:\n"
             "- generated_at:\n\n"
-            "| obligation_id | scenario_id | test_id | user_story | journey | baseline_entry_path | visible_exception | test_layer | semantic_assertions | coverage_items | action_assertions | false_positive_guards | exemption_status |\n"
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            "| obligation_id | scenario_id | test_id | user_story | journey | required_actor_roles | path_kind | ordinary_entry_path | data_state_contract | baseline_entry_path | visible_exception | test_layer | semantic_assertions | coverage_items | action_assertions | false_positive_guards | exemption_status |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
         ),
         "executed-browser-evidence.md": (
             "# Executed Browser Evidence\n\n"
             "- feature_slug:\n"
             "- artifact_version:\n"
             "- generated_at:\n\n"
-            "| test_id | obligation_id | evidence_strength | acceptance_url | api_health_url | api_health_identity | business_api_requests | mocked_routes | evidence_path | evidence_sha256 | probe_artifact_path | probe_artifact_sha256 |\n"
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            "| test_id | obligation_id | evidence_strength | primary_actor_role | executed_actor_roles | ordinary_path_observed | execution_segment_id | test_title_or_step | acceptance_url | api_health_url | api_health_identity | business_api_requests | mocked_routes | evidence_path | evidence_sha256 | probe_artifact_path | probe_artifact_sha256 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
         ),
         "closure-validator-result.md": (
             "# Closure Validator Result\n\n"
             "- status: not_run\n"
             "- validator: product_delivery_agent.finalization\n"
-            "- canonical_schema_version: v0.10\n"
+            "- canonical_schema_version: v0.11\n"
             f"- plugin_version: {PLUGIN_VERSION}\n"
             "- feature_slug:\n"
             "- errors: []\n"
@@ -425,8 +503,9 @@ def _skill_markdown() -> str:
         "description: Codex-native product delivery workflow.\n"
         "---\n\n"
         "# Product Delivery Agent\n\n"
-        "默认休眠。说 `启动交付` 激活当前项目的产品交付模式；"
-        "默认要求当前 feature 使用真实 spawned subagents 完成 scenario/test coverage review；"
+        "默认休眠。说 `启动交付` 激活当前项目的产品交付模式，并立即进入 "
+        "`authorization_pending` 等待模式选择；说 `启动交付，多 Agent 模式` "
+        "显式授权当前 delivery 在结构化 review gate 自动启动 2–3 个独立 subagents；"
         "只有在真实 subagents 不可用时，才使用 `启动交付，允许降级评审` "
         "显式允许 role_simulation 弱证据；"
         "说 `停止交付` 或使用 `stop` 退出干预。底层命令仍保留 "
@@ -483,6 +562,24 @@ def _skill_markdown() -> str:
         "除非有结构化豁免允许 closure。executed browser evidence 必须记录 acceptance URL、"
         "API health identity、network probe artifact、business API request summary 和 `mocked_routes`；"
         "未豁免 business API mock 必须阻塞 closure。\n\n"
+        "V1.0.15 起，UI journey closure 还必须是 role-accurate、ordinary-path、"
+        "independently verifiable evidence。UI planned E2E obligation 必须记录 "
+        "`required_actor_roles`、`path_kind`、`ordinary_entry_path` 和 `data_state_contract`。"
+        "executed browser evidence 必须记录 `executed_actor_roles`、`primary_actor_role`、"
+        "`actor_identity_evidence`、`ordinary_path_observed`、`execution_segment_id` 和 "
+        "`test_title_or_step`。Teacher 主路径不能由 admin browser E2E 关闭；"
+        "主路径、可见异常和权限拒绝必须有可定位、可失败的独立 execution segment。"
+        "API/Go/Vitest 等 supporting evidence 可以证明后端行为，但不能替代 "
+        "role-accurate Browser E2E。\n\n"
+        "V1.0.16 起，prototype confirmation 必须冻结 canonical `prototype_contract`、"
+        "prototype HTML hash 和 prototype PNG screenshot set hash。实现与 full-stack Browser E2E "
+        "完成后，必须调用 `record_prototype_production_conformance`，为每个冻结 surface/state/viewport "
+        "记录 production PNG、controlled semantic snapshot、region/relationship/interaction observation "
+        "和 execution segment 绑定，并声明 production route/component provenance。"
+        "`.txt`、HTML、JSON、伪 PNG、路径逃逸或被修改的证据必须 fail closed。"
+        "formal closure 前还必须有独立 `ui_conformance` multi-agent review，完整覆盖所有冻结 region；"
+        "`test_implementation` 不能替代它。closure schema `v0.11` 必须绑定 prototype、contract、"
+        "production conformance 和 UI conformance review hashes。\n\n"
         "用户面对的确认只保留两次：`ui_prototype` 原型确认，以及 "
         "combined requirements freeze + planned E2E coverage 确认。后者必须一次写入 "
         "`open_spec_freeze` 需求范围和 `planned_e2e_obligations` 测试用例覆盖情况"
@@ -501,6 +598,12 @@ def _skill_markdown() -> str:
         "如果发现 Playwright、MSW、service worker、fetch/XHR patch 或 fixture server mock 了当前 journey "
         "依赖的 business API，却仍声称覆盖 UI journey，必须作为 blocking finding，"
         "并记录在 `business_api_mock_findings`。"
+        "V1.0.15 起，`multi_agent_test_coverage_review` 必须记录 "
+        "`role_journey_coverage`、`ordinary_path_coverage` 和 `scenario_granularity_findings`；"
+        "`multi_agent_test_implementation_review` 必须记录 `actor_role_findings`、"
+        "`evidence_distribution_findings`、`annotation_only_findings` 和 `ordinary_path_findings`。"
+        "`reviewed_test_ids` 必须覆盖 planned test IDs，`verified_action_assertions` "
+        "必须覆盖每个 planned coverage item，不能只抽样代表项或只靠 annotation 关闭场景。"
         "如果发现 coverage gap，必须先补 RED test 让当前浅实现失败，再继续修 UI 或 E2E。\n\n"
         "## Main Flow Continuation\n\n"
         "active mode 下每次准备 final summary、普通 stop guard 或交付总结前，"
@@ -528,7 +631,7 @@ def _skill_markdown() -> str:
         "并写入 `.product-delivery/artifacts/closure-validator-result.md`。"
         "V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 "
         "`closure_validation.validator=product_delivery_agent.finalization`、"
-        f"`canonical_schema_version=v0.10`、`plugin_version={PLUGIN_VERSION}`、"
+        f"`canonical_schema_version=v0.11`、`plugin_version={PLUGIN_VERSION}`、"
         "`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。"
         "target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、"
         "Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，"
@@ -543,7 +646,10 @@ def _skill_markdown() -> str:
         "都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、"
         "旧 feature closure result 或 docs 领先状态必须 fail closed。\n\n"
         "multi-agent review 必须记录 `review_mode`。`spawned_subagents` 是强证据；"
-        "默认启动要求 `spawned_subagents`。`role_simulation` 是弱证据，"
+        "它只在 `execution_authorization` 对 `authorization_scope=current_delivery` 有效时可接受。"
+        "授权只覆盖 scenario、test、test_coverage、test_implementation、ui_conformance "
+        "结构化 review gate，不授权普通实现、文件读取或串行修复自动并行。"
+        "`role_simulation` 是弱证据，"
         "只有使用 `启动交付，允许降级评审` 后才允许；"
         "`blocked_with_reason` 不能通过 handoff。\n\n"
         "进入实现前必须记录 canonical `implementation_launch_authorization`，"
@@ -619,7 +725,7 @@ def _validation_script() -> str:
 def _formal_gate_plan() -> str:
     return (
         "# Formal Gate Validation Plan\n\n"
-        "- Read V0.9 handoff expectations from local state.\n"
+        "- Read V0.11 handoff and prototype-conformance expectations from local state.\n"
         "- Validate closure artifact fields with `validate_feature_closure`.\n"
         "- Require command output evidence for all handoff-required commands.\n"
         "- Reject summary-only closure evidence.\n"

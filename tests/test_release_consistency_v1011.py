@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.14"
+EXPECTED_VERSION = "1.0.17"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
@@ -38,15 +38,22 @@ class ReleaseConsistencyV1011Tests(unittest.TestCase):
     def test_readmes_reference_current_release_artifacts(self):
         for relative_path in ("README.md", "README.zh-CN.md"):
             text = (REPO_ROOT / relative_path).read_text("utf-8")
-            self.assertIn("version-1.0.14", text)
+            self.assertIn("version-1.0.17", text)
             self.assertIn(
-                "dist/waygate-product-delivery-1.0.14.tar.gz",
+                "dist/waygate-product-delivery-1.0.17.tar.gz",
                 text,
             )
 
     def test_changelog_records_simplified_post_1_0_10_roadmap(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text("utf-8")
-        self.assertIn("## 1.0.14", changelog)
+        self.assertIn("## 1.0.17", changelog)
+        self.assertIn("启动交付，多 Agent 模式", changelog)
+        self.assertIn("authorization_pending", changelog)
+        self.assertIn("prototype_contract", changelog)
+        self.assertIn("prototype_production_conformance", changelog)
+        self.assertIn("ui_conformance", changelog)
+        self.assertIn("required_actor_roles", changelog)
+        self.assertIn("ordinary_entry_path", changelog)
         self.assertIn("ui_change_type", changelog)
         self.assertIn("baseline_entry_path", changelog)
         self.assertIn("V1.1 多 Agent 评审编排产品化", changelog)

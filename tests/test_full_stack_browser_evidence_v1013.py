@@ -31,6 +31,24 @@ def planned_obligation():
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "teacher opens the existing classroom dashboard",
+        "required_actor_roles": ["teacher"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "teacher opens the existing classroom dashboard",
+        "data_state_contract": "teacher account can create a classroom through the dashboard",
+        "coverage_items": ["classroom-create"],
+        "action_assertions": [
+            {
+                "item_id": "classroom-create",
+                "action_entry": "teacher clicks create classroom",
+                "expected_real_surface": "classroom creation form",
+                "assertion_target": "created classroom visible after submit",
+                "semantic_depth": "user_journey",
+            }
+        ],
+        "false_positive_guards": [
+            "reject marker-only",
+            "reject mocked API browser closure",
+        ],
     }
 
 
@@ -93,6 +111,12 @@ def full_stack_record(**overrides):
         },
         "mocked_routes": [],
         "probe_artifact_path": ".product-delivery/artifacts/e2e/tc-v008-001-probe.json",
+        "executed_actor_roles": ["teacher"],
+        "primary_actor_role": "teacher",
+        "actor_identity_evidence": {"role": "teacher", "user_id": "teacher-1"},
+        "ordinary_path_observed": True,
+        "execution_segment_id": "teacher-create-classroom",
+        "test_title_or_step": "teacher creates classroom from dashboard",
     }
     record.update(overrides)
     return record
@@ -133,6 +157,10 @@ def review_payload(**overrides):
         "false_positive_risks": [],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
     payload.update(overrides)
     return payload

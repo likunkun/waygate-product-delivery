@@ -5,6 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from product_delivery_agent.gatekeeper import (
+    CANONICAL_SCHEMA_VERSION,
+    CANONICAL_VALIDATOR,
+    PLUGIN_VERSION,
+)
+
 
 class ClosureGateError(RuntimeError):
     """Raised when a formal closure artifact is not acceptable."""
@@ -31,6 +37,13 @@ def validate_feature_closure(
 
     _require_equal(artifact, "status", "passed")
     _require_equal(artifact, "passed", True)
+    _require_equal(artifact, "canonical_validator", CANONICAL_VALIDATOR)
+    _require_equal(
+        artifact,
+        "canonical_schema_version",
+        CANONICAL_SCHEMA_VERSION,
+    )
+    _require_equal(artifact, "plugin_version", PLUGIN_VERSION)
     if not _has_value(artifact.get("closure_flag")):
         raise ClosureGateError("closure_flag is required")
     _require_equal(artifact, "matrix_range", expected_matrix_range)
@@ -86,6 +99,25 @@ def render_feature_closure(closure: dict[str, Any]) -> str:
         f"- {record['command']}: output recorded"
         for record in closure["required_commands"]
     )
+    prototype_conformance = closure.get("prototype_conformance")
+    if isinstance(prototype_conformance, dict):
+        lines.extend(
+            [
+                "",
+                "## Prototype Conformance",
+                f"- Prototype Revision: {prototype_conformance.get('prototype_revision', '')}",
+                f"- Prototype Hash: {prototype_conformance.get('prototype_sha256', '')}",
+                f"- Contract Hash: {prototype_conformance.get('prototype_contract_sha256', '')}",
+                f"- Evidence Hash: {prototype_conformance.get('conformance_evidence_sha256', '')}",
+                f"- UI Review Hash: {prototype_conformance.get('ui_conformance_review_sha256', '')}",
+                "",
+                "### Covered Surfaces",
+                *_bullets(prototype_conformance.get("covered_surface_ids", [])),
+                "",
+                "### Covered Regions",
+                *_bullets(prototype_conformance.get("covered_region_ids", [])),
+            ]
+        )
     lines.extend(
         [
             "",

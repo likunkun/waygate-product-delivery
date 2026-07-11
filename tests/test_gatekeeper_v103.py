@@ -6,6 +6,9 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
 from product_delivery_agent.coverage_audit import CoverageAuditError
 from product_delivery_agent.gatekeeper import (
+    CANONICAL_SCHEMA_VERSION,
+    CANONICAL_VALIDATOR,
+    PLUGIN_VERSION,
     assert_pre_closure_ready,
     derive_blockers,
     GatekeeperError,
@@ -13,6 +16,7 @@ from product_delivery_agent.gatekeeper import (
     validate_state_invariants,
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
 
 
 def scenario_row(**overrides):
@@ -74,6 +78,20 @@ def review(review_type, **overrides):
                 },
             }
         ],
+        "role_journey_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "required_actor_roles": ["teacher"],
+                "journey": "J-001",
+            }
+        ],
+        "ordinary_path_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "ordinary_entry_path": "teacher opens the existing owner operation dashboard",
+            }
+        ],
+        "scenario_granularity_findings": [],
         "actual_test_code_paths": ["tests/e2e/owner-operation.spec.ts"],
         "execution_evidence_paths": [
             ".product-delivery/artifacts/e2e/tc-v008-001.json",
@@ -91,6 +109,10 @@ def review(review_type, **overrides):
         ],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
     payload.update(overrides)
     return payload
@@ -114,6 +136,7 @@ def user_confirmation(target, **overrides):
 
 def ui_review_payload():
     return {
+        "prototype_contract": prototype_contract(),
         "prototype_path": "docs/prototypes/v2.5-prototype.html",
         "pages": ["dashboard"],
         "states": ["empty", "loading", "error", "success"],
@@ -161,6 +184,10 @@ def planned_obligation(**overrides):
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "teacher opens the existing owner operation dashboard",
+        "required_actor_roles": ["teacher"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "teacher opens the existing owner operation dashboard",
+        "data_state_contract": "teacher account with owner operation access",
         "coverage_items": ["teacher-owner-operation"],
         "action_assertions": [
             {
@@ -253,6 +280,12 @@ def browser_evidence(project_root, **overrides):
         },
         "mocked_routes": [],
         "probe_artifact_path": ".product-delivery/artifacts/e2e/tc-v008-001-probe.json",
+        "executed_actor_roles": ["teacher"],
+        "primary_actor_role": "teacher",
+        "actor_identity_evidence": {"role": "teacher", "user_id": "teacher-1"},
+        "ordinary_path_observed": True,
+        "execution_segment_id": "teacher-owner-operation",
+        "test_title_or_step": "teacher reaches owner operation through dashboard",
     }
     record.update(overrides)
     return record
@@ -276,6 +309,9 @@ def closure_artifact():
     return {
         "status": "passed",
         "passed": True,
+        "canonical_validator": CANONICAL_VALIDATOR,
+        "canonical_schema_version": CANONICAL_SCHEMA_VERSION,
+        "plugin_version": PLUGIN_VERSION,
         "closure_flag": "v1.0.3-gate-enforcement-passed",
         "latest_test_case": "TC-V008-001",
         "matrix_range": "TC-V008-001..TC-V008-001",
@@ -298,8 +334,9 @@ def workflow_with_open_spec_and_scenario(project_root):
     prototype = project_root / "docs" / "prototypes" / "v2.5-prototype.html"
     prototype.parent.mkdir(parents=True, exist_ok=True)
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
+    write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v2.5-key-owner-ops")
+    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", review("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -375,7 +412,7 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.5-key-owner-ops")
+            workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
             workflow.record_multi_agent_review("scenario", review("scenario"))
 
@@ -647,7 +684,7 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            state = workflow.start(feature_slug="v2.5-key-owner-ops")
+            state = workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
             state["project_type"] = "web_system"
             write_state(project_root, state)
 

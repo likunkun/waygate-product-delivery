@@ -69,6 +69,23 @@ def review_payload(review_type, **overrides):
                 },
             }
         ],
+        "role_journey_coverage": [
+            {
+                "test_id": "TC-V28-017",
+                "required_actor_roles": ["operator"],
+                "journey": (
+                    "Operator opens every second-level workbench tab and reaches real "
+                    "tertiary panels"
+                ),
+            }
+        ],
+        "ordinary_path_coverage": [
+            {
+                "test_id": "TC-V28-017",
+                "ordinary_entry_path": "operator opens the existing workbench surface",
+            }
+        ],
+        "scenario_granularity_findings": [],
         "actual_test_code_paths": [
             "internal/usagereport/web/testdata/v2_8/v28_scenario_ui_mobile_raw_playwright.py",
         ],
@@ -89,6 +106,10 @@ def review_payload(review_type, **overrides):
         ],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
     payload.update(overrides)
     return payload
@@ -112,6 +133,10 @@ def planned_workbench_obligation(**overrides):
         "expected_artifact_pattern": ".product-delivery/artifacts/v2.8-verification/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "operator opens the existing workbench surface",
+        "required_actor_roles": ["operator"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "operator opens the existing workbench surface",
+        "data_state_contract": "existing operator account with every workbench tab enabled",
         "coverage_items": WORKBENCH_ITEMS,
         "action_assertions": [
             {

@@ -11,4 +11,9 @@
 - supporting_evidence_only: []
 - business_api_mock_findings: []
 
-This gate reviews the actual test code, Playwright/browser scripts, logs, screenshots, and traces after implementation. Marker existence, function-name checks, static explanation panels, and first-button-only checks are false-positive risks. Business API route mocks must be recorded as structured findings and cannot close UI journey coverage unless a structured exemption explicitly allows closure.
+- actor_role_findings: []
+- evidence_distribution_findings: []
+- annotation_only_findings: []
+- ordinary_path_findings: []
+
+This gate reviews the actual test code, Playwright/browser scripts, logs, screenshots, and traces after implementation. Marker existence, function-name checks, static explanation panels, and first-button-only checks are false-positive risks. Business API route mocks must be recorded as structured findings and cannot close UI journey coverage unless a structured exemption explicitly allows closure. The review must cover every planned test id and every planned action assertion, not a sample.

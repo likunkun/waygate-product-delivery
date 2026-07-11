@@ -26,7 +26,13 @@ REQUIRED_REVIEW_FIELDS = (
     "unresolved_questions",
     "blocking_findings",
 )
-VALID_REVIEW_TYPES = {"scenario", "test", "test_coverage", "test_implementation"}
+VALID_REVIEW_TYPES = {
+    "scenario",
+    "test",
+    "test_coverage",
+    "test_implementation",
+    "ui_conformance",
+}
 VALID_REVIEW_MODES = {"spawned_subagents", "role_simulation", "blocked_with_reason"}
 UI_CONTINUITY_CHANGE_TYPES = {
     "incremental_existing_surface",
@@ -57,11 +63,14 @@ def validate_multi_agent_review(
     review: dict[str, Any],
     *,
     ui_change_type: str | None = None,
+    planned_obligations: list[dict[str, Any]] | None = None,
+    executed_records: list[dict[str, Any]] | None = None,
+    prototype_contract: dict[str, Any] | None = None,
 ) -> None:
     """Validate visible multi-agent review output."""
     if review_type not in VALID_REVIEW_TYPES:
         raise ReviewGateError(
-            "review_type must be scenario, test, test_coverage, or test_implementation"
+            "review_type must be scenario, test, test_coverage, test_implementation, or ui_conformance"
         )
     missing = []
     for field_name in REQUIRED_REVIEW_FIELDS:
@@ -97,9 +106,71 @@ def validate_multi_agent_review(
     if review_type == "scenario":
         _validate_scenario_review(review, ui_change_type=ui_change_type)
     elif review_type == "test_coverage":
-        _validate_test_coverage_review(review)
+        _validate_test_coverage_review(
+            review,
+            planned_obligations=planned_obligations,
+        )
     elif review_type == "test_implementation":
-        _validate_test_implementation_review(review)
+        _validate_test_implementation_review(
+            review,
+            planned_obligations=planned_obligations,
+            executed_records=executed_records,
+        )
+    elif review_type == "ui_conformance":
+        _validate_ui_conformance_review(review, prototype_contract or {})
+
+
+def _validate_ui_conformance_review(
+    review: dict[str, Any],
+    prototype_contract: dict[str, Any],
+) -> None:
+    required_list_fields = (
+        "reviewed_surface_ids",
+        "reviewed_state_ids",
+        "reviewed_region_ids",
+        "structural_findings",
+        "visual_findings",
+        "interaction_findings",
+        "legacy_reuse_findings",
+        "unmapped_regions",
+    )
+    missing = [
+        field_name
+        for field_name in required_list_fields
+        if not isinstance(review.get(field_name), list)
+    ]
+    if missing:
+        raise ReviewGateError(
+            "missing UI conformance review fields: " + ", ".join(missing)
+        )
+    for field_name in (
+        "structural_findings",
+        "visual_findings",
+        "interaction_findings",
+        "unmapped_regions",
+    ):
+        _reject_unresolved_review_items(review, field_name)
+
+    surfaces = prototype_contract.get("surfaces") or []
+    required_surfaces = {surface.get("surface_id") for surface in surfaces}
+    required_states = {surface.get("state_id") for surface in surfaces}
+    required_regions = {
+        region.get("region_id")
+        for surface in surfaces
+        for region in surface.get("critical_regions", [])
+    }
+    comparisons = (
+        ("reviewed_surface_ids", required_surfaces),
+        ("reviewed_state_ids", required_states),
+        ("reviewed_region_ids", required_regions),
+    )
+    for field_name, required in comparisons:
+        reviewed = _string_set(review.get(field_name))
+        missing_items = sorted(required - reviewed)
+        if missing_items:
+            raise ReviewGateError(
+                f"{field_name} missing required items: " + ", ".join(missing_items)
+            )
 
 
 def render_multi_agent_review(review: dict[str, Any]) -> str:
@@ -182,12 +253,19 @@ def _test_review_evidence(review: dict[str, Any]) -> dict[str, Any]:
         "missing_executable_assertions",
         "false_positive_risks",
         "collection_coverage",
+        "role_journey_coverage",
+        "ordinary_path_coverage",
+        "scenario_granularity_findings",
         "actual_test_code_paths",
         "execution_evidence_paths",
         "reviewed_test_ids",
         "verified_action_assertions",
         "supporting_evidence_only",
         "business_api_mock_findings",
+        "actor_role_findings",
+        "evidence_distribution_findings",
+        "annotation_only_findings",
+        "ordinary_path_findings",
     )
     return {key: review[key] for key in keys if key in review}
 
@@ -254,7 +332,11 @@ def _validate_scenario_review(
             )
 
 
-def _validate_test_coverage_review(review: dict[str, Any]) -> None:
+def _validate_test_coverage_review(
+    review: dict[str, Any],
+    *,
+    planned_obligations: list[dict[str, Any]] | None = None,
+) -> None:
     missing = []
     for field_name in (
         "traceability_reviewed",
@@ -263,6 +345,9 @@ def _validate_test_coverage_review(review: dict[str, Any]) -> None:
         "missing_executable_assertions",
         "false_positive_risks",
         "collection_coverage",
+        "role_journey_coverage",
+        "ordinary_path_coverage",
+        "scenario_granularity_findings",
     ):
         if field_name not in review:
             missing.append(field_name)
@@ -282,10 +367,18 @@ def _validate_test_coverage_review(review: dict[str, Any]) -> None:
     _reject_unresolved_review_items(review, "title_overbreadth_findings")
     _reject_unresolved_review_items(review, "missing_executable_assertions")
     _reject_unresolved_review_items(review, "false_positive_risks")
+    _reject_unresolved_review_items(review, "scenario_granularity_findings")
     _validate_collection_coverage(review.get("collection_coverage"))
+    _validate_role_journey_coverage(review, planned_obligations or [])
+    _validate_ordinary_path_coverage(review, planned_obligations or [])
 
 
-def _validate_test_implementation_review(review: dict[str, Any]) -> None:
+def _validate_test_implementation_review(
+    review: dict[str, Any],
+    *,
+    planned_obligations: list[dict[str, Any]] | None = None,
+    executed_records: list[dict[str, Any]] | None = None,
+) -> None:
     missing = []
     for field_name in (
         "actual_test_code_paths",
@@ -294,7 +387,14 @@ def _validate_test_implementation_review(review: dict[str, Any]) -> None:
     ):
         if not _has_values(review.get(field_name)):
             missing.append(field_name)
-    for field_name in ("supporting_evidence_only", "business_api_mock_findings"):
+    for field_name in (
+        "supporting_evidence_only",
+        "business_api_mock_findings",
+        "actor_role_findings",
+        "evidence_distribution_findings",
+        "annotation_only_findings",
+        "ordinary_path_findings",
+    ):
         if not isinstance(review.get(field_name), list):
             missing.append(field_name)
     if not isinstance(review.get("verified_action_assertions"), list) or not review.get(
@@ -306,10 +406,22 @@ def _validate_test_implementation_review(review: dict[str, Any]) -> None:
             "missing test implementation review fields: " + ", ".join(missing)
         )
     _reject_unresolved_review_items(review, "false_positive_risks")
+    _reject_unresolved_review_items(review, "actor_role_findings")
+    _reject_unresolved_review_items(review, "evidence_distribution_findings")
+    _reject_unresolved_review_items(review, "annotation_only_findings")
+    _reject_unresolved_review_items(review, "ordinary_path_findings")
     _reject_unexempted_business_api_mock_findings(
         review.get("business_api_mock_findings")
     )
-    _validate_verified_action_assertions(review.get("verified_action_assertions"))
+    _validate_reviewed_test_ids(review.get("reviewed_test_ids"), planned_obligations or [])
+    _validate_reviewed_test_ids(
+        review.get("reviewed_test_ids"),
+        _planned_like_records(executed_records or []),
+    )
+    _validate_verified_action_assertions(
+        review.get("verified_action_assertions"),
+        planned_obligations=planned_obligations or [],
+    )
 
 
 def _reject_unresolved_review_items(review: dict[str, Any], field_name: str) -> None:
@@ -354,9 +466,14 @@ def _validate_collection_coverage(value: Any) -> None:
             )
 
 
-def _validate_verified_action_assertions(value: Any) -> None:
+def _validate_verified_action_assertions(
+    value: Any,
+    *,
+    planned_obligations: list[dict[str, Any]] | None = None,
+) -> None:
     if not isinstance(value, list) or not value:
         raise ReviewGateError("verified_action_assertions requires at least one row")
+    observed_items: set[tuple[str, str]] = set()
     for index, assertion in enumerate(value, start=1):
         if not isinstance(assertion, dict):
             raise ReviewGateError(
@@ -380,10 +497,118 @@ def _validate_verified_action_assertions(value: Any) -> None:
                 f"verified_action_assertions row {index} missing fields: "
                 + ", ".join(missing)
             )
+        observed_items.add((assertion["test_id"], assertion["item_id"]))
         _reject_false_positive_text(
             assertion.get("expected_real_surface", ""),
             assertion.get("assertion_target", ""),
         )
+    required_items = {
+        (obligation["test_id"], item)
+        for obligation in planned_obligations or []
+        for item in _string_set(obligation.get("coverage_items"))
+        if isinstance(obligation.get("test_id"), str)
+    }
+    missing_items = sorted(required_items - observed_items)
+    if missing_items:
+        raise ReviewGateError(
+            "verified_action_assertions missing planned coverage items: "
+            + ", ".join(f"{test_id}:{item_id}" for test_id, item_id in missing_items)
+        )
+
+
+def _validate_reviewed_test_ids(
+    value: Any,
+    planned_obligations: list[dict[str, Any]],
+) -> None:
+    if not planned_obligations:
+        return
+    reviewed = _string_set(value)
+    required = {
+        obligation["test_id"]
+        for obligation in planned_obligations
+        if isinstance(obligation.get("test_id"), str)
+    }
+    missing = sorted(required - reviewed)
+    if missing:
+        raise ReviewGateError(
+            "reviewed_test_ids missing planned tests: " + ", ".join(missing)
+        )
+
+
+def _validate_role_journey_coverage(
+    review: dict[str, Any],
+    planned_obligations: list[dict[str, Any]],
+) -> None:
+    coverage = review.get("role_journey_coverage")
+    if not isinstance(coverage, list) or not coverage:
+        raise ReviewGateError("role_journey_coverage requires at least one row")
+    if not planned_obligations:
+        return
+    by_test = {
+        row.get("test_id"): row
+        for row in coverage
+        if isinstance(row, dict) and isinstance(row.get("test_id"), str)
+    }
+    missing = []
+    mismatched_roles = []
+    for obligation in planned_obligations:
+        test_id = obligation.get("test_id")
+        row = by_test.get(test_id)
+        if not row:
+            missing.append(str(test_id))
+            continue
+        required_roles = _actor_role_set(obligation.get("required_actor_roles"))
+        reviewed_roles = _actor_role_set(row.get("required_actor_roles"))
+        if required_roles and not required_roles <= reviewed_roles:
+            mismatched_roles.append(str(test_id))
+    if missing:
+        raise ReviewGateError(
+            "role_journey_coverage missing planned tests: " + ", ".join(missing)
+        )
+    if mismatched_roles:
+        raise ReviewGateError(
+            "role_journey_coverage missing required actor roles: "
+            + ", ".join(mismatched_roles)
+        )
+
+
+def _validate_ordinary_path_coverage(
+    review: dict[str, Any],
+    planned_obligations: list[dict[str, Any]],
+) -> None:
+    coverage = review.get("ordinary_path_coverage")
+    if not isinstance(coverage, list) or not coverage:
+        raise ReviewGateError("ordinary_path_coverage requires at least one row")
+    if not planned_obligations:
+        return
+    by_test = {
+        row.get("test_id"): row
+        for row in coverage
+        if isinstance(row, dict) and isinstance(row.get("test_id"), str)
+    }
+    missing = []
+    for obligation in planned_obligations:
+        test_id = obligation.get("test_id")
+        row = by_test.get(test_id)
+        if not row:
+            missing.append(str(test_id))
+            continue
+        expected_path = str(obligation.get("ordinary_entry_path", "")).strip()
+        reviewed_path = str(row.get("ordinary_entry_path", "")).strip()
+        if expected_path and reviewed_path != expected_path:
+            missing.append(str(test_id))
+    if missing:
+        raise ReviewGateError(
+            "ordinary_path_coverage missing planned paths: " + ", ".join(missing)
+        )
+
+
+def _planned_like_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {"test_id": record["test_id"]}
+        for record in records
+        if isinstance(record.get("test_id"), str)
+    ]
 
 
 def _reject_unexempted_business_api_mock_findings(value: Any) -> None:
@@ -431,6 +656,14 @@ def _string_set(value: Any) -> set[str]:
         for item in value
         if isinstance(item, str) and item.strip()
     }
+
+
+def _actor_role_set(value: Any) -> set[str]:
+    return {_normalize_actor_role(item) for item in _string_set(value)}
+
+
+def _normalize_actor_role(value: Any) -> str:
+    return str(value or "").strip().lower().replace(" ", "_")
 
 
 def _bullets(items: list[str]) -> list[str]:

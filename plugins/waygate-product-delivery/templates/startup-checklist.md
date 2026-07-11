@@ -5,4 +5,5 @@
 - Read or create `task_plan.md`, `findings.md`, and `progress.md`.
 - Create or recover `.product-delivery/state.json`.
 - Record the current feature slug and blocked gates in state.
-- Default multi-agent policy is `spawned_subagents_required`.
+- Plain startup enters `authorization_pending` and asks for a mode immediately.
+- `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.

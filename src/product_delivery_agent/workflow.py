@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from product_delivery_agent.artifact_protocol import (
+    AUTHORIZED_REVIEW_TYPES,
     ARTIFACT_ROOT,
     CORE_ARTIFACTS,
     initialize_workspace,
     load_state,
+    new_delivery_state,
     write_state,
 )
 from product_delivery_agent.closure import (
@@ -29,6 +31,7 @@ from product_delivery_agent.confirmation_policy import (
     is_recordable_user_confirmation_target,
 )
 from product_delivery_agent.coverage_audit import (
+    build_prototype_production_conformance,
     build_executed_browser_evidence,
     build_planned_e2e_obligations,
     build_coverage_audit,
@@ -85,6 +88,8 @@ from product_delivery_agent.skill_gates import (
 )
 from product_delivery_agent.transition_journal import append_transition
 from product_delivery_agent.ui_prototype import (
+    UIPrototypeError,
+    build_prototype_contract,
     render_ui_prototype_review,
     validate_ui_prototype_review,
 )
@@ -111,8 +116,23 @@ class ProductDeliveryWorkflow:
         *,
         feature_slug: str | None = None,
         allow_review_degradation: bool = False,
+        multi_agent_mode: str | None = None,
     ) -> dict[str, Any]:
-        state = initialize_workspace(self.project_root)
+        if allow_review_degradation:
+            if multi_agent_mode not in {None, "role_simulation_allowed"}:
+                raise WorkflowError(
+                    "allow_review_degradation conflicts with multi_agent_mode"
+                )
+            multi_agent_mode = "role_simulation_allowed"
+        if multi_agent_mode not in {
+            None,
+            "spawned_subagents_authorized",
+            "role_simulation_allowed",
+        }:
+            raise WorkflowError("unsupported multi_agent_mode")
+
+        initialize_workspace(self.project_root)
+        state = new_delivery_state()
         state["active"] = True
         state["paused"] = False
         state["intervention_enabled"] = True
@@ -135,19 +155,33 @@ class ProductDeliveryWorkflow:
                 "status": "missing",
                 "artifact": None,
             },
+            "test_coverage": {
+                "status": "missing",
+                "artifact": None,
+            },
+            "test_implementation": {
+                "status": "missing",
+                "artifact": None,
+            },
+            "ui_conformance": {
+                "status": "missing",
+                "artifact": None,
+            },
         }
-        state["multi_agent_policy"] = {
-            "mode": (
-                "role_simulation_allowed"
-                if allow_review_degradation
-                else "spawned_subagents_required"
-            ),
-        }
+        state["multi_agent_policy"] = self._multi_agent_policy(
+            multi_agent_mode,
+            authorization_source="startup_command" if multi_agent_mode else None,
+        )
         state["ui_prototype"] = {
             "generated": False,
             "reviewed_by_agent": False,
             "confirmed_by_user": False,
             "confirmation_source": None,
+        }
+        state["prototype_contract"] = {"status": "missing"}
+        state["prototype_production_conformance"] = {
+            "status": "missing",
+            "records": [],
         }
         state["planned_e2e_obligations"] = {
             "accepted": False,
@@ -169,6 +203,13 @@ class ProductDeliveryWorkflow:
         }
         state["user_confirmations"] = {}
         state["pending_confirmations"] = {}
+        state["pending_user_decisions"] = {}
+        if multi_agent_mode is None:
+            state["pending_user_decisions"]["multi_agent_mode"] = {
+                "status": "pending",
+                "reason": "select multi-Agent review execution mode",
+            }
+            state["next_gate"] = "multi_agent_mode_selection"
         state["delivery_goal"] = None
         state["required_skill_gates"] = {
             "active_mode_startup": required_skills_for_stage("active_mode_startup"),
@@ -182,6 +223,62 @@ class ProductDeliveryWorkflow:
         state["required_artifacts"] = []
         if feature_slug:
             state["required_artifacts"].append(f"docs/open-spec/{feature_slug}/")
+        return write_state(self.project_root, state)
+
+    def authorize_multi_agent_mode(
+        self,
+        mode: str,
+        user_message: str,
+    ) -> dict[str, Any]:
+        state = self._require_started(allow_pending_authorization=True)
+        if mode not in {
+            "spawned_subagents_authorized",
+            "role_simulation_allowed",
+        }:
+            raise WorkflowError("unsupported multi_agent_mode")
+        if not isinstance(user_message, str) or not user_message.strip():
+            raise WorkflowError("user_message is required for mode authorization")
+        expected_message = {
+            "spawned_subagents_authorized": "启动交付，多 Agent 模式",
+            "role_simulation_allowed": "启动交付，允许降级评审",
+        }[mode]
+        if user_message.strip() != expected_message:
+            raise WorkflowError("user_message does not match multi_agent_mode")
+        current_authorization = (state.get("multi_agent_policy") or {}).get(
+            "execution_authorization"
+        )
+        if current_authorization not in {
+            "pending",
+            "legacy_unverified",
+            "invalidated",
+        }:
+            raise WorkflowError("multi-Agent mode is already authorized")
+
+        self._mark_reviews_stale(
+            state,
+            tuple(AUTHORIZED_REVIEW_TYPES),
+            reason="multi_agent_mode_authorized",
+        )
+        self._invalidate_requirements_e2e_confirmation(
+            state,
+            reason="multi_agent_mode_authorized",
+            invalidate_open_spec=True,
+            invalidate_planned_e2e=True,
+        )
+        self._invalidate_launch_authorization(
+            state,
+            reason="multi_agent_mode_authorized",
+        )
+        state["multi_agent_policy"] = self._multi_agent_policy(
+            mode,
+            authorization_source="user_mode_selection",
+        )
+        state["multi_agent_policy"]["authorization_user_message"] = (
+            user_message.strip()
+        )
+        state.setdefault("pending_user_decisions", {}).pop("multi_agent_mode", None)
+        if state.get("next_gate") == "multi_agent_mode_selection":
+            state["next_gate"] = "product_blueprint"
         return write_state(self.project_root, state)
 
     def record_scenario_matrix(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -230,7 +327,7 @@ class ProductDeliveryWorkflow:
         review_type: str,
         review: dict[str, Any],
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(allow_pending_authorization=True)
         ui_change_type = None
         if review_type == "scenario" and state.get("project_type") == "ui":
             ui_change_type = (
@@ -241,15 +338,43 @@ class ProductDeliveryWorkflow:
             review_type,
             review,
             ui_change_type=ui_change_type,
+            planned_obligations=list(
+                (state.get("planned_e2e_obligations") or {}).get("obligations", [])
+            ),
+            executed_records=list(
+                (state.get("executed_browser_evidence") or {}).get("records", [])
+                if state.get("project_type") == "ui"
+                else (state.get("executed_behavior_evidence") or {}).get("records", [])
+            ),
+            prototype_contract=(
+                state.get("prototype_contract") or {}
+                if review_type == "ui_conformance"
+                else None
+            ),
         )
         review_mode = review.get("review_mode", "spawned_subagents")
-        policy_mode = state.get("multi_agent_policy", {}).get(
-            "mode",
-            "spawned_subagents_required",
-        )
-        if review_mode == "role_simulation" and policy_mode != "role_simulation_allowed":
+        policy = state.get("multi_agent_policy", {})
+        policy_mode = policy.get("mode", "authorization_pending")
+        execution_authorization = policy.get("execution_authorization")
+        authorized_review_types = policy.get("authorized_review_types") or []
+        if review_mode == "spawned_subagents" and (
+            execution_authorization != "authorized"
+            or policy.get("authorization_scope") != "current_delivery"
+            or not policy.get("authorization_source")
+            or review_type not in authorized_review_types
+        ):
             raise ReviewGateError(
-                "role_simulation review rejected by spawned_subagents_required policy"
+                "spawned_subagents review requires explicit execution authorization for the current delivery"
+            )
+        if review_mode == "role_simulation" and (
+            policy_mode != "role_simulation_allowed"
+            or execution_authorization != "degradation_authorized"
+            or policy.get("authorization_scope") != "current_delivery"
+            or not policy.get("authorization_source")
+            or review_type not in authorized_review_types
+        ):
+            raise ReviewGateError(
+                f"role_simulation review rejected by {policy_mode} policy"
             )
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -277,8 +402,25 @@ class ProductDeliveryWorkflow:
             "test": "requirements_e2e_user_confirmation",
             "test_coverage": "requirements_e2e_user_confirmation",
             "test_implementation": "feature_closure_after_implementation",
+            "ui_conformance": "multi_agent_test_implementation_review",
         }
-        state["next_gate"] = next_gates.get(review_type, "codex_goal_handoff")
+        next_gate = next_gates.get(review_type, "codex_goal_handoff")
+        if state.get("project_type") == "ui" and review_type == "test_implementation":
+            conformance = state.get("prototype_production_conformance") or {}
+            ui_review = (state.get("multi_agent_reviews") or {}).get(
+                "ui_conformance"
+            ) or {}
+            if conformance.get("status") != "passed":
+                next_gate = "prototype_production_conformance"
+            elif ui_review.get("status") != "passed":
+                next_gate = "multi_agent_ui_conformance_review"
+        if review_type == "ui_conformance":
+            test_review = (state.get("multi_agent_reviews") or {}).get(
+                "test_implementation"
+            ) or {}
+            if test_review.get("status") == "passed":
+                next_gate = "feature_closure_after_implementation"
+        state["next_gate"] = next_gate
         return write_state(self.project_root, state)
 
     def record_implementation_launch_authorization(
@@ -499,13 +641,13 @@ class ProductDeliveryWorkflow:
         return state
 
     def pause(self) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(allow_pending_authorization=True)
         state["paused"] = True
         state["intervention_enabled"] = False
         return write_state(self.project_root, state)
 
     def resume(self) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(allow_pending_authorization=True)
         state["paused"] = False
         state["intervention_enabled"] = True
         return write_state(self.project_root, state)
@@ -520,7 +662,44 @@ class ProductDeliveryWorkflow:
         state["active"] = False
         state["paused"] = False
         state["intervention_enabled"] = False
+        policy = state.setdefault("multi_agent_policy", {})
+        policy["execution_authorization"] = "invalidated"
+        policy["authorized_review_types"] = []
+        state.setdefault("pending_user_decisions", {}).pop("multi_agent_mode", None)
         return write_state(self.project_root, state)
+
+    @staticmethod
+    def _multi_agent_policy(
+        mode: str | None,
+        *,
+        authorization_source: str | None,
+    ) -> dict[str, Any]:
+        if mode == "spawned_subagents_authorized":
+            return {
+                "mode": "spawned_subagents_required",
+                "evidence_requirement": "spawned_subagents",
+                "execution_authorization": "authorized",
+                "authorization_scope": "current_delivery",
+                "authorization_source": authorization_source,
+                "authorized_review_types": list(AUTHORIZED_REVIEW_TYPES),
+            }
+        if mode == "role_simulation_allowed":
+            return {
+                "mode": "role_simulation_allowed",
+                "evidence_requirement": "structured_role_simulation",
+                "execution_authorization": "degradation_authorized",
+                "authorization_scope": "current_delivery",
+                "authorization_source": authorization_source,
+                "authorized_review_types": list(AUTHORIZED_REVIEW_TYPES),
+            }
+        return {
+            "mode": "authorization_pending",
+            "evidence_requirement": "mode_selection_required",
+            "execution_authorization": "pending",
+            "authorization_scope": "current_delivery",
+            "authorization_source": None,
+            "authorized_review_types": [],
+        }
 
     def select_project_type(self, project_type: str) -> dict[str, Any]:
         if project_type not in {"ui", "non_ui"}:
@@ -599,6 +778,13 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "missing UI prototype review fields: " + ", ".join(missing)
             )
+        try:
+            prototype_contract = build_prototype_contract(
+                self.project_root,
+                review.get("prototype_contract") or {},
+            )
+        except UIPrototypeError as cause:
+            raise WorkflowError(str(cause)) from cause
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -620,6 +806,10 @@ class ProductDeliveryWorkflow:
             artifact_version=prototype_revision,
             prototype_revision=prototype_revision,
             state=state,
+            prototype_contract_hash=prototype_contract["contract_sha256"],
+            prototype_screenshot_set_hash=prototype_contract[
+                "prototype_screenshot_set_sha256"
+            ],
         )
 
         state["ui_prototype_review"] = {
@@ -643,6 +833,17 @@ class ProductDeliveryWorkflow:
                 review.get("new_surface_user_confirmation")
             ),
             "review_artifact_path": f"artifacts/{CORE_ARTIFACTS['ui_prototype_review']}",
+            "prototype_contract_hash": prototype_contract["contract_sha256"],
+        }
+        contract_path = artifacts_dir / "ui-prototype-contract.json"
+        contract_path.write_text(
+            json.dumps(prototype_contract, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        state["prototype_contract"] = {
+            **prototype_contract,
+            "artifact_path": "artifacts/ui-prototype-contract.json",
+            "artifact_sha256": self._artifact_hash(str(contract_path)),
         }
         state["downstream_inputs"] = {
             "browser_e2e_candidates": list(review["browser_e2e_candidates"]),
@@ -674,10 +875,14 @@ class ProductDeliveryWorkflow:
         self._mark_reviews_stale(
             state,
             (
-                ("scenario", "test", "test_coverage")
+                ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance")
                 if stales_prior_scenario_review
-                else ("test", "test_coverage")
+                else ("test", "test_coverage", "test_implementation", "ui_conformance")
             ),
+            reason="ui_prototype_changed",
+        )
+        self._invalidate_prototype_production_conformance(
+            state,
             reason="ui_prototype_changed",
         )
         self._invalidate_requirements_e2e_confirmation(
@@ -724,6 +929,21 @@ class ProductDeliveryWorkflow:
         current_hash = self._artifact_hash(prototype_path, require_exists=True)
         if current_hash != pending.get("artifact_hash"):
             raise ConfirmationError("prototype artifact changed after pending confirmation")
+        try:
+            current_contract = build_prototype_contract(
+                self.project_root,
+                state.get("prototype_contract") or {},
+            )
+        except UIPrototypeError as cause:
+            raise ConfirmationError(str(cause)) from cause
+        if current_contract.get("contract_sha256") != pending.get(
+            "prototype_contract_hash"
+        ):
+            raise ConfirmationError("prototype contract changed after pending confirmation")
+        if current_contract.get("prototype_screenshot_set_sha256") != pending.get(
+            "prototype_screenshot_set_hash"
+        ):
+            raise ConfirmationError("prototype screenshot set changed after pending confirmation")
         validate_confirmation_message(
             user_message,
             agent_explicitly_asked=agent_explicitly_asked,
@@ -736,6 +956,10 @@ class ProductDeliveryWorkflow:
             "artifact_version": pending["artifact_version"],
             "artifact_hash": pending["artifact_hash"],
             "prototype_revision": pending["prototype_revision"],
+            "prototype_contract_hash": pending["prototype_contract_hash"],
+            "prototype_screenshot_set_hash": pending[
+                "prototype_screenshot_set_hash"
+            ],
             "nonce": pending["nonce"],
             "confirmed_by": "user",
             "confirmation_source": "chat_user_reply",
@@ -764,6 +988,10 @@ class ProductDeliveryWorkflow:
             "artifact_hash": pending["artifact_hash"],
             "artifact_version": pending["artifact_version"],
             "prototype_revision": pending["prototype_revision"],
+            "prototype_contract_hash": pending["prototype_contract_hash"],
+            "prototype_screenshot_set_hash": pending[
+                "prototype_screenshot_set_hash"
+            ],
             "revision_number": state.get("ui_prototype", {}).get("revision_number"),
             "confirmation_status": "confirmed",
             "pending_confirmation_nonce": None,
@@ -822,7 +1050,11 @@ class ProductDeliveryWorkflow:
         state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
         self._mark_reviews_stale(
             state,
-            ("scenario", "test", "test_coverage"),
+            ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance"),
+            reason="ui_prototype_feedback",
+        )
+        self._invalidate_prototype_production_conformance(
+            state,
             reason="ui_prototype_feedback",
         )
         self._invalidate_requirements_e2e_confirmation(
@@ -1072,12 +1304,89 @@ class ProductDeliveryWorkflow:
         )
         self._mark_reviews_stale(
             state,
-            ("test_implementation",),
+            ("test_implementation", "ui_conformance"),
+            reason="executed_browser_evidence_changed",
+        )
+        self._invalidate_prototype_production_conformance(
+            state,
             reason="executed_browser_evidence_changed",
         )
         self._remove_blockers(state, "executed_browser_evidence")
         state["stage"] = "executed_browser_evidence_passed"
         state["next_gate"] = "multi_agent_test_implementation_review"
+        return write_state(self.project_root, state)
+
+    def record_prototype_production_conformance(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record production UI conformance against the confirmed prototype."""
+        state = self._require_started()
+        if state.get("project_type") != "ui":
+            raise WorkflowError("prototype production conformance is only available for UI projects")
+        if not (state.get("ui_prototype") or {}).get("confirmed_by_user"):
+            raise WorkflowError("confirmed UI prototype is required before conformance")
+        implementation = state.get("implementation") or {}
+        if implementation.get("current_task") not in {"COMPLETE", "TASKS_COMPLETE"}:
+            raise WorkflowError("implementation tasks must be complete before conformance")
+        if (state.get("executed_browser_evidence") or {}).get("status") != "passed":
+            raise WorkflowError("executed browser evidence must pass before conformance")
+        try:
+            evidence = build_prototype_production_conformance(
+                self.project_root,
+                payload,
+                canonical_prototype=state.get("ui_prototype") or {},
+                prototype_contract=state.get("prototype_contract") or {},
+                executed_browser_evidence=state.get("executed_browser_evidence") or {},
+            )
+        except Exception as cause:
+            raise WorkflowError(str(cause)) from cause
+
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        json_path = artifacts_dir / "prototype-production-conformance.json"
+        json_path.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        markdown_path = artifacts_dir / "prototype-production-conformance.md"
+        markdown_path.write_text(
+            self._render_prototype_production_conformance(evidence),
+            encoding="utf-8",
+        )
+        state["prototype_production_conformance"] = {
+            **evidence,
+            "artifact_path": "artifacts/prototype-production-conformance.json",
+            "artifact_sha256": self._artifact_hash(str(json_path)),
+            "report_path": "artifacts/prototype-production-conformance.md",
+        }
+        state = append_transition(
+            state,
+            "prototype_production_conformance_recorded",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "prototype_contract": evidence["prototype_contract_hash"],
+                "executed_browser_evidence": stable_state_hash(
+                    state.get("executed_browser_evidence") or {}
+                ),
+            },
+            output_artifact_hashes={
+                "artifacts/prototype-production-conformance.json": state[
+                    "prototype_production_conformance"
+                ]["artifact_sha256"]
+            },
+            metadata={"record_count": len(evidence.get("records", []))},
+        )
+        self._mark_reviews_stale(
+            state,
+            ("ui_conformance",),
+            reason="prototype_production_conformance_changed",
+        )
+        self._remove_blockers(state, "prototype_production_conformance")
+        self._add_blockers(state, "multi_agent_ui_conformance_review")
+        state["stage"] = "prototype_production_conformance_passed"
+        state["next_gate"] = "multi_agent_ui_conformance_review"
         return write_state(self.project_root, state)
 
     def generate_codex_goal_handoff(
@@ -1536,10 +1845,25 @@ class ProductDeliveryWorkflow:
     def _state(self) -> dict[str, Any]:
         return load_state(self.project_root, fallback_state=self.fallback_state)
 
-    def _require_started(self) -> dict[str, Any]:
+    def _require_started(
+        self,
+        *,
+        allow_pending_authorization: bool = False,
+    ) -> dict[str, Any]:
         state = self._state()
         if not state.get("active"):
             raise WorkflowError("workflow is not active; run start first")
+        execution_authorization = (state.get("multi_agent_policy") or {}).get(
+            "execution_authorization"
+        )
+        if not allow_pending_authorization and execution_authorization in {
+            "pending",
+            "legacy_unverified",
+            "invalidated",
+        }:
+            raise WorkflowError(
+                "multi-Agent mode authorization is required before workflow progress"
+            )
         return state
 
     def _missing_required_confirmations(self, state: dict[str, Any]) -> list[str]:
@@ -1729,6 +2053,26 @@ class ProductDeliveryWorkflow:
                 "stale_at": stale_at,
             }
             self._add_blockers(state, f"stale_multi_agent_{review_type}_review")
+
+    def _invalidate_prototype_production_conformance(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        conformance = state.get("prototype_production_conformance")
+        if not isinstance(conformance, dict) or conformance.get("status") not in {
+            "passed",
+            "stale",
+        }:
+            return
+        state["prototype_production_conformance"] = {
+            **conformance,
+            "status": "stale",
+            "stale_reason": reason,
+            "stale_at": self._timestamp_from_state(state),
+        }
+        self._add_blockers(state, "prototype_production_conformance")
 
     def _invalidate_requirements_e2e_confirmation(
         self,
@@ -1935,6 +2279,8 @@ class ProductDeliveryWorkflow:
         artifact_version: str,
         prototype_revision: str,
         state: dict[str, Any],
+        prototype_contract_hash: str | None = None,
+        prototype_screenshot_set_hash: str | None = None,
     ) -> dict[str, Any]:
         nonce = hashlib.sha256(
             (
@@ -1945,6 +2291,10 @@ class ProductDeliveryWorkflow:
                 + artifact_hash
                 + ":"
                 + artifact_version
+                + ":"
+                + str(prototype_contract_hash or "")
+                + ":"
+                + str(prototype_screenshot_set_hash or "")
             ).encode("utf-8")
         ).hexdigest()[:16]
         return {
@@ -1954,10 +2304,29 @@ class ProductDeliveryWorkflow:
             "artifact_version": artifact_version,
             "artifact_hash": artifact_hash,
             "prototype_revision": prototype_revision,
+            "prototype_contract_hash": prototype_contract_hash,
+            "prototype_screenshot_set_hash": prototype_screenshot_set_hash,
             "nonce": nonce,
             "created_at": self._timestamp_from_state(state),
             "status": "pending",
         }
+
+    @staticmethod
+    def _render_prototype_production_conformance(evidence: dict[str, Any]) -> str:
+        lines = [
+            "# Prototype Production Conformance",
+            "",
+            f"Status: {evidence.get('status')}",
+            f"Prototype Revision: {evidence.get('prototype_revision')}",
+            f"Prototype Contract Hash: {evidence.get('prototype_contract_hash')}",
+            "",
+            "## Covered Surfaces",
+        ]
+        lines.extend(f"- {item}" for item in evidence.get("covered_surface_ids", []))
+        lines.extend(["", "## Covered Regions"])
+        lines.extend(f"- {item}" for item in evidence.get("covered_region_ids", []))
+        lines.append("")
+        return "\n".join(lines)
 
     @staticmethod
     def _add_blockers(state: dict[str, Any], *blockers: str) -> None:

@@ -12,10 +12,12 @@ from product_delivery_agent.review_gates import (
 )
 from product_delivery_agent.ui_prototype import validate_ui_prototype_review
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
 
 
 def prototype_review_payload(**overrides):
     payload = {
+        "prototype_contract": prototype_contract(),
         "prototype_path": "docs/prototypes/v1.4.4-confirmation.html",
         "pages": ["series detail course table"],
         "states": ["loading", "ready", "drawer-open", "error"],
@@ -127,6 +129,10 @@ def planned_obligation(**overrides):
             "reject first-button-only",
         ],
         "baseline_entry_path": "系列管理 -> 系列详情课程表 -> 查看内容状态抽屉",
+        "required_actor_roles": ["teaching operator"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "系列管理 -> 系列详情课程表 -> 查看内容状态抽屉",
+        "data_state_contract": "existing V1.4.3 standard course series with course rows",
     }
     payload.update(overrides)
     return payload
@@ -227,8 +233,9 @@ class UIBaselineContinuityV1014Tests(unittest.TestCase):
             prototype = project_root / "docs" / "prototypes" / "v144.html"
             prototype.parent.mkdir(parents=True, exist_ok=True)
             prototype.write_text("<html>revision 003</html>", encoding="utf-8")
+            write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v1.4.4-standard-course-teachable-confirmation")
+            workflow.start(feature_slug="v1.4.4-standard-course-teachable-confirmation", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_multi_agent_review("scenario", scenario_review_payload())
 

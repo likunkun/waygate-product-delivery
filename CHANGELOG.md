@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.17
+
+- Defines `启动交付，多 Agent 模式` as explicit spawned-subagent execution authorization for the current delivery.
+- Makes plain `启动交付` enter `authorization_pending` and wait for immediate review-mode selection before later gates can proceed.
+- Splits multi-agent policy into evidence, execution authorization, scope, source, and authorized review types; authorization expires on stop or a new delivery.
+- Migrates active legacy spawned-subagent policy without authorization metadata to `legacy_unverified` while preserving terminal closure history.
+
+## 1.0.16
+
+- Adds a frozen `prototype_contract` that binds canonical prototype HTML, PNG screenshots, surfaces, states, regions, relationships, and interactions to user confirmation.
+- Adds `record_prototype_production_conformance()` with runtime validation for safe PNG evidence, controlled semantic snapshots, full-stack execution segments, and complete surface mapping.
+- Adds the independent `ui_conformance` multi-agent review gate and requires exact coverage of all frozen surfaces, states, and regions.
+- Upgrades canonical closure to `v0.11`, binding prototype, contract, production conformance, review hashes, and covered surface/region IDs while preserving v0.10/v1.0.15 terminal closures as read-only history.
+
+## 1.0.15
+
+- Adds the role-accurate scenario evidence gate for UI journey closure.
+- Requires UI planned E2E obligations to bind `required_actor_roles`, `path_kind`, `ordinary_entry_path`, and `data_state_contract`.
+- Requires executed browser evidence to bind actor identity, ordinary-path observation, independent `execution_segment_id`, and `test_title_or_step`.
+- Blocks admin-only or annotation-only Browser E2E from closing Teacher primary journeys, and requires reviews to verify every planned test ID and action assertion.
+
 ## 1.0.14
 
 - Adds the UI baseline continuity gate with `ui_change_type` classification.

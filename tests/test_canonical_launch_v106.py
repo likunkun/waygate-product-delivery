@@ -17,6 +17,7 @@ from product_delivery_agent.hooks import (
 )
 from product_delivery_agent.review_gates import ReviewGateError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
 
 
 def write_raw_state(project_root, state):
@@ -93,6 +94,20 @@ def review_payload(review_type, **overrides):
                 },
             }
         ],
+        "role_journey_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "required_actor_roles": ["operator"],
+                "journey": "J-001",
+            }
+        ],
+        "ordinary_path_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "ordinary_entry_path": "operator opens the existing owner edit surface",
+            }
+        ],
+        "scenario_granularity_findings": [],
         "actual_test_code_paths": ["tests/e2e/owner.spec.ts"],
         "execution_evidence_paths": [
             ".product-delivery/artifacts/e2e/tc-v008-001.json",
@@ -110,6 +125,10 @@ def review_payload(review_type, **overrides):
         ],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
     payload.update(overrides)
     return payload
@@ -133,6 +152,7 @@ def user_confirmation(target, **overrides):
 
 def ui_review_payload(prototype_path):
     return {
+        "prototype_contract": prototype_contract(),
         "prototype_path": prototype_path,
         "pages": ["dashboard"],
         "states": ["empty", "loading", "error", "success"],
@@ -177,6 +197,10 @@ def planned_obligation():
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "operator opens the existing owner edit surface",
+        "required_actor_roles": ["operator"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "operator opens the existing owner edit surface",
+        "data_state_contract": "operator account with editable owner data",
         "coverage_items": ["owner-edit"],
         "action_assertions": [
             {
@@ -263,9 +287,10 @@ def workflow_ready_for_launch(project_root):
     prototype = project_root / prototype_path
     prototype.parent.mkdir(parents=True, exist_ok=True)
     prototype.write_text("<html>revision one</html>", encoding="utf-8")
+    write_prototype_screenshot(project_root)
 
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v1.0.6-canonical-launch")
+    workflow.start(feature_slug="v1.0.6-canonical-launch", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", review_payload("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))

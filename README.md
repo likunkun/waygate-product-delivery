@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.14-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-187%20passing-15803d)](#verify)
+[![Version](https://img.shields.io/badge/version-1.0.17-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-219%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
@@ -32,6 +32,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | File-backed workflow state | `.product-delivery/state.json` and artifacts outlive chat context and compaction. |
 | Required skill gates | Product Delivery, Open Spec, planning files, UI/UX, browser testing, and closure skills are checked by stage. |
 | UI prototype gate | UI projects require a current-feature local 1:1 HTML prototype and explicit user confirmation. |
+| Prototype-to-production conformance | UI closure requires frozen prototype contracts, production PNG and semantic evidence, plus an independent UI conformance review. |
 | Non-UI behavior gate | API, CLI, service, and background-job projects use behavior contracts instead of HTML prototypes. |
 | Multi-agent review artifacts | Scenario and test coverage reviews must be visible artifacts, not vague chat claims. |
 | Goal-driven implementation | Implementation must follow the planned task queue and cannot stop early without a blocker. |
@@ -58,7 +59,13 @@ Start a new Codex thread after installation, then activate the workflow inside t
 启动交付
 ```
 
-Real spawned-subagent review gates are required by default. If subagents are unavailable and you explicitly accept weaker evidence, start with:
+Plain startup immediately asks which review execution mode to use. To explicitly authorize automatic subagent startup at structured review gates for this delivery, start with:
+
+```text
+启动交付，多 Agent 模式
+```
+
+If subagents are unavailable and you explicitly accept weaker evidence, start with:
 
 ```text
 启动交付，允许降级评审
@@ -102,14 +109,15 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.14.tar.gz
+dist/waygate-product-delivery-1.0.17.tar.gz
 ```
 
 ## Use In Codex
 
 | Prompt | Meaning |
 | --- | --- |
-| `启动交付` | Activate Product Delivery mode for the current project. |
+| `启动交付` | Activate Product Delivery and immediately wait for review-mode selection. |
+| `启动交付，多 Agent 模式` | Activate Product Delivery and authorize 2–3 spawned subagents at structured review gates for the current delivery. |
 | `启动交付，允许降级评审` | Activate Product Delivery and explicitly allow role-simulation review only when spawned subagents are unavailable. |
 | `查看状态` | Show the current Product Delivery stage, blockers, and next gate. |
 | `验证闭包` | Run formal closure validation against current artifacts. |
@@ -211,7 +219,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 Current baseline:
 
 ```text
-179 unit tests passing
+219 unit tests passing
 Plugin validation passed
 Packaged validator runs without source PYTHONPATH
 ```

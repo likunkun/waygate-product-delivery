@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from product_delivery_agent.evidence_artifacts import (
+    EvidenceArtifactError,
+    stable_json_hash,
+    validate_png,
+)
+
 UI_PROTOTYPE_TAXONOMY = (
     "roles",
     "main_paths",
@@ -38,6 +44,154 @@ GENERIC_NEW_SURFACE_JUSTIFICATIONS = {
     "新页面",
     "需要新页面",
 }
+PROTOTYPE_CONTRACT_VERSION = "v1"
+ACCESSIBLE_NAME_MATCH_MODES = {"exact", "contains", "role_only"}
+REGION_RELATIONS = {"contains", "precedes", "adjacent_to"}
+INTERACTION_RELATIONS = {"opens", "navigates_to", "updates"}
+
+
+class UIPrototypeError(RuntimeError):
+    """Raised when a prototype contract cannot be frozen."""
+
+
+def build_prototype_contract(
+    project_root: str | Any,
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and hash the critical UI contract confirmed with a prototype."""
+    if contract.get("contract_version") != PROTOTYPE_CONTRACT_VERSION:
+        raise UIPrototypeError("prototype contract_version must be v1")
+    surfaces = contract.get("surfaces")
+    screenshot_paths = contract.get("prototype_screenshot_paths")
+    if not isinstance(surfaces, list) or not surfaces:
+        raise UIPrototypeError("prototype contract requires surfaces")
+    if not isinstance(screenshot_paths, list) or not screenshot_paths:
+        raise UIPrototypeError("prototype contract requires prototype_screenshot_paths")
+
+    seen_surfaces: set[str] = set()
+    seen_regions: set[str] = set()
+    seen_interactions: set[str] = set()
+    for index, surface in enumerate(surfaces, start=1):
+        if not isinstance(surface, dict):
+            raise UIPrototypeError(f"surface {index} must be an object")
+        for field_name in ("surface_id", "route", "state_id"):
+            if not _has_values(surface.get(field_name)):
+                raise UIPrototypeError(f"surface {index} missing {field_name}")
+        surface_id = str(surface["surface_id"])
+        if surface_id in seen_surfaces:
+            raise UIPrototypeError(f"duplicate surface_id: {surface_id}")
+        seen_surfaces.add(surface_id)
+        if not _has_values(surface.get("required_viewports")):
+            raise UIPrototypeError(f"surface {surface_id} missing required_viewports")
+
+        regions = surface.get("critical_regions")
+        if not isinstance(regions, list) or not regions:
+            raise UIPrototypeError(f"surface {surface_id} requires critical_regions")
+        surface_region_ids: set[str] = set()
+        for region in regions:
+            if not isinstance(region, dict):
+                raise UIPrototypeError(f"surface {surface_id} region must be object")
+            region_id = str(region.get("region_id") or "")
+            if not region_id:
+                raise UIPrototypeError(f"surface {surface_id} region missing region_id")
+            if region_id in seen_regions:
+                raise UIPrototypeError(f"duplicate region_id: {region_id}")
+            seen_regions.add(region_id)
+            surface_region_ids.add(region_id)
+            if not _has_values(region.get("semantic_role")):
+                raise UIPrototypeError(f"region {region_id} missing semantic_role")
+            name_match = region.get("accessible_name_match")
+            if not isinstance(name_match, dict) or name_match.get("mode") not in ACCESSIBLE_NAME_MATCH_MODES:
+                raise UIPrototypeError(f"region {region_id} has invalid accessible_name_match")
+            if name_match.get("mode") != "role_only" and not _has_values(name_match.get("value")):
+                raise UIPrototypeError(f"region {region_id} missing accessible name value")
+            if region.get("visibility") not in {"visible", "conditionally_visible"}:
+                raise UIPrototypeError(f"region {region_id} has invalid visibility")
+        _validate_region_hierarchy(surface_id, regions, surface_region_ids)
+
+        relationships = surface.get("critical_relationships")
+        if not isinstance(relationships, list) or not relationships:
+            raise UIPrototypeError(f"surface {surface_id} requires critical_relationships")
+        for relationship in relationships:
+            source = relationship.get("source_region_id")
+            target = relationship.get("target_region_id")
+            if source not in surface_region_ids or target not in surface_region_ids:
+                raise UIPrototypeError(f"surface {surface_id} relationship references unknown region")
+            if relationship.get("relation") not in REGION_RELATIONS:
+                raise UIPrototypeError(f"surface {surface_id} has invalid region relation")
+
+        interactions = surface.get("critical_interactions")
+        if not isinstance(interactions, list) or not interactions:
+            raise UIPrototypeError(f"surface {surface_id} requires critical_interactions")
+        for interaction in interactions:
+            interaction_id = str(interaction.get("interaction_id") or "")
+            if not interaction_id or interaction_id in seen_interactions:
+                raise UIPrototypeError(f"duplicate or missing interaction_id: {interaction_id}")
+            seen_interactions.add(interaction_id)
+            if interaction.get("entry_region_id") not in surface_region_ids:
+                raise UIPrototypeError(f"interaction {interaction_id} entry region is unknown")
+            if interaction.get("target_region_id") not in surface_region_ids:
+                raise UIPrototypeError(f"interaction {interaction_id} target region is unknown")
+            if interaction.get("expected_relation") not in INTERACTION_RELATIONS:
+                raise UIPrototypeError(f"interaction {interaction_id} has invalid expected_relation")
+            if not _has_values(interaction.get("action")):
+                raise UIPrototypeError(f"interaction {interaction_id} missing action")
+
+    try:
+        screenshots = [validate_png(project_root, path) for path in screenshot_paths]
+    except EvidenceArtifactError as cause:
+        raise UIPrototypeError(str(cause)) from cause
+    canonical = {
+        "contract_version": PROTOTYPE_CONTRACT_VERSION,
+        "surfaces": surfaces,
+        "prototype_screenshot_paths": screenshot_paths,
+    }
+    return {
+        **canonical,
+        "status": "ready",
+        "contract_sha256": stable_json_hash(canonical),
+        "prototype_screenshots": screenshots,
+        "prototype_screenshot_set_sha256": stable_json_hash(screenshots),
+    }
+
+
+def _validate_region_hierarchy(
+    surface_id: str,
+    regions: list[dict[str, Any]],
+    region_ids: set[str],
+) -> None:
+    parents: dict[str, str | None] = {}
+    sibling_orders: set[tuple[str | None, int]] = set()
+    for region in regions:
+        region_id = str(region["region_id"])
+        parent = region.get("parent_region_id")
+        if parent is not None and parent not in region_ids:
+            raise UIPrototypeError(
+                f"surface {surface_id} region {region_id} parent region is unknown"
+            )
+        parents[region_id] = parent
+        order = region.get("display_order")
+        if order is None:
+            continue
+        if not isinstance(order, int) or isinstance(order, bool) or order < 0:
+            raise UIPrototypeError(f"region {region_id} has invalid display_order")
+        key = (parent, order)
+        if key in sibling_orders:
+            raise UIPrototypeError(
+                f"surface {surface_id} has conflicting display_order"
+            )
+        sibling_orders.add(key)
+
+    for region_id in parents:
+        visited: set[str] = set()
+        cursor: str | None = region_id
+        while cursor is not None:
+            if cursor in visited:
+                raise UIPrototypeError(
+                    f"surface {surface_id} region hierarchy cycle detected"
+                )
+            visited.add(cursor)
+            cursor = parents.get(cursor)
 
 
 def validate_ui_prototype_review(review: dict[str, Any]) -> list[str]:

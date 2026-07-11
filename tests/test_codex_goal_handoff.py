@@ -6,6 +6,7 @@ from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.gatekeeper import GatekeeperError
 from product_delivery_agent.handoff import HandoffError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
 
 
 def scenario_row():
@@ -65,6 +66,20 @@ def multi_agent_review(review_type):
                 },
             }
         ],
+        "role_journey_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "required_actor_roles": ["teacher"],
+                "journey": "J-001",
+            }
+        ],
+        "ordinary_path_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "ordinary_entry_path": "teacher opens the existing classroom dashboard",
+            }
+        ],
+        "scenario_granularity_findings": [],
         "actual_test_code_paths": ["tests/e2e/classroom.spec.ts"],
         "execution_evidence_paths": [
             ".product-delivery/artifacts/e2e/tc-v008-001.json",
@@ -82,6 +97,10 @@ def multi_agent_review(review_type):
         ],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
 
 
@@ -101,6 +120,7 @@ def user_confirmation(target):
 
 def ui_review_payload():
     return {
+        "prototype_contract": prototype_contract(),
         "prototype_path": "prototype/index.html",
         "pages": ["dashboard"],
         "states": ["empty", "loading", "error", "success"],
@@ -145,6 +165,10 @@ def planned_obligation():
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "teacher opens the existing classroom dashboard",
+        "required_actor_roles": ["teacher"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "teacher opens the existing classroom dashboard",
+        "data_state_contract": "teacher account with permission to create classrooms",
         "coverage_items": ["classroom-create"],
         "action_assertions": [
             {
@@ -187,8 +211,9 @@ def ready_workflow(project_root):
     prototype = project_root / "prototype" / "index.html"
     prototype.parent.mkdir(parents=True, exist_ok=True)
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
+    write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v2.5-key-owner-ops")
+    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -271,8 +296,10 @@ class CodexGoalHandoffTests(unittest.TestCase):
 
     def test_handoff_requires_passing_coverage_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start()
+            project_root = Path(tmp)
+            write_prototype_screenshot(project_root)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload())
 

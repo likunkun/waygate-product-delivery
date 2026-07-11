@@ -287,7 +287,7 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
     def test_stale_closure_validator_result_does_not_satisfy_current_feature(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            ready_workflow(project_root)
+            workflow = ready_workflow(project_root)
             result_path = (
                 project_root / ARTIFACT_ROOT / "artifacts" / "closure-validator-result.md"
             )
@@ -299,7 +299,7 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact_path = project_root / "formal-closure.json"
             artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
 

@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.14")
+            self.assertEqual(manifest["version"], "1.0.17")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -36,6 +36,7 @@ class PluginPackagingTests(unittest.TestCase):
                 manifest["interface"]["defaultPrompt"],
                 [
                     "启动交付",
+                    "启动交付，多 Agent 模式",
                     "启动交付，允许降级评审",
                     "查看状态",
                     "验证闭包",
@@ -44,7 +45,7 @@ class PluginPackagingTests(unittest.TestCase):
             )
             self.assertIn("启动交付", manifest_text)
 
-    def test_package_includes_runtime_assets_and_v0_10_closure_assets(self):
+    def test_package_includes_runtime_assets_and_v0_11_closure_assets(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = package_codex_plugin(Path(tmp))
             root = result["plugin_root"]
@@ -60,11 +61,14 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/required-skills-checklist.md",
                 "templates/open-spec-gate.md",
                 "templates/ui-prototype-gate.md",
+                "templates/ui-prototype-contract.json",
+                "templates/prototype-production-conformance.md",
                 "templates/scope-scenario-matrix.md",
                 "templates/multi-agent-scenario-review.md",
                 "templates/multi-agent-test-review.md",
                 "templates/multi-agent-test-coverage-review.md",
                 "templates/multi-agent-test-implementation-review.md",
+                "templates/multi-agent-ui-conformance-review.md",
                 "templates/user-confirmation.md",
                 "templates/planned-e2e-obligations.md",
                 "templates/executed-browser-evidence.md",
@@ -79,6 +83,8 @@ class PluginPackagingTests(unittest.TestCase):
                 "runtime/product_delivery_agent/gatekeeper.py",
                 "runtime/product_delivery_agent/continuation.py",
                 "runtime/product_delivery_agent/transition_journal.py",
+                "runtime/product_delivery_agent/evidence_artifacts.py",
+                "runtime/product_delivery_agent/ui_prototype.py",
                 "policies/lifecycle.json",
                 "policies/upgrade-retention.md",
                 "policies/waygate-controller-readonly.md",
@@ -89,6 +95,7 @@ class PluginPackagingTests(unittest.TestCase):
                 root / "skills" / "waygate-product-delivery" / "SKILL.md"
             ).read_text("utf-8")
             self.assertIn("启动交付", skill_markdown)
+            self.assertIn("启动交付，多 Agent 模式", skill_markdown)
             self.assertIn("停止交付", skill_markdown)
             self.assertIn("`start` / `stop`", skill_markdown)
             self.assertIn("planning-with-files", skill_markdown)
@@ -102,6 +109,9 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("pre-closure", skill_markdown)
             self.assertIn("confirm_ui_prototype", skill_markdown)
             self.assertIn("prototype 每次修订后都必须重新确认", skill_markdown)
+            self.assertIn("record_prototype_production_conformance", skill_markdown)
+            self.assertIn("ui_conformance", skill_markdown)
+            self.assertIn("semantic snapshot", skill_markdown)
             self.assertIn("不要在 TASK 未完成时停止", skill_markdown)
             self.assertIn("delivery goal", skill_markdown)
             self.assertIn("validate-closure-artifact.py", skill_markdown)
@@ -110,6 +120,9 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("review_mode", skill_markdown)
             self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
             self.assertIn("启动交付，允许降级评审", skill_markdown)
+            self.assertIn("authorization_pending", skill_markdown)
+            self.assertIn("current_delivery", skill_markdown)
+            self.assertIn("结构化 review gate", skill_markdown)
             self.assertIn("用户面对的确认只保留两次", skill_markdown)
             self.assertIn(
                 "combined requirements freeze + planned E2E coverage 确认",
@@ -142,6 +155,11 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("ui_change_type", skill_markdown)
             self.assertIn("baseline_entry_path", skill_markdown)
             self.assertIn("incremental_existing_surface", skill_markdown)
+            self.assertIn("required_actor_roles", skill_markdown)
+            self.assertIn("ordinary_entry_path", skill_markdown)
+            self.assertIn("execution_segment_id", skill_markdown)
+            self.assertIn("role-accurate Browser E2E", skill_markdown)
+            self.assertIn("verified_action_assertions", skill_markdown)
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
@@ -165,6 +183,14 @@ class PluginPackagingTests(unittest.TestCase):
                 root / "templates" / "planned-e2e-obligations.md"
             ).read_text("utf-8")
             self.assertIn("baseline_entry_path", planned_template)
+            self.assertIn("required_actor_roles", planned_template)
+            self.assertIn("ordinary_entry_path", planned_template)
+            implementation_review_template = (
+                root / "templates" / "multi-agent-test-implementation-review.md"
+            ).read_text("utf-8")
+            self.assertIn("actor_role_findings", implementation_review_template)
+            self.assertIn("annotation_only_findings", implementation_review_template)
+            self.assertIn("verified_action_assertions", implementation_review_template)
             closure_template = json.loads(
                 (root / "templates" / "closure-artifact-template.json").read_text(
                     "utf-8"
@@ -175,14 +201,24 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("e2e_evidence_paths", closure_template)
             self.assertEqual(
                 closure_template["canonical_schema_version"],
-                "v0.10",
+                "v0.11",
             )
             self.assertEqual(
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.14")
+            self.assertEqual(closure_template["plugin_version"], "1.0.17")
+            self.assertIn("prototype_conformance", closure_template)
+            self.assertIn(
+                "conformance_evidence_sha256",
+                closure_template["prototype_conformance"],
+            )
             self.assertIn("full_stack_browser_evidence", closure_template)
+            self.assertTrue(
+                closure_template["full_stack_browser_evidence"][
+                    "role_accurate_required"
+                ]
+            )
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
             validator_script = (
@@ -223,7 +259,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.14.tar.gz",
+                "waygate-product-delivery-1.0.17.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

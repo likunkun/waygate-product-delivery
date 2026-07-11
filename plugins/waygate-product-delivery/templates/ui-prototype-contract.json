@@ -1,0 +1,17 @@
+{
+  "contract_version": "v1",
+  "prototype_screenshot_paths": [],
+  "surfaces": [
+    {
+      "critical_interactions": [],
+      "critical_regions": [],
+      "critical_relationships": [],
+      "required_viewports": [
+        "desktop"
+      ],
+      "route": "",
+      "state_id": "",
+      "surface_id": ""
+    }
+  ]
+}

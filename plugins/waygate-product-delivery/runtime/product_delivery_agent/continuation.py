@@ -68,6 +68,19 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
             next_action=state.get("next_gate"),
         )
 
+    pending_decisions = state.get("pending_user_decisions") or {}
+    policy = state.get("multi_agent_policy") or {}
+    if "multi_agent_mode" in pending_decisions or policy.get(
+        "execution_authorization"
+    ) in {"pending", "legacy_unverified", "invalidated"}:
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="waiting for multi-Agent mode authorization",
+            blockers=["pending_user_decision:multi_agent_mode"],
+            next_action="multi_agent_mode_selection",
+        )
+
     pending = _pending_confirmation_blockers(state)
     if pending:
         return _decision(

@@ -5,8 +5,19 @@ from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.confirmation import ConfirmationError
-from product_delivery_agent.gatekeeper import GatekeeperError
+from product_delivery_agent.gatekeeper import (
+    CANONICAL_SCHEMA_VERSION,
+    CANONICAL_VALIDATOR,
+    PLUGIN_VERSION,
+    GatekeeperError,
+    prototype_conformance_closure_binding,
+)
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+from tests.conformance_fixtures import (
+    prototype_contract,
+    record_ui_conformance,
+    write_prototype_screenshot,
+)
 
 
 def scenario_row(**overrides):
@@ -66,6 +77,20 @@ def multi_agent_review(review_type):
                 },
             }
         ],
+        "role_journey_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "required_actor_roles": ["operator"],
+                "journey": "J-001",
+            }
+        ],
+        "ordinary_path_coverage": [
+            {
+                "test_id": "TC-V008-001",
+                "ordinary_entry_path": "operator opens the existing owner edit surface",
+            }
+        ],
+        "scenario_granularity_findings": [],
         "actual_test_code_paths": ["tests/e2e/owner.spec.ts"],
         "execution_evidence_paths": [
             ".product-delivery/artifacts/e2e/tc-v008-001.json",
@@ -83,6 +108,10 @@ def multi_agent_review(review_type):
         ],
         "supporting_evidence_only": [],
         "business_api_mock_findings": [],
+        "actor_role_findings": [],
+        "evidence_distribution_findings": [],
+        "annotation_only_findings": [],
+        "ordinary_path_findings": [],
     }
 
 
@@ -102,6 +131,7 @@ def user_confirmation(target):
 
 def ui_review_payload(prototype_path):
     return {
+        "prototype_contract": prototype_contract(),
         "prototype_path": prototype_path,
         "pages": ["dashboard"],
         "states": ["empty", "loading", "error", "success"],
@@ -146,6 +176,10 @@ def planned_obligation():
         "expected_artifact_pattern": ".product-delivery/artifacts/e2e/*.json",
         "exemption_status": "none",
         "baseline_entry_path": "operator opens the existing owner edit surface",
+        "required_actor_roles": ["operator"],
+        "path_kind": "primary_happy_path",
+        "ordinary_entry_path": "operator opens the existing owner edit surface",
+        "data_state_contract": "operator account with editable owner data",
         "coverage_items": ["owner-edit"],
         "action_assertions": [
             {
@@ -200,6 +234,7 @@ def write_prototype(project_root, relative_path, content):
     path = project_root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+    write_prototype_screenshot(project_root)
 
 
 def browser_evidence(project_root):
@@ -252,6 +287,12 @@ def browser_evidence(project_root):
         },
         "mocked_routes": [],
         "probe_artifact_path": ".product-delivery/artifacts/e2e/tc-v008-001-probe.json",
+        "executed_actor_roles": ["operator"],
+        "primary_actor_role": "operator",
+        "actor_identity_evidence": {"role": "operator", "user_id": "operator-1"},
+        "ordinary_path_observed": True,
+        "execution_segment_id": "operator-owner-edit",
+        "test_title_or_step": "operator edits owner from existing surface",
     }
 
 
@@ -269,10 +310,13 @@ def task_completion_artifact(state, task_id):
     }
 
 
-def closure_artifact():
-    return {
+def closure_artifact(state=None):
+    artifact = {
         "status": "passed",
         "passed": True,
+        "canonical_validator": CANONICAL_VALIDATOR,
+        "canonical_schema_version": CANONICAL_SCHEMA_VERSION,
+        "plugin_version": PLUGIN_VERSION,
         "closure_flag": "v1.0.4-goal-driven-closure-passed",
         "latest_test_case": "TC-V008-001",
         "matrix_range": "TC-V008-001..TC-V008-001",
@@ -289,13 +333,18 @@ def closure_artifact():
         "controller_session_modified": False,
         "created_fake_controller_state": False,
     }
+    if state is not None:
+        artifact["prototype_conformance"] = prototype_conformance_closure_binding(
+            state
+        )
+    return artifact
 
 
 def workflow_ready_for_handoff(project_root):
     prototype_path = "docs/prototypes/v104-prototype.html"
     write_prototype(project_root, prototype_path, "<html>revision one</html>")
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v1.0.4-goal-driven-closure")
+    workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -333,7 +382,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             prototype_path = "docs/prototypes/v104-prototype.html"
             write_prototype(project_root, prototype_path, "<html>revision one</html>")
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v1.0.4-goal-driven-closure")
+            workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             state = workflow.record_ui_prototype_review(
@@ -375,7 +424,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             prototype_path = "docs/prototypes/v104-prototype.html"
             write_prototype(project_root, prototype_path, "<html>revision one</html>")
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v1.0.4-goal-driven-closure")
+            workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             state = workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)
@@ -496,7 +545,10 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 "test_implementation",
                 multi_agent_review("test_implementation"),
             )
-            state = workflow.record_feature_closure(closure_artifact())
+            record_ui_conformance(workflow, project_root)
+            state = workflow.record_feature_closure(
+                closure_artifact(workflow.status())
+            )
             allowed = workflow.assert_goal_can_stop()
 
             self.assertEqual(state["delivery_goal"]["status"], "complete")

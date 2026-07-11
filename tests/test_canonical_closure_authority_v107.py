@@ -8,7 +8,7 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.closure import ClosureGateError
 from product_delivery_agent.finalization import run_finalize_cli
-from product_delivery_agent.gatekeeper import validate_state_invariants
+from product_delivery_agent.gatekeeper import PLUGIN_VERSION, validate_state_invariants
 from product_delivery_agent.hooks import (
     build_prompt_context,
     build_resume_context,
@@ -69,7 +69,7 @@ class CanonicalClosureAuthorityV107Tests(unittest.TestCase):
     def test_required_command_requires_exit_code_or_structured_skip(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ready_workflow(Path(tmp))
-            artifact = valid_closure_artifact()
+            artifact = valid_closure_artifact(workflow.status())
             artifact["required_commands"][0].pop("exit_code")
 
             with self.assertRaises(ClosureGateError) as caught:
@@ -85,8 +85,8 @@ class CanonicalClosureAuthorityV107Tests(unittest.TestCase):
     def test_finalization_writes_canonical_validator_metadata_and_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            ready_workflow(project_root)
-            artifact = valid_closure_artifact()
+            workflow = ready_workflow(project_root)
+            artifact = valid_closure_artifact(workflow.status())
             artifact["required_commands"][0]["exit_code"] = 0
             artifact_path = project_root / "formal-closure.json"
             artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
@@ -109,9 +109,9 @@ class CanonicalClosureAuthorityV107Tests(unittest.TestCase):
             )
             self.assertEqual(
                 state["closure_validation"]["canonical_schema_version"],
-                "v0.10",
+                "v0.11",
             )
-            self.assertEqual(state["closure_validation"]["plugin_version"], "1.0.14")
+            self.assertEqual(state["closure_validation"]["plugin_version"], PLUGIN_VERSION)
             self.assertEqual(
                 state["feature_closure"]["source_artifact_path"],
                 str(artifact_path),

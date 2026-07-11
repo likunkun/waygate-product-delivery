@@ -46,6 +46,35 @@ def write_required_artifacts(project_root):
 
 
 class ContinuationGuardTests(unittest.TestCase):
+    def test_pending_multi_agent_authorization_waits_for_user_immediately(self):
+        result = derive_continuation_status(
+            active_state(
+                next_gate="multi_agent_mode_selection",
+                multi_agent_policy={
+                    "mode": "authorization_pending",
+                    "execution_authorization": "pending",
+                },
+                pending_user_decisions={
+                    "multi_agent_mode": {"status": "pending"},
+                },
+            )
+        )
+
+        self.assertEqual(result["status"], "wait_for_user")
+        self.assertTrue(result["can_stop"])
+        self.assertEqual(result["next_action"], "multi_agent_mode_selection")
+
+    def test_invalidated_multi_agent_authorization_waits_for_user_when_active(self):
+        result = derive_continuation_status(
+            active_state(
+                multi_agent_policy={"execution_authorization": "invalidated"},
+            )
+        )
+
+        self.assertEqual(result["status"], "wait_for_user")
+        self.assertEqual(result["next_action"], "multi_agent_mode_selection")
+        self.assertIn("pending_user_decision:multi_agent_mode", result["blockers"])
+
     def test_active_next_gate_without_user_wait_must_continue(self):
         result = derive_continuation_status(active_state())
 

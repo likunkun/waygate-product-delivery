@@ -43,7 +43,22 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
     def test_load_state_fail_closes_v26_poisoned_terminal_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            write_raw_state(project_root, poisoned_v26_state())
+            state = poisoned_v26_state()
+            state["multi_agent_policy"] = {
+                "mode": "spawned_subagents_required",
+                "evidence_requirement": "spawned_subagents",
+                "execution_authorization": "authorized",
+                "authorization_scope": "current_delivery",
+                "authorization_source": "startup_command",
+                "authorized_review_types": [
+                    "scenario",
+                    "test",
+                    "test_coverage",
+                    "test_implementation",
+                    "ui_conformance",
+                ],
+            }
+            write_raw_state(project_root, state)
 
             state = load_state(project_root)
 
@@ -84,7 +99,22 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
     def test_goal_stop_guard_blocks_missing_goal_after_handoff_or_terminal_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            write_raw_state(project_root, poisoned_v26_state())
+            state = poisoned_v26_state()
+            state["multi_agent_policy"] = {
+                "mode": "spawned_subagents_required",
+                "evidence_requirement": "spawned_subagents",
+                "execution_authorization": "authorized",
+                "authorization_scope": "current_delivery",
+                "authorization_source": "startup_command",
+                "authorized_review_types": [
+                    "scenario",
+                    "test",
+                    "test_coverage",
+                    "test_implementation",
+                    "ui_conformance",
+                ],
+            }
+            write_raw_state(project_root, state)
             workflow = ProductDeliveryWorkflow(project_root)
 
             with self.assertRaises(WorkflowError) as caught:
@@ -95,7 +125,7 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
     def test_pre_handoff_state_may_have_no_delivery_goal(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v1.0.5-pre-handoff")
+            workflow.start(feature_slug="v1.0.5-pre-handoff", multi_agent_mode="spawned_subagents_authorized")
 
             state = workflow.status()
 
