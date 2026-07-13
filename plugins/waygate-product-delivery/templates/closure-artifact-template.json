@@ -26,7 +26,7 @@
   "matrix_range": "TC-V008-001..TC-V008-001",
   "negative_scope_guard_result": "passed",
   "passed": true,
-  "plugin_version": "1.0.17",
+  "plugin_version": "1.0.18",
   "prototype_conformance": {
     "conformance_artifact_sha256": "",
     "conformance_evidence_sha256": "",

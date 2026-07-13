@@ -1447,6 +1447,23 @@ class ProductDeliveryWorkflow:
             package,
             scope=scope,
         )
+        previous_goal = dict(state.get("delivery_goal") or {})
+        previous_hash = previous_goal.get("launch_package_hash")
+        if previous_hash and previous_hash != package["launch_package_hash"]:
+            reusable_completions = self._matching_task_completions(
+                previous_goal,
+                delivery_goal,
+            )
+            self._supersede_active_implementation_package(
+                state,
+                reason="launch_package_hash_changed",
+                replacement_launch_package_hash=package["launch_package_hash"],
+                reused_task_ids=sorted(reusable_completions),
+            )
+            delivery_goal = self._apply_reused_task_completions(
+                delivery_goal,
+                reusable_completions,
+            )
         assert_pre_handoff_ready(
             state,
             self.project_root,
@@ -1483,16 +1500,25 @@ class ProductDeliveryWorkflow:
         }
         state["implementation"] = {
             "current_task": delivery_goal["current_task_cursor"],
-            "completed_tasks": [],
+            "completed_tasks": list(delivery_goal["completed_tasks"]),
         }
         state["codex_goal_prompt"] = handoff["codex_goal_prompt"]
         state["freeze"] = {
             "frozen": True,
             "scope_version": state.get("freeze", {}).get("scope_version") or "v1",
         }
-        state["stage"] = "codex_goal_handoff_ready"
-        state["status"] = "implementation_goal_active"
+        if delivery_goal["status"] == "implementation_tasks_complete":
+            state["stage"] = "implementation_tasks_complete"
+            state["status"] = "implementation_tasks_complete"
+        elif delivery_goal["completed_tasks"]:
+            state["stage"] = "implementation_in_progress"
+            state["status"] = "implementation_in_progress"
+        else:
+            state["stage"] = "codex_goal_handoff_ready"
+            state["status"] = "implementation_goal_active"
         state["next_gate"] = delivery_goal["current_task_cursor"]
+        if delivery_goal["current_task_cursor"] is None:
+            state["next_gate"] = delivery_goal["next_action"]
         state = append_transition(
             state,
             "handoff_generated",
@@ -1519,6 +1545,56 @@ class ProductDeliveryWorkflow:
             },
         )
         return write_state(self.project_root, state)
+
+    def recover_stale_launch_package(
+        self,
+        *,
+        scope: str,
+        non_goals: list[str] | None = None,
+        verification_commands: list[str] | None = None,
+        prohibited_work: list[str] | None = None,
+        planned_tasks: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Canonically replace an implementation package bound to an old launch hash."""
+        state = self._require_started()
+        task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
+        package = self._build_launch_package(
+            state,
+            scope=scope,
+            verification_commands=verification_commands,
+            prohibited_work=prohibited_work,
+            planned_tasks=task_queue,
+        )
+        authorization = state.get("implementation_launch_authorization") or {}
+        blockers = [
+            blocker
+            for blocker in derive_blockers(
+                state,
+                self.project_root,
+                launch_package_hash=package["launch_package_hash"],
+            )
+            if blocker != "stale_implementation_launch_authorization"
+        ]
+        if blockers:
+            raise WorkflowError(
+                "launch package recovery blocked: " + ", ".join(sorted(blockers))
+            )
+        if authorization.get("status") != "authorized" or authorization.get(
+            "launch_package_hash"
+        ) != package["launch_package_hash"]:
+            raise WorkflowError(
+                "current launch package must be authorized before recovery"
+            )
+        goal = state.get("delivery_goal") or {}
+        if goal.get("launch_package_hash") == package["launch_package_hash"]:
+            return state
+        return self.generate_codex_goal_handoff(
+            scope=scope,
+            non_goals=non_goals,
+            verification_commands=verification_commands,
+            prohibited_work=prohibited_work,
+            planned_tasks=task_queue,
+        )
 
     def derive_remaining_tasks(self) -> list[dict[str, Any]]:
         state = self._require_started()
@@ -2187,6 +2263,8 @@ class ProductDeliveryWorkflow:
         state: dict[str, Any],
         *,
         reason: str,
+        replacement_launch_package_hash: str | None = None,
+        reused_task_ids: list[str] | None = None,
     ) -> None:
         package_keys = (
             "handoff",
@@ -2196,15 +2274,105 @@ class ProductDeliveryWorkflow:
         )
         if not any(state.get(key) for key in package_keys):
             return
-        state.setdefault("superseded_implementation_packages", []).append(
-            {
-                "reason": reason,
-                "superseded_at": self._timestamp_from_state(state),
-                **{key: state.get(key) for key in package_keys if state.get(key)},
-            }
-        )
+        old_goal = dict(state.get("delivery_goal") or {})
+        archived = {
+            "reason": reason,
+            "superseded_at": self._timestamp_from_state(state),
+            "replacement_launch_package_hash": replacement_launch_package_hash,
+            "reused_task_ids": list(reused_task_ids or []),
+            "task_completion_binding": {
+                "completed_tasks": list(old_goal.get("completed_tasks", [])),
+                "task_completion_artifacts": dict(
+                    old_goal.get("task_completion_artifacts", {})
+                ),
+                "planned_task_hashes": {
+                    task.get("task_id"): task.get("planned_task_hash")
+                    for task in old_goal.get("planned_tasks", [])
+                },
+            },
+            **{key: state.get(key) for key in package_keys if state.get(key)},
+        }
+        state.setdefault("superseded_implementation_packages", []).append(archived)
         for key in package_keys:
             state.pop(key, None)
+        self._remove_blockers(state, "stale_implementation_launch_authorization")
+        state["protocol_errors"] = [
+            error
+            for error in state.get("protocol_errors", [])
+            if error != "stale_implementation_launch_authorization"
+        ]
+        state["status"] = "implementation_launch_authorized"
+        state["stage"] = "implementation_launch_authorized"
+        state["next_gate"] = "codex_goal_handoff"
+        if replacement_launch_package_hash:
+            next_state = append_transition(
+                state,
+                "implementation_package_superseded",
+                feature_slug=state.get("feature_slug"),
+                runtime_version=PLUGIN_VERSION,
+                input_artifact_hashes={
+                    "previous_launch_package": str(
+                        old_goal.get("launch_package_hash") or "missing"
+                    ),
+                    "replacement_launch_package": replacement_launch_package_hash,
+                },
+                metadata={
+                    "reason": reason,
+                    "reused_task_ids": list(reused_task_ids or []),
+                },
+            )
+            state.clear()
+            state.update(next_state)
+
+    @staticmethod
+    def _matching_task_completions(
+        previous_goal: dict[str, Any],
+        next_goal: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        previous_tasks = {
+            task.get("task_id"): task
+            for task in previous_goal.get("planned_tasks", [])
+        }
+        artifacts = previous_goal.get("task_completion_artifacts") or {}
+        matches = {}
+        for task in next_goal.get("planned_tasks", []):
+            task_id = task.get("task_id")
+            previous = previous_tasks.get(task_id) or {}
+            artifact = artifacts.get(task_id)
+            if (
+                artifact
+                and task.get("planned_task_hash")
+                and task.get("planned_task_hash") == previous.get("planned_task_hash")
+                and artifact.get("planned_task_hash") == task.get("planned_task_hash")
+            ):
+                matches[str(task_id)] = dict(artifact)
+        return matches
+
+    @staticmethod
+    def _apply_reused_task_completions(
+        goal: dict[str, Any],
+        completions: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        next_goal = dict(goal)
+        ordered_ids = [task["task_id"] for task in next_goal["planned_tasks"]]
+        completed = [task_id for task_id in ordered_ids if task_id in completions]
+        next_goal["completed_tasks"] = completed
+        if completed:
+            next_goal["task_completion_artifacts"] = {
+                task_id: completions[task_id] for task_id in completed
+            }
+        remaining = [task_id for task_id in ordered_ids if task_id not in completions]
+        if remaining:
+            next_goal["status"] = (
+                "implementation_in_progress" if completed else "active"
+            )
+            next_goal["current_task_cursor"] = remaining[0]
+            next_goal["next_action"] = remaining[0]
+        else:
+            next_goal["status"] = "implementation_tasks_complete"
+            next_goal["current_task_cursor"] = None
+            next_goal["next_action"] = "record_executed_evidence_and_closure"
+        return next_goal
 
     @staticmethod
     def _stable_hash(value: Any) -> str:
