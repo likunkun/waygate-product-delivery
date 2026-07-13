@@ -434,6 +434,83 @@ class ModelExecutionProfilesV1019Tests(unittest.TestCase):
             self.assertNotIn("execution_model_policy", terminal)
             self.assertNotIn("execution_mode", terminal["pending_user_decisions"])
 
+    def test_legacy_execution_mode_migration_recovers_at_stage_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            state_path = project_root / ARTIFACT_ROOT / "state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "active": True,
+                        "stage": "implementation_in_progress",
+                        "multi_agent_policy": {
+                            "mode": "spawned_subagents_required",
+                            "execution_authorization": "authorized",
+                            "authorization_scope": "current_delivery",
+                            "authorization_source": "startup_command",
+                            "authorized_review_types": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            workflow = ProductDeliveryWorkflow(
+                project_root,
+                codex_home=project_root / "codex",
+            )
+
+            migrated = load_state(project_root)
+            self.assertEqual(
+                migrated["execution_model_policy"]["authorization_status"],
+                "legacy_unverified",
+            )
+            self.assertIn("execution_mode", migrated["pending_user_decisions"])
+
+            workflow.request_execution_mode_switch(
+                "automatic",
+                "切换交付执行模式：自动模式",
+            )
+            recovered = workflow.begin_execution_stage("product_design")["state"]
+
+            self.assertEqual(
+                recovered["execution_model_policy"]["authorization_status"],
+                "authorized",
+            )
+            self.assertEqual(recovered["execution_model_policy"]["mode"], "automatic")
+            self.assertNotIn("execution_mode", recovered["pending_user_decisions"])
+            workflow.select_project_type("ui")
+
+    def test_authorized_stage_clears_only_stale_execution_mode_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(
+                project_root,
+                codex_home=project_root / "codex",
+            )
+            state = workflow.start(
+                execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            state["pending_user_decisions"] = {
+                "execution_mode": {"status": "pending"},
+                "main_thread_model": {"status": "pending"},
+            }
+            state["execution_model_policy"]["pending_switch"] = None
+            (project_root / ARTIFACT_ROOT / "state.json").write_text(
+                json.dumps(state),
+                encoding="utf-8",
+            )
+
+            recovered = workflow.begin_execution_stage("product_design")["state"]
+
+            self.assertEqual(
+                recovered["execution_model_policy"]["authorization_status"],
+                "authorized",
+            )
+            self.assertNotIn("execution_mode", recovered["pending_user_decisions"])
+            self.assertIn("main_thread_model", recovered["pending_user_decisions"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -621,6 +621,7 @@ class ProductDeliveryWorkflow:
             )
         if policy.get("authorization_status") != "authorized":
             raise WorkflowError("execution mode authorization is required")
+        state.setdefault("pending_user_decisions", {}).pop("execution_mode", None)
         if policy.get("mode") == "full_speed" and (
             (policy.get("main_thread_observation") or {}).get("status") != "matched"
         ):

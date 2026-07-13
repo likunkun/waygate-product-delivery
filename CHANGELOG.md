@@ -2,6 +2,7 @@
 
 ## 1.0.19
 
+- Fixes active v1.0.18 state migration so an authorized execution policy clears only the stale `execution_mode` pending decision at the next stage boundary.
 - Adds startup-time `automatic` and `full_speed` execution model modes alongside the independent multi-Agent review authorization.
 - Adds the explicit startup prompts `启动交付，自动模式，多 Agent 模式` and `启动交付，全速模式，多 Agent 模式`.
 - Adds customizable user, project, and per-delivery model profiles with deterministic precedence, validation, and frozen profile hashes in `execution_model_policy`.
