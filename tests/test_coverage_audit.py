@@ -90,7 +90,8 @@ class CoverageAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(project_root))
 
@@ -118,7 +119,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_non_ui_audit_accepts_behavior_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(behavior_contract_payload())
 
@@ -144,7 +146,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_non_continuous_tc_range_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
 
@@ -159,7 +162,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_missing_trace_anchor_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
             row = coverage_row("TC-V008-001")
@@ -176,7 +180,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_ui_supporting_evidence_cannot_replace_browser_e2e(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
 
@@ -199,7 +204,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_missing_semantic_marker_blocks_high_risk_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
             row = coverage_row("TC-V008-001")
@@ -216,7 +222,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_unexempted_critical_gap_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(behavior_contract_payload())
 
@@ -240,7 +247,8 @@ class CoverageAuditTests(unittest.TestCase):
     def test_missing_inherited_negative_guard_record_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
 
@@ -256,7 +264,8 @@ class CoverageAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(behavior_contract_payload())
             workflow.record_test_coverage_audit(

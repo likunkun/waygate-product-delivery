@@ -482,7 +482,8 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             root = Path(tmp)
             self.prepare_project(root)
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             state = workflow.record_ui_prototype_review(prototype_review_payload())
@@ -503,7 +504,8 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             root = Path(tmp)
             self.prepare_project(root)
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             state = workflow.record_ui_prototype_review(prototype_review_payload())
             pending = state["pending_confirmations"]["ui_prototype"]
@@ -529,7 +531,8 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             self.prepare_project(root)
             contract = ui_prototype.build_prototype_contract(root, prototype_contract())
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             state = load_state(root)
             state.update(
                 {
@@ -573,7 +576,8 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             root = Path(tmp)
             self.prepare_project(root)
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             state = load_state(root)
             state.update(
                 {

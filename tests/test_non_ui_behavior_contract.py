@@ -77,7 +77,8 @@ class NonUIBehaviorContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
 
             result = workflow.record_non_ui_behavior_contract(complete_contract_payload())
@@ -106,7 +107,8 @@ class NonUIBehaviorContractTests(unittest.TestCase):
     def test_ui_project_cannot_enter_non_ui_behavior_contract_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             with self.assertRaises(WorkflowError):
@@ -115,7 +117,8 @@ class NonUIBehaviorContractTests(unittest.TestCase):
     def test_missing_taxonomy_blocks_behavior_contract_recording(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             payload = complete_contract_payload()
             payload["taxonomy"].pop("state_transitions")
@@ -130,7 +133,8 @@ class NonUIBehaviorContractTests(unittest.TestCase):
             with self.subTest(taxonomy_field=taxonomy_field):
                 with tempfile.TemporaryDirectory() as tmp:
                     workflow = ProductDeliveryWorkflow(Path(tmp))
-                    workflow.start(multi_agent_mode="spawned_subagents_authorized")
+                    workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
                     workflow.select_project_type("non_ui")
                     payload = complete_contract_payload()
                     payload["taxonomy"].pop(taxonomy_field)
@@ -143,7 +147,8 @@ class NonUIBehaviorContractTests(unittest.TestCase):
     def test_audit_and_handoff_block_until_behavior_contract_is_confirmed(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             confirm_scope(workflow)
 
@@ -160,7 +165,8 @@ class NonUIBehaviorContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(complete_contract_payload())
 

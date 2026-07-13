@@ -96,7 +96,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             project_root = Path(tmp)
             self._write_prototype(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             result = workflow.record_ui_prototype_review(complete_review_payload())
@@ -125,7 +126,8 @@ class UIPrototypeGateTests(unittest.TestCase):
     def test_non_ui_project_cannot_enter_ui_prototype_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
 
             with self.assertRaises(WorkflowError):
@@ -134,7 +136,8 @@ class UIPrototypeGateTests(unittest.TestCase):
     def test_missing_taxonomy_blocks_prototype_confirmation(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             payload = complete_review_payload()
             payload["taxonomy"].pop("keyboard")
@@ -149,7 +152,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             with self.subTest(taxonomy_field=taxonomy_field):
                 with tempfile.TemporaryDirectory() as tmp:
                     workflow = ProductDeliveryWorkflow(Path(tmp))
-                    workflow.start(multi_agent_mode="spawned_subagents_authorized")
+                    workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
                     workflow.select_project_type("ui")
                     payload = complete_review_payload()
                     payload["taxonomy"].pop(taxonomy_field)
@@ -164,7 +168,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             project_root = Path(tmp)
             self._write_prototype(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             confirm_scope(workflow)
 
@@ -187,7 +192,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             project_root = Path(tmp)
             self._write_prototype(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(complete_review_payload())
 

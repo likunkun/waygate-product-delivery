@@ -135,6 +135,22 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
             "authorization_source": None,
             "authorized_review_types": [],
         },
+        "execution_model_policy": {
+            "mode": "authorization_pending",
+            "authorization_status": "pending",
+            "authorization_scope": "current_delivery",
+            "authorization_source": None,
+            "resolved_profiles": None,
+            "resolved_profiles_hash": None,
+            "profile_sources": [],
+            "selected_profile": None,
+            "profile_hash": None,
+            "main_thread_requirement": None,
+            "main_thread_observation": {"status": "pending"},
+            "current_stage_assignment": None,
+            "stage_agent_assignments": [],
+            "pending_switch": None,
+        },
         "ui_prototype": {
             "generated": False,
             "reviewed_by_agent": False,
@@ -262,6 +278,28 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
         merged.setdefault("pending_user_decisions", {})["multi_agent_mode"] = {
             "status": "pending",
             "reason": "legacy authorization could not be verified",
+        }
+    if not is_terminal_history and "execution_model_policy" not in merged:
+        merged["execution_model_policy"] = {
+            "mode": "authorization_pending",
+            "authorization_status": "legacy_unverified",
+            "authorization_scope": "current_delivery",
+            "authorization_source": "legacy_state_migration",
+            "resolved_profiles": None,
+            "resolved_profiles_hash": None,
+            "profile_sources": [],
+            "selected_profile": None,
+            "profile_hash": None,
+            "main_thread_requirement": None,
+            "main_thread_observation": {"status": "pending"},
+            "current_stage_assignment": None,
+            "stage_agent_assignments": [],
+            "pending_switch": None,
+        }
+        merged["next_gate"] = "startup_mode_selection"
+        merged.setdefault("pending_user_decisions", {})["execution_mode"] = {
+            "status": "pending",
+            "reason": "legacy model execution mode could not be verified",
         }
     merged["multi_agent_reviews"].setdefault(
         "scenario",

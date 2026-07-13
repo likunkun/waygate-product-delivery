@@ -125,7 +125,8 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
     def test_pre_handoff_state_may_have_no_delivery_goal(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v1.0.5-pre-handoff", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v1.0.5-pre-handoff", multi_agent_mode="spawned_subagents_authorized")
 
             state = workflow.status()
 

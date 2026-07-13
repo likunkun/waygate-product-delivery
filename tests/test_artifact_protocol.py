@@ -155,8 +155,9 @@ class ArtifactProtocolTests(unittest.TestCase):
                 state["multi_agent_policy"]["execution_authorization"],
                 "legacy_unverified",
             )
-            self.assertEqual(state["next_gate"], "multi_agent_mode_selection")
+            self.assertEqual(state["next_gate"], "startup_mode_selection")
             self.assertIn("multi_agent_mode", state["pending_user_decisions"])
+            self.assertIn("execution_mode", state["pending_user_decisions"])
 
     def test_terminal_legacy_multi_agent_policy_remains_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:

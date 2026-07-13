@@ -23,7 +23,8 @@ class ConfirmationPolicyTests(unittest.TestCase):
     def test_record_user_confirmation_rejects_non_delivery_user_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
 
             with self.assertRaises(WorkflowError) as caught:
                 workflow.record_user_confirmation(

@@ -1,0 +1,47 @@
+{
+  "profiles": {
+    "automatic": {
+      "coordinator": {
+        "model": "inherit",
+        "reasoning_effort": "inherit"
+      },
+      "escalation": {
+        "after_consecutive_failures": 2,
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh"
+      },
+      "stages": {
+        "browser_evidence": {
+          "model": "gpt-5.6-terra",
+          "reasoning_effort": "medium"
+        },
+        "closure": {
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh"
+        },
+        "discovery": {
+          "model": "gpt-5.6-luna",
+          "reasoning_effort": "medium"
+        },
+        "implementation": {
+          "model": "gpt-5.6-terra",
+          "reasoning_effort": "high"
+        },
+        "product_design": {
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "high"
+        },
+        "review": {
+          "model": "gpt-5.6-terra",
+          "reasoning_effort": "high"
+        }
+      }
+    },
+    "full_speed": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "xhigh",
+      "service_tier": "priority"
+    }
+  },
+  "schema_version": "v1"
+}

@@ -261,7 +261,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         prototype.write_text("<html>prototype</html>", encoding="utf-8")
         write_prototype_screenshot(project_root)
         workflow = ProductDeliveryWorkflow(project_root)
-        workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+        workflow.start(execution_mode="automatic",
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
         workflow.record_scenario_matrix([scenario_row()])
         workflow.record_multi_agent_review("scenario", scenario_review())
         workflow.select_project_type("ui")
@@ -355,7 +356,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_scenario_review_routes_to_surface_gate_not_standalone_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
 
             state = workflow.record_multi_agent_review("scenario", scenario_review())
@@ -440,7 +442,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
 
             state = workflow.record_scenario_matrix([scenario_row()])
 
@@ -460,7 +463,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
 
             workflow.record_scenario_matrix(
                 [
@@ -487,7 +491,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_missing_scenario_review_blocks_user_confirmed_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
 
             with self.assertRaises(WorkflowError) as caught:
@@ -499,7 +504,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
             workflow.record_multi_agent_review("scenario", scenario_review())
 
@@ -521,7 +527,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_scenario_matrix_requires_traceable_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             bad_row = scenario_row(journey="")
 
             with self.assertRaises(ScenarioMatrixError) as caught:
@@ -532,7 +539,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_blocking_multi_agent_finding_rejects_review(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
 
             with self.assertRaises(ReviewGateError):
@@ -550,7 +558,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             prototype.write_text("<html>prototype</html>", encoding="utf-8")
             write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             state = workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)
@@ -585,7 +594,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_planned_e2e_obligations_allow_empty_executed_evidence_before_implementation(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
 
             state = workflow.record_planned_e2e_obligations(
                 [planned_obligation()],
@@ -600,7 +610,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
 
             state = workflow.record_planned_e2e_obligations(
@@ -640,7 +651,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_non_ui_planned_obligations_reject_browser_e2e_mislabeling(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
 
             with self.assertRaises(CoverageAuditError) as caught:
@@ -651,7 +663,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_structured_exemption_requires_approval_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             exemption = structured_exemption(approved_at="")
 
             with self.assertRaises(CoverageAuditError) as caught:
@@ -666,7 +679,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.record_planned_e2e_obligations([planned_obligation()])
             record = browser_evidence(project_root, semantic_assertions=[])
 
@@ -679,7 +693,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.record_planned_e2e_obligations([planned_obligation()])
 
             state = workflow.record_executed_browser_evidence(
@@ -694,7 +709,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.generate_codex_goal_handoff = lambda **kwargs: None
 
             with self.assertRaises(Exception):

@@ -70,15 +70,25 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
 
     pending_decisions = state.get("pending_user_decisions") or {}
     policy = state.get("multi_agent_policy") or {}
+    model_policy = state.get("execution_model_policy") or {}
+    startup_blockers = []
     if "multi_agent_mode" in pending_decisions or policy.get(
         "execution_authorization"
     ) in {"pending", "legacy_unverified", "invalidated"}:
+        startup_blockers.append("pending_user_decision:multi_agent_mode")
+    if "execution_mode" in pending_decisions or model_policy.get(
+        "authorization_status"
+    ) in {"pending", "legacy_unverified", "invalidated"}:
+        startup_blockers.append("pending_user_decision:execution_mode")
+    if "main_thread_model" in pending_decisions:
+        startup_blockers.append("pending_user_decision:main_thread_model")
+    if startup_blockers:
         return _decision(
             "wait_for_user",
             can_stop=True,
-            reason="waiting for multi-Agent mode authorization",
-            blockers=["pending_user_decision:multi_agent_mode"],
-            next_action="multi_agent_mode_selection",
+            reason="waiting for startup execution and review mode authorization",
+            blockers=startup_blockers,
+            next_action="startup_mode_selection",
         )
 
     pending = _pending_confirmation_blockers(state)

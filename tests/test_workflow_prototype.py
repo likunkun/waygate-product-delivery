@@ -124,8 +124,9 @@ class WorkflowPrototypeTests(unittest.TestCase):
                 started["multi_agent_policy"]["execution_authorization"],
                 "pending",
             )
-            self.assertEqual(started["next_gate"], "multi_agent_mode_selection")
+            self.assertEqual(started["next_gate"], "startup_mode_selection")
             self.assertIn("multi_agent_mode", started["pending_user_decisions"])
+            self.assertIn("execution_mode", started["pending_user_decisions"])
 
             artifact = project_root / ARTIFACT_ROOT / "artifacts" / "note.md"
             artifact.write_text("preserve\n", encoding="utf-8")
@@ -154,6 +155,7 @@ class WorkflowPrototypeTests(unittest.TestCase):
             workflow = ProductDeliveryWorkflow(Path(tmp))
 
             started = workflow.start(
+                execution_mode="automatic",
                 feature_slug="v2.4-ops-security-alerts",
                 multi_agent_mode="spawned_subagents_authorized",
             )
@@ -218,7 +220,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
     def test_authorization_cannot_be_switched_after_selection(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
 
             with self.assertRaises(WorkflowError):
                 workflow.authorize_multi_agent_mode(
@@ -241,7 +244,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             state_path = project_root / ARTIFACT_ROOT / "state.json"
             state = load_state(project_root)
             state.update(
@@ -262,6 +266,7 @@ class WorkflowPrototypeTests(unittest.TestCase):
             state_path.write_text(json.dumps(state), encoding="utf-8")
 
             restarted = workflow.start(
+                execution_mode="automatic",
                 feature_slug="next-feature",
                 multi_agent_mode="spawned_subagents_authorized",
             )
@@ -294,7 +299,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
     def test_ui_project_routes_to_prototype_confirmation_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
 
             status = workflow.select_project_type("ui")
 
@@ -307,7 +313,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
     def test_non_ui_project_routes_to_behavior_contract_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
 
             status = workflow.select_project_type("non_ui")
 
@@ -328,7 +335,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
             prototype.write_text("<html>prototype</html>", encoding="utf-8")
             write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             confirm_scope(workflow)
             state = workflow.record_ui_prototype_review(ui_review_payload())
@@ -352,7 +360,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
     def test_missing_confirmation_blocks_audit_and_handoff_drafts(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.confirm("product_brief")
 
@@ -363,7 +372,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(execution_mode="automatic",
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             recovered = ProductDeliveryWorkflow(
@@ -378,7 +388,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
 
-            started = workflow.start(allow_review_degradation=True)
+            started = workflow.start(execution_mode="automatic",
+                allow_review_degradation=True)
 
             self.assertEqual(
                 started["multi_agent_policy"]["mode"],

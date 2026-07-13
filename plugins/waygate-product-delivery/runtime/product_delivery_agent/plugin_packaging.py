@@ -128,6 +128,8 @@ def _plugin_manifest() -> dict[str, Any]:
             "termsOfServiceURL": "https://example.com/terms",
             "defaultPrompt": [
                 "启动交付",
+                "启动交付，自动模式，多 Agent 模式",
+                "启动交付，全速模式，多 Agent 模式",
                 "启动交付，多 Agent 模式",
                 "启动交付，允许降级评审",
                 "查看状态",
@@ -255,9 +257,64 @@ def _write_templates(templates_dir: Path) -> None:
             "- Read or create `task_plan.md`, `findings.md`, and `progress.md`.\n"
             "- Create or recover `.product-delivery/state.json`.\n"
             "- Record the current feature slug and blocked gates in state.\n"
-            "- Plain startup enters `authorization_pending` and asks for a mode immediately.\n"
-            "- `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.\n"
+            "- Plain startup enters `startup_mode_selection` and asks for execution and review modes together.\n"
+            "- `启动交付，自动模式，多 Agent 模式` uses stage-specific model profiles and authorizes spawned review agents.\n"
+            "- `启动交付，全速模式，多 Agent 模式` requires one uniform full-speed model profile for the main thread and all subagents.\n"
+            "- Model profile precedence is delivery override, project config, user config, then built-in defaults.\n"
+            "- Stage agents use `fork_context=false`; only the main coordinator writes canonical state.\n"
         ),
+        "model-profiles.json": json.dumps(
+            {
+                "schema_version": "v1",
+                "profiles": {
+                    "full_speed": {
+                        "model": "gpt-5.6-sol",
+                        "reasoning_effort": "xhigh",
+                        "service_tier": "priority",
+                    },
+                    "automatic": {
+                        "coordinator": {
+                            "model": "inherit",
+                            "reasoning_effort": "inherit",
+                        },
+                        "stages": {
+                            "discovery": {
+                                "model": "gpt-5.6-luna",
+                                "reasoning_effort": "medium",
+                            },
+                            "product_design": {
+                                "model": "gpt-5.6-sol",
+                                "reasoning_effort": "high",
+                            },
+                            "implementation": {
+                                "model": "gpt-5.6-terra",
+                                "reasoning_effort": "high",
+                            },
+                            "browser_evidence": {
+                                "model": "gpt-5.6-terra",
+                                "reasoning_effort": "medium",
+                            },
+                            "review": {
+                                "model": "gpt-5.6-terra",
+                                "reasoning_effort": "high",
+                            },
+                            "closure": {
+                                "model": "gpt-5.6-sol",
+                                "reasoning_effort": "xhigh",
+                            },
+                        },
+                        "escalation": {
+                            "model": "gpt-5.6-sol",
+                            "reasoning_effort": "xhigh",
+                            "after_consecutive_failures": 2,
+                        },
+                    },
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
         "required-skills-checklist.md": _required_skills_checklist(),
         "open-spec-gate.md": (
             "# Open Spec Gate\n\n"
@@ -504,8 +561,11 @@ def _skill_markdown() -> str:
         "---\n\n"
         "# Product Delivery Agent\n\n"
         "默认休眠。说 `启动交付` 激活当前项目的产品交付模式，并立即进入 "
-        "`authorization_pending` 等待模式选择；说 `启动交付，多 Agent 模式` "
-        "显式授权当前 delivery 在结构化 review gate 自动启动 2–3 个独立 subagents；"
+        "`startup_mode_selection`，一次选择模型执行模式和评审模式。"
+        "`启动交付，自动模式，多 Agent 模式` 使用逐阶段模型配置并授权结构化 review gate；"
+        "`启动交付，全速模式，多 Agent 模式` 要求主线程、阶段 Agent 和 review subagent "
+        "统一使用 full-speed profile；说 `启动交付，多 Agent 模式` 只授权评审维度，"
+        "仍必须补选模型执行模式。"
         "只有在真实 subagents 不可用时，才使用 `启动交付，允许降级评审` "
         "显式允许 role_simulation 弱证据；"
         "说 `停止交付` 或使用 `stop` 退出干预。底层命令仍保留 "
@@ -513,6 +573,23 @@ def _skill_markdown() -> str:
         "## Active Mode Hard Rules\n\n"
         "启动后必须创建或恢复 `.product-delivery/state.json`，并把它作为当前项目的权威状态。"
         "聊天总结、旧版本文档和 `progress.md` 都不能替代 gate evidence。\n\n"
+        "V1.0.19 起，启动必须同时授权 `execution_model_policy` 和 `multi_agent_policy`。"
+        "自动模式按 discovery、product_design、implementation、browser_evidence、review、closure "
+        "选择模型；连续两次失败、跨服务一致性、权限/迁移、review blocker 和 closure 必须升级到 "
+        "escalation profile。全速模式默认使用 `gpt-5.6-sol/xhigh`，也可通过用户、项目或 delivery "
+        "配置覆盖，但覆盖后所有 Agent 仍必须统一使用该 profile。用户配置位于 "
+        "`~/.codex/waygate-product-delivery/model-profiles.json`，项目配置位于 "
+        "`.product-delivery/config/model-profiles.json`，优先级为 delivery > project > user > builtin。"
+        "启动时必须将解析后的 profile 和 hash 冻结到 state；配置文件变化不得静默改变当前 delivery。"
+        "普通阶段 Agent 必须 `fork_context=false`，只接收当前任务的必要 evidence packet，"
+        "并且不得写 canonical state；canonical state 只由主协调线程写入。"
+        "主线程在 spawn 前必须调用 `begin_execution_stage()` 取得 model、reasoning_effort 和 "
+        "service_tier；spawn 返回后再次绑定 agent ID。自动模式普通阶段最多一个 worker，"
+        "review gate 可按 `multi_agent_policy` 启动 2–3 个 reviewer。全速模式下每个 reviewer "
+        "必须使用同一个 full-speed assignment；自动模式的 Skeptic/final adjudicator 必须带 "
+        "`skeptic_adjudication` risk flag 使用 escalation profile。"
+        "全速模式下当前主线程模型无法由插件热切换，必须记录匹配的 main-thread observation；"
+        "不匹配时等待用户切换或新开线程，禁止伪称全速模式已生效。\n\n"
         "active mode 下必须先使用这些 baseline skills："
         "`superpowers:using-superpowers`、`planning-with-files`、`waygate-product-delivery`。"
         "`planning-with-files` 必须执行 session catchup，并读取或创建 "
@@ -614,6 +691,7 @@ def _skill_markdown() -> str:
         "就必须继续推进下一 gate，不要用聊天总结结束当前交付主流程。\n\n"
         "`wait_for_user` 只允许用于真实用户输入点：当前 prototype 确认、"
         "combined requirements freeze + planned E2E coverage 确认、必要需求澄清、"
+        "startup execution/review mode 选择、full-speed 主线程模型确认、"
         "用户主动暂停或停止。"
         "`blocked` 必须说明 blocker；如果 blocker 是 `canonical_closure_plugin_version`，"
         "下一步是使用当前 installed packaged `product_delivery_agent.finalization` "
@@ -648,7 +726,9 @@ def _skill_markdown() -> str:
         "multi-agent review 必须记录 `review_mode`。`spawned_subagents` 是强证据；"
         "它只在 `execution_authorization` 对 `authorization_scope=current_delivery` 有效时可接受。"
         "授权只覆盖 scenario、test、test_coverage、test_implementation、ui_conformance "
-        "结构化 review gate，不授权普通实现、文件读取或串行修复自动并行。"
+        "结构化 review gate 的 2–3 Agent fan-out。普通实现、探索和证据采集如果使用阶段 Agent，"
+        "必须由独立的 `execution_model_policy` 授权，且同一时刻最多一个、`fork_context=false`、"
+        "不得写 canonical state；不能借模型模式扩大 multi-agent review 授权范围。"
         "`role_simulation` 是弱证据，"
         "只有使用 `启动交付，允许降级评审` 后才允许；"
         "`blocked_with_reason` 不能通过 handoff。\n\n"
