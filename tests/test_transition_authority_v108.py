@@ -171,6 +171,29 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
             self.assertNotIn("docs_ahead_of_executed_evidence", blockers)
             self.assertNotIn("docs_ahead_of_closure_validation", blockers)
 
+    def test_feature_slug_prefix_does_not_match_a_different_release_heading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            write_raw_state(
+                project_root,
+                {
+                    "active": True,
+                    "feature_slug": "v1.0.2",
+                    "project_type": "ui",
+                    "executed_browser_evidence": {"status": "not_started"},
+                    "closure_validation": {"status": "not_run"},
+                },
+            )
+            (project_root / "progress.md").write_text(
+                "## v1.0.22\n\nStatus: executed and closed\n",
+                encoding="utf-8",
+            )
+
+            blockers = derive_blockers(load_state(project_root), project_root)
+
+            self.assertNotIn("docs_ahead_of_executed_evidence", blockers)
+            self.assertNotIn("docs_ahead_of_closure_validation", blockers)
+
     def test_closure_validation_feature_slug_must_match_current_feature(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

@@ -2,6 +2,8 @@
 
 - review_type: test_implementation
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
+- reviewer_agent_ids: []
+- reviewer_spawn_source:
 - status: draft
 - actual_test_code_paths: []
 - execution_evidence_paths: []

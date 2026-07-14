@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.22
+
+- Removes plugin-managed automatic/full-speed model selection, model profiles, and model identity gates; 模型选择完全由用户和 Codex 宿主管理。
+- Keeps model-related legacy APIs for one release as explicit retirement errors instead of silently ignoring unsupported parameters.
+- Adds idempotent `retire_model_execution_policy()` recovery for active v1.0.19-v1.0.21 deliveries without restarting the delivery or editing state by hand.
+- Preserves delivery isolation and layered `product_baseline` / `test_coverage_plan` confirmations while removing obsolete model and legacy confirmation blockers.
+- Requires spawned multi-Agent review artifacts to record 2-3 unique `reviewer_agent_ids` and a real `reviewer_spawn_source`; model names are not review evidence.
+- Scopes docs-ahead checks to the current feature section and records new events with current timestamps rather than reusing stale state timestamps.
+- Keeps canonical closure schema `v0.11` unchanged.
+
 ## 1.0.21
 
 - Replaces the early prototype plus combined freeze flow with two layered formal confirmations: `product_baseline` and `test_coverage_plan`.

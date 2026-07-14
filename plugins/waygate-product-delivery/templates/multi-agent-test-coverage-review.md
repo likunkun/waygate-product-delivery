@@ -2,6 +2,8 @@
 
 - review_type: test_coverage
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
+- reviewer_agent_ids: []
+- reviewer_spawn_source:
 - status: draft
 - traceability_reviewed: [US, J, SC, AC, TASK, TC]
 - coverage_gaps: []

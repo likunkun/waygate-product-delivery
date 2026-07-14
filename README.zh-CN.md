@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.21-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.22-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -108,7 +108,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.21.tar.gz
+dist/waygate-product-delivery-1.0.22.tar.gz
 ```
 
 ## Codex 使用方式

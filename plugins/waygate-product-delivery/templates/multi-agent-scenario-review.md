@@ -2,6 +2,8 @@
 
 - review_type: scenario
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
+- reviewer_agent_ids: []
+- reviewer_spawn_source:
 - role_simulation_user_accepted: false
 - status: draft
 - reviewers: product intent, UI/UX scenario, negative boundary

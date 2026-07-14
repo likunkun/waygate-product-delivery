@@ -34,7 +34,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.21"
+PLUGIN_VERSION = "1.0.22"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -805,7 +805,7 @@ def _feature_scoped_claim_text(text: str, feature_slug: str) -> str:
         heading = re.match(r"^(#{1,6})\s+", line)
         if heading:
             level = len(heading.group(1))
-            if feature_slug in line:
+            if _line_contains_feature_slug(line, feature_slug):
                 active_heading_level = level
                 selected.append(line)
             elif active_heading_level is not None and level > active_heading_level:
@@ -813,9 +813,21 @@ def _feature_scoped_claim_text(text: str, feature_slug: str) -> str:
             else:
                 active_heading_level = None
             continue
-        if active_heading_level is not None or feature_slug in line:
+        if active_heading_level is not None or _line_contains_feature_slug(
+            line, feature_slug
+        ):
             selected.append(line)
     return "\n".join(selected)
+
+
+def _line_contains_feature_slug(line: str, feature_slug: str) -> bool:
+    token_boundary = r"A-Za-z0-9._-"
+    return bool(
+        re.search(
+            rf"(?<![{token_boundary}]){re.escape(feature_slug)}(?![{token_boundary}])",
+            line,
+        )
+    )
 
 
 def _contains_executed_claim(text: str) -> bool:

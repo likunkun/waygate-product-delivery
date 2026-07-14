@@ -171,6 +171,26 @@ class ActiveStateMigrationV1022Tests(unittest.TestCase):
             )
             self.assertEqual(second["updated_at"], first["updated_at"])
 
+    def test_empty_legacy_model_policy_is_removed_and_persisted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            state = classroom_active_state()
+            state["execution_model_policy"] = {}
+            state["pending_user_decisions"] = {}
+            state["blocked_until"] = ["multi_agent_scenario_review"]
+            state["blocking_gates"] = {}
+            write_raw_state(project_root, state)
+
+            ProductDeliveryWorkflow(project_root).retire_model_execution_policy()
+            persisted = json.loads(
+                (project_root / ARTIFACT_ROOT / "state.json").read_text("utf-8")
+            )
+
+            self.assertNotIn("execution_model_policy", persisted)
+            self.assertEqual(
+                persisted["retired_model_execution_policies"][0]["policy"], {}
+            )
+
     def test_legacy_model_apis_fail_with_retirement_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))

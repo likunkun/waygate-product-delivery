@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.21")
+            self.assertEqual(manifest["version"], "1.0.22")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -212,6 +212,18 @@ class PluginPackagingTests(unittest.TestCase):
             implementation_review_template = (
                 root / "templates" / "multi-agent-test-implementation-review.md"
             ).read_text("utf-8")
+            for review_template_name in (
+                "multi-agent-scenario-review.md",
+                "multi-agent-test-review.md",
+                "multi-agent-test-coverage-review.md",
+                "multi-agent-test-implementation-review.md",
+                "multi-agent-ui-conformance-review.md",
+            ):
+                review_template = (
+                    root / "templates" / review_template_name
+                ).read_text("utf-8")
+                self.assertIn("reviewer_agent_ids", review_template)
+                self.assertIn("reviewer_spawn_source", review_template)
             self.assertIn("actor_role_findings", implementation_review_template)
             self.assertIn("annotation_only_findings", implementation_review_template)
             self.assertIn("verified_action_assertions", implementation_review_template)
@@ -231,7 +243,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.21")
+            self.assertEqual(closure_template["plugin_version"], "1.0.22")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -283,7 +295,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.21.tar.gz",
+                "waygate-product-delivery-1.0.22.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

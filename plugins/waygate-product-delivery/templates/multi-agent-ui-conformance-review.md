@@ -2,6 +2,8 @@
 
 - review_type: ui_conformance
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
+- reviewer_agent_ids: []
+- reviewer_spawn_source:
 - status: draft
 - reviewed_surface_ids: []
 - reviewed_state_ids: []

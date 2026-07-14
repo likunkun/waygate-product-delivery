@@ -2191,8 +2191,9 @@ class ProductDeliveryWorkflow:
         """Archive and remove plugin-managed model execution from an active delivery."""
         state = self._require_started(allow_pending_authorization=True)
         changed = False
+        policy_present = "execution_model_policy" in state
         policy = state.pop("execution_model_policy", None)
-        if isinstance(policy, dict) and policy:
+        if policy_present:
             policy_hash = self._stable_hash(policy)
             history = state.setdefault("retired_model_execution_policies", [])
             if not any(
