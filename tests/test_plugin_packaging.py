@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.19")
+            self.assertEqual(manifest["version"], "1.0.18")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -36,8 +36,6 @@ class PluginPackagingTests(unittest.TestCase):
                 manifest["interface"]["defaultPrompt"],
                 [
                     "启动交付",
-                    "启动交付，自动模式，多 Agent 模式",
-                    "启动交付，全速模式，多 Agent 模式",
                     "启动交付，多 Agent 模式",
                     "启动交付，允许降级评审",
                     "查看状态",
@@ -60,7 +58,6 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/coverage-matrix-template.json",
                 "templates/negative-scope-guard-checklist.md",
                 "templates/startup-checklist.md",
-                "templates/model-profiles.json",
                 "templates/required-skills-checklist.md",
                 "templates/open-spec-gate.md",
                 "templates/ui-prototype-gate.md",
@@ -87,7 +84,6 @@ class PluginPackagingTests(unittest.TestCase):
                 "runtime/product_delivery_agent/continuation.py",
                 "runtime/product_delivery_agent/transition_journal.py",
                 "runtime/product_delivery_agent/evidence_artifacts.py",
-                "runtime/product_delivery_agent/model_profiles.py",
                 "runtime/product_delivery_agent/ui_prototype.py",
                 "policies/lifecycle.json",
                 "policies/upgrade-retention.md",
@@ -100,8 +96,6 @@ class PluginPackagingTests(unittest.TestCase):
             ).read_text("utf-8")
             self.assertIn("启动交付", skill_markdown)
             self.assertIn("启动交付，多 Agent 模式", skill_markdown)
-            self.assertIn("启动交付，自动模式，多 Agent 模式", skill_markdown)
-            self.assertIn("启动交付，全速模式，多 Agent 模式", skill_markdown)
             self.assertIn("停止交付", skill_markdown)
             self.assertIn("`start` / `stop`", skill_markdown)
             self.assertIn("planning-with-files", skill_markdown)
@@ -126,10 +120,7 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("review_mode", skill_markdown)
             self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
             self.assertIn("启动交付，允许降级评审", skill_markdown)
-            self.assertIn("startup_mode_selection", skill_markdown)
-            self.assertIn("execution_model_policy", skill_markdown)
-            self.assertIn("fork_context=false", skill_markdown)
-            self.assertIn("model-profiles.json", skill_markdown)
+            self.assertIn("authorization_pending", skill_markdown)
             self.assertIn("current_delivery", skill_markdown)
             self.assertIn("结构化 review gate", skill_markdown)
             self.assertIn("用户面对的确认只保留两次", skill_markdown)
@@ -169,20 +160,6 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("execution_segment_id", skill_markdown)
             self.assertIn("role-accurate Browser E2E", skill_markdown)
             self.assertIn("verified_action_assertions", skill_markdown)
-            self.assertIn("recover_stale_launch_package", skill_markdown)
-            self.assertIn("implementation_package_superseded", skill_markdown)
-            model_profiles = json.loads(
-                (root / "templates" / "model-profiles.json").read_text("utf-8")
-            )
-            self.assertEqual(model_profiles["schema_version"], "v1")
-            self.assertEqual(
-                model_profiles["profiles"]["full_speed"]["model"],
-                "gpt-5.6-sol",
-            )
-            self.assertEqual(
-                model_profiles["profiles"]["automatic"]["stages"]["implementation"]["model"],
-                "gpt-5.6-terra",
-            )
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
@@ -230,7 +207,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.19")
+            self.assertEqual(closure_template["plugin_version"], "1.0.18")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -282,7 +259,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.19.tar.gz",
+                "waygate-product-delivery-1.0.18.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

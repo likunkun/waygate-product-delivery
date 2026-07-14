@@ -235,8 +235,7 @@ class UIBaselineContinuityV1014Tests(unittest.TestCase):
             prototype.write_text("<html>revision 003</html>", encoding="utf-8")
             write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                feature_slug="v1.4.4-standard-course-teachable-confirmation", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(feature_slug="v1.4.4-standard-course-teachable-confirmation", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_multi_agent_review("scenario", scenario_review_payload())
 

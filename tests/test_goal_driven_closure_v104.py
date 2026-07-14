@@ -344,8 +344,7 @@ def workflow_ready_for_handoff(project_root):
     prototype_path = "docs/prototypes/v104-prototype.html"
     write_prototype(project_root, prototype_path, "<html>revision one</html>")
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(execution_mode="automatic",
-                feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -383,8 +382,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             prototype_path = "docs/prototypes/v104-prototype.html"
             write_prototype(project_root, prototype_path, "<html>revision one</html>")
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             state = workflow.record_ui_prototype_review(
@@ -426,8 +424,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             prototype_path = "docs/prototypes/v104-prototype.html"
             write_prototype(project_root, prototype_path, "<html>revision one</html>")
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             state = workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)

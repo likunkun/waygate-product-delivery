@@ -290,8 +290,7 @@ def workflow_ready_for_launch(project_root):
     write_prototype_screenshot(project_root)
 
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(execution_mode="automatic",
-                feature_slug="v1.0.6-canonical-launch", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(feature_slug="v1.0.6-canonical-launch", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", review_payload("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -443,7 +442,6 @@ class CanonicalLaunchV106Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
             workflow.start(
-                execution_mode="automatic",
                 feature_slug="v1.0.6-canonical-launch",
                 allow_review_degradation=True,
             )

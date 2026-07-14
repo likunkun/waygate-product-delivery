@@ -1,21 +1,8 @@
 # Changelog
 
-## 1.0.19
-
-- Fixes active v1.0.18 state migration so an authorized execution policy clears only the stale `execution_mode` pending decision at the next stage boundary.
-- Adds startup-time `automatic` and `full_speed` execution model modes alongside the independent multi-Agent review authorization.
-- Adds the explicit startup prompts `启动交付，自动模式，多 Agent 模式` and `启动交付，全速模式，多 Agent 模式`.
-- Adds customizable user, project, and per-delivery model profiles with deterministic precedence, validation, and frozen profile hashes in `execution_model_policy`.
-- Uses stage-specific automatic profiles with escalation after repeated failures or high-risk blockers; full-speed mode applies one uniform model profile to the main thread and every subagent.
-- Requires `fork_context=false` for bounded stage agents and keeps canonical state ownership in the main coordinator.
-- Adds next-stage execution mode switching and explicit main-thread model observation for full-speed mode.
-
 ## 1.0.18
 
-- Adds canonical `recover_stale_launch_package()` recovery when a fresh launch authorization no longer matches the active delivery goal.
-- Archives the previous handoff, delivery goal, implementation state, prompt, and task completion binding before replacement.
-- Records a hash-linked `implementation_package_superseded` transition instead of hand-editing state or deleting the stale blocker.
-- Reuses task completion evidence only when the task ID and `planned_task_hash` are unchanged; revised tasks return to the active queue.
+- Added canonical launch-package supersession recovery for active deliveries.
 
 ## 1.0.17
 

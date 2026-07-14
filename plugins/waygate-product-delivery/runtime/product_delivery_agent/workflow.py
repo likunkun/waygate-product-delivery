@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 
@@ -73,13 +72,6 @@ from product_delivery_agent.non_ui_behavior import (
     render_non_ui_behavior_contract,
     validate_non_ui_behavior_contract,
 )
-from product_delivery_agent.model_profiles import (
-    ModelProfileError,
-    resolve_model_profiles,
-    save_model_profiles as persist_model_profiles,
-    select_model_for_stage,
-    stable_profile_hash,
-)
 from product_delivery_agent.review_gates import (
     ReviewGateError,
     render_multi_agent_review,
@@ -115,15 +107,9 @@ class ProductDeliveryWorkflow:
         project_root: str | Path,
         *,
         fallback_state: dict[str, Any] | None = None,
-        codex_home: str | Path | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.fallback_state = fallback_state
-        self.codex_home = Path(
-            codex_home
-            or os.environ.get("CODEX_HOME")
-            or Path.home() / ".codex"
-        ).expanduser()
 
     def start(
         self,
@@ -131,8 +117,6 @@ class ProductDeliveryWorkflow:
         feature_slug: str | None = None,
         allow_review_degradation: bool = False,
         multi_agent_mode: str | None = None,
-        execution_mode: str | None = None,
-        model_profile_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if allow_review_degradation:
             if multi_agent_mode not in {None, "role_simulation_allowed"}:
@@ -146,17 +130,6 @@ class ProductDeliveryWorkflow:
             "role_simulation_allowed",
         }:
             raise WorkflowError("unsupported multi_agent_mode")
-        if execution_mode not in {None, "automatic", "full_speed"}:
-            raise WorkflowError("unsupported execution_mode")
-
-        try:
-            resolved_profiles = resolve_model_profiles(
-                self.project_root,
-                codex_home=self.codex_home,
-                delivery_overrides=model_profile_overrides,
-            )
-        except ModelProfileError as exc:
-            raise WorkflowError(str(exc)) from exc
 
         initialize_workspace(self.project_root)
         state = new_delivery_state()
@@ -199,13 +172,6 @@ class ProductDeliveryWorkflow:
             multi_agent_mode,
             authorization_source="startup_command" if multi_agent_mode else None,
         )
-        state["execution_model_policy"] = self._execution_model_policy(
-            execution_mode,
-            resolved_profiles,
-            authorization_source=(
-                "startup_command" if execution_mode is not None else None
-            ),
-        )
         state["ui_prototype"] = {
             "generated": False,
             "reviewed_by_agent": False,
@@ -243,17 +209,7 @@ class ProductDeliveryWorkflow:
                 "status": "pending",
                 "reason": "select multi-Agent review execution mode",
             }
-        if execution_mode is None:
-            state["pending_user_decisions"]["execution_mode"] = {
-                "status": "pending",
-                "reason": "select automatic or full-speed model execution mode",
-            }
-        if execution_mode == "full_speed":
-            state["pending_user_decisions"]["main_thread_model"] = {
-                "status": "pending",
-                "reason": "confirm the main thread matches the full-speed model profile",
-            }
-        self._refresh_startup_gate(state)
+            state["next_gate"] = "multi_agent_mode_selection"
         state["delivery_goal"] = None
         state["required_skill_gates"] = {
             "active_mode_startup": required_skills_for_stage("active_mode_startup"),
@@ -267,131 +223,6 @@ class ProductDeliveryWorkflow:
         state["required_artifacts"] = []
         if feature_slug:
             state["required_artifacts"].append(f"docs/open-spec/{feature_slug}/")
-        return write_state(self.project_root, state)
-
-    def configure_startup_modes(
-        self,
-        execution_mode: str,
-        multi_agent_mode: str,
-        user_message: str,
-        model_profile_overrides: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Atomically authorize model execution and review modes for this delivery."""
-        state = self._require_started(allow_pending_authorization=True)
-        if execution_mode not in {"automatic", "full_speed"}:
-            raise WorkflowError("unsupported execution_mode")
-        if multi_agent_mode not in {
-            "spawned_subagents_authorized",
-            "role_simulation_allowed",
-        }:
-            raise WorkflowError("unsupported multi_agent_mode")
-        expected_message = {
-            ("automatic", "spawned_subagents_authorized"): (
-                "启动交付，自动模式，多 Agent 模式"
-            ),
-            ("full_speed", "spawned_subagents_authorized"): (
-                "启动交付，全速模式，多 Agent 模式"
-            ),
-            ("automatic", "role_simulation_allowed"): (
-                "启动交付，自动模式，允许降级评审"
-            ),
-            ("full_speed", "role_simulation_allowed"): (
-                "启动交付，全速模式，允许降级评审"
-            ),
-        }[(execution_mode, multi_agent_mode)]
-        if not isinstance(user_message, str) or user_message.strip() != expected_message:
-            raise WorkflowError("user_message does not match startup modes")
-        if (state.get("multi_agent_policy") or {}).get(
-            "execution_authorization"
-        ) not in {"pending", "legacy_unverified", "invalidated"}:
-            raise WorkflowError("multi-Agent mode is already authorized")
-        if (state.get("execution_model_policy") or {}).get(
-            "authorization_status"
-        ) not in {"pending", "legacy_unverified", "invalidated"}:
-            raise WorkflowError("execution mode is already authorized")
-
-        self._invalidate_for_startup_mode_change(state)
-        try:
-            resolved_profiles = resolve_model_profiles(
-                self.project_root,
-                codex_home=self.codex_home,
-                delivery_overrides=model_profile_overrides,
-            )
-        except ModelProfileError as exc:
-            raise WorkflowError(str(exc)) from exc
-        state["multi_agent_policy"] = self._multi_agent_policy(
-            multi_agent_mode,
-            authorization_source="user_mode_selection",
-        )
-        state["multi_agent_policy"]["authorization_user_message"] = (
-            user_message.strip()
-        )
-        state["execution_model_policy"] = self._execution_model_policy(
-            execution_mode,
-            resolved_profiles,
-            authorization_source="user_mode_selection",
-        )
-        state["execution_model_policy"]["authorization_user_message"] = (
-            user_message.strip()
-        )
-        decisions = state.setdefault("pending_user_decisions", {})
-        decisions.pop("multi_agent_mode", None)
-        decisions.pop("execution_mode", None)
-        decisions.pop("main_thread_model", None)
-        if execution_mode == "full_speed":
-            decisions["main_thread_model"] = {
-                "status": "pending",
-                "reason": "confirm the main thread matches the full-speed model profile",
-            }
-        self._refresh_startup_gate(state)
-        return write_state(self.project_root, state)
-
-    def authorize_execution_mode(
-        self,
-        mode: str,
-        user_message: str,
-        model_profile_overrides: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Authorize only the model execution dimension after a partial startup."""
-        state = self._require_started(allow_pending_authorization=True)
-        if mode not in {"automatic", "full_speed"}:
-            raise WorkflowError("unsupported execution_mode")
-        expected_message = {
-            "automatic": "启动交付，自动模式",
-            "full_speed": "启动交付，全速模式",
-        }[mode]
-        if not isinstance(user_message, str) or user_message.strip() != expected_message:
-            raise WorkflowError("user_message does not match execution_mode")
-        if (state.get("execution_model_policy") or {}).get(
-            "authorization_status"
-        ) not in {"pending", "legacy_unverified", "invalidated"}:
-            raise WorkflowError("execution mode is already authorized")
-        self._invalidate_for_startup_mode_change(state)
-        try:
-            resolved_profiles = resolve_model_profiles(
-                self.project_root,
-                codex_home=self.codex_home,
-                delivery_overrides=model_profile_overrides,
-            )
-        except ModelProfileError as exc:
-            raise WorkflowError(str(exc)) from exc
-        state["execution_model_policy"] = self._execution_model_policy(
-            mode,
-            resolved_profiles,
-            authorization_source="user_mode_selection",
-        )
-        state["execution_model_policy"]["authorization_user_message"] = (
-            user_message.strip()
-        )
-        decisions = state.setdefault("pending_user_decisions", {})
-        decisions.pop("execution_mode", None)
-        decisions.pop("main_thread_model", None)
-        if mode == "full_speed":
-            decisions["main_thread_model"] = {
-                "status": "pending",
-                "reason": "confirm the main thread matches the full-speed model profile",
-            }
-        self._refresh_startup_gate(state)
         return write_state(self.project_root, state)
 
     def authorize_multi_agent_mode(
@@ -446,216 +277,9 @@ class ProductDeliveryWorkflow:
             user_message.strip()
         )
         state.setdefault("pending_user_decisions", {}).pop("multi_agent_mode", None)
-        self._refresh_startup_gate(state)
+        if state.get("next_gate") == "multi_agent_mode_selection":
+            state["next_gate"] = "product_blueprint"
         return write_state(self.project_root, state)
-
-    def record_main_thread_model_observation(
-        self,
-        *,
-        model: str,
-        reasoning_effort: str,
-        source: str,
-    ) -> dict[str, Any]:
-        """Record whether the host main thread satisfies a full-speed profile."""
-        state = self._require_started(allow_pending_authorization=True)
-        if not all(
-            isinstance(value, str) and value.strip()
-            for value in (model, reasoning_effort, source)
-        ):
-            raise WorkflowError("model, reasoning_effort, and source are required")
-        policy = state.get("execution_model_policy") or {}
-        pending_switch = policy.get("pending_switch") or {}
-        target = pending_switch if pending_switch.get("mode") == "full_speed" else policy
-        if target.get("mode") != "full_speed":
-            raise WorkflowError(
-                "main thread model observation is only required for full-speed mode"
-            )
-        requirement = target.get("main_thread_requirement") or {}
-        status = (
-            "matched"
-            if model == requirement.get("model")
-            and reasoning_effort == requirement.get("reasoning_effort")
-            else "mismatch"
-        )
-        target["main_thread_observation"] = {
-            "status": status,
-            "model": model,
-            "reasoning_effort": reasoning_effort,
-            "source": source,
-            "observed_at": self._timestamp_from_state(state),
-        }
-        decisions = state.setdefault("pending_user_decisions", {})
-        if status == "matched" and target is policy:
-            decisions.pop("main_thread_model", None)
-        else:
-            decisions["main_thread_model"] = {
-                "status": "pending",
-                "reason": (
-                    "confirm the pending full-speed profile before the next stage"
-                    if target is pending_switch
-                    else "switch or restart the main thread with the full-speed model profile"
-                ),
-            }
-        self._refresh_startup_gate(state)
-        return write_state(self.project_root, state)
-
-    def save_model_profiles(
-        self,
-        *,
-        scope: str,
-        profiles: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist an explicit user or project model profile layer."""
-        try:
-            return persist_model_profiles(
-                self.project_root,
-                codex_home=self.codex_home,
-                scope=scope,
-                profiles=profiles,
-            )
-        except ModelProfileError as exc:
-            raise WorkflowError(str(exc)) from exc
-
-    def request_execution_mode_switch(
-        self,
-        mode: str,
-        user_message: str,
-        model_profile_overrides: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Freeze a new model policy for activation at the next stage boundary."""
-        state = self._require_started(allow_pending_authorization=True)
-        if (state.get("multi_agent_policy") or {}).get(
-            "execution_authorization"
-        ) not in {"authorized", "degradation_authorized"}:
-            raise WorkflowError("multi-Agent mode authorization is required")
-        if mode not in {"automatic", "full_speed"}:
-            raise WorkflowError("unsupported execution_mode")
-        expected = {
-            "automatic": "切换交付执行模式：自动模式",
-            "full_speed": "切换交付执行模式：全速模式",
-        }[mode]
-        if not isinstance(user_message, str) or user_message.strip() != expected:
-            raise WorkflowError("user_message does not match execution mode switch")
-        try:
-            resolved = resolve_model_profiles(
-                self.project_root,
-                codex_home=self.codex_home,
-                delivery_overrides=model_profile_overrides,
-            )
-        except ModelProfileError as exc:
-            raise WorkflowError(str(exc)) from exc
-        pending = self._execution_model_policy(
-            mode,
-            resolved,
-            authorization_source="user_mode_switch",
-        )
-        pending["requested_at"] = self._timestamp_from_state(state)
-        pending["authorization_user_message"] = user_message.strip()
-        state.setdefault("execution_model_policy", {})["pending_switch"] = pending
-        if mode == "full_speed":
-            state.setdefault("pending_user_decisions", {})["main_thread_model"] = {
-                "status": "pending",
-                "reason": "confirm the pending full-speed profile before the next stage",
-            }
-        state = append_transition(
-            state,
-            "execution_mode_switch_requested",
-            feature_slug=state.get("feature_slug"),
-            runtime_version=PLUGIN_VERSION,
-            input_artifact_hashes={
-                "current_model_profile": str(
-                    (state.get("execution_model_policy") or {}).get("profile_hash")
-                    or "missing"
-                )
-            },
-            metadata={
-                "requested_mode": mode,
-                "requested_profile_hash": pending["profile_hash"],
-            },
-        )
-        return write_state(self.project_root, state)
-
-    def begin_execution_stage(
-        self,
-        stage: str,
-        *,
-        agent_id: str | None = None,
-        consecutive_failures: int = 0,
-        risk_flags: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Apply a pending switch and bind the model assignment for one stage."""
-        state = self._require_started(allow_pending_authorization=True)
-        if (state.get("multi_agent_policy") or {}).get(
-            "execution_authorization"
-        ) not in {"authorized", "degradation_authorized"}:
-            raise WorkflowError("multi-Agent mode authorization is required")
-        policy = state.get("execution_model_policy") or {}
-        pending = policy.get("pending_switch")
-        if pending:
-            if pending.get("mode") == "full_speed" and (
-                (pending.get("main_thread_observation") or {}).get("status")
-                != "matched"
-            ):
-                raise WorkflowError(
-                    "pending full-speed mode requires a matching main thread model observation"
-                )
-            previous_hash = str(policy.get("profile_hash") or "missing")
-            next_policy = dict(pending)
-            next_policy.pop("requested_at", None)
-            next_policy.pop("pending_switch", None)
-            state["execution_model_policy"] = next_policy
-            policy = next_policy
-            state.setdefault("pending_user_decisions", {}).pop(
-                "main_thread_model", None
-            )
-            state = append_transition(
-                state,
-                "execution_mode_switched",
-                feature_slug=state.get("feature_slug"),
-                runtime_version=PLUGIN_VERSION,
-                input_artifact_hashes={
-                    "previous_model_profile": previous_hash,
-                    "replacement_model_profile": policy["profile_hash"],
-                },
-                metadata={"mode": policy["mode"], "effective_stage": stage},
-            )
-        if policy.get("authorization_status") != "authorized":
-            raise WorkflowError("execution mode authorization is required")
-        state.setdefault("pending_user_decisions", {}).pop("execution_mode", None)
-        if policy.get("mode") == "full_speed" and (
-            (policy.get("main_thread_observation") or {}).get("status") != "matched"
-        ):
-            raise WorkflowError(
-                "full-speed mode requires a matching main thread model observation"
-            )
-        try:
-            assignment = select_model_for_stage(
-                policy["selected_profile"],
-                stage,
-                full_speed=policy.get("mode") == "full_speed",
-                consecutive_failures=consecutive_failures,
-                risk_flags=risk_flags,
-            )
-        except ModelProfileError as exc:
-            raise WorkflowError(str(exc)) from exc
-        policy["current_stage_assignment"] = {
-            **assignment,
-            "agent_id": agent_id,
-            "assigned_at": self._timestamp_from_state(state),
-            "state_owner": "main_coordinator",
-        }
-        assignments = policy.setdefault("stage_agent_assignments", [])
-        if agent_id and not any(
-            item.get("agent_id") == agent_id and item.get("stage") == stage
-            for item in assignments
-        ):
-            assignments.append(dict(policy["current_stage_assignment"]))
-        state["execution_model_policy"] = policy
-        next_state = write_state(self.project_root, state)
-        return {
-            "state": next_state,
-            "assignment": dict(policy["current_stage_assignment"]),
-        }
 
     def record_scenario_matrix(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         state = self._require_started()
@@ -704,15 +328,6 @@ class ProductDeliveryWorkflow:
         review: dict[str, Any],
     ) -> dict[str, Any]:
         state = self._require_started(allow_pending_authorization=True)
-        model_policy = state.get("execution_model_policy") or {}
-        pending_decisions = state.get("pending_user_decisions") or {}
-        if model_policy.get("authorization_status") != "authorized" or (
-            "execution_mode" in pending_decisions
-            or "main_thread_model" in pending_decisions
-        ):
-            raise ReviewGateError(
-                "execution model mode authorization is required before review"
-            )
         ui_change_type = None
         if review_type == "scenario" and state.get("project_type") == "ui":
             ui_change_type = (
@@ -1050,16 +665,7 @@ class ProductDeliveryWorkflow:
         policy = state.setdefault("multi_agent_policy", {})
         policy["execution_authorization"] = "invalidated"
         policy["authorized_review_types"] = []
-        model_policy = state.setdefault("execution_model_policy", {})
-        model_policy["authorization_status"] = "invalidated"
-        model_policy["current_stage_assignment"] = None
-        model_policy["stage_agent_assignments"] = []
-        model_policy["pending_switch"] = None
         state.setdefault("pending_user_decisions", {}).pop("multi_agent_mode", None)
-        state.setdefault("pending_user_decisions", {}).pop("execution_mode", None)
-        state.setdefault("pending_user_decisions", {}).pop(
-            "main_thread_model", None
-        )
         return write_state(self.project_root, state)
 
     @staticmethod
@@ -1094,94 +700,6 @@ class ProductDeliveryWorkflow:
             "authorization_source": None,
             "authorized_review_types": [],
         }
-
-    @staticmethod
-    def _execution_model_policy(
-        mode: str | None,
-        resolved_profiles: dict[str, Any],
-        *,
-        authorization_source: str | None,
-    ) -> dict[str, Any]:
-        if mode is None:
-            return {
-                "mode": "authorization_pending",
-                "authorization_status": "pending",
-                "authorization_scope": "current_delivery",
-                "authorization_source": None,
-                "resolved_profiles": resolved_profiles["profiles"],
-                "resolved_profiles_hash": resolved_profiles["profile_hash"],
-                "profile_sources": list(resolved_profiles["sources"]),
-                "selected_profile": None,
-                "profile_hash": None,
-                "main_thread_requirement": None,
-                "main_thread_observation": {"status": "pending"},
-                "current_stage_assignment": None,
-                "stage_agent_assignments": [],
-                "pending_switch": None,
-            }
-        selected = dict(resolved_profiles["profiles"][mode])
-        if mode == "full_speed":
-            main_requirement = {
-                "model": selected["model"],
-                "reasoning_effort": selected["reasoning_effort"],
-                "service_tier": selected.get("service_tier"),
-            }
-            observation = {"status": "pending"}
-        else:
-            coordinator = dict(selected["coordinator"])
-            main_requirement = coordinator
-            observation = {"status": "not_required"}
-        return {
-            "mode": mode,
-            "authorization_status": "authorized",
-            "authorization_scope": "current_delivery",
-            "authorization_source": authorization_source,
-            "resolved_profiles": resolved_profiles["profiles"],
-            "resolved_profiles_hash": resolved_profiles["profile_hash"],
-            "profile_sources": list(resolved_profiles["sources"]),
-            "selected_profile": selected,
-            "profile_hash": stable_profile_hash(selected),
-            "main_thread_requirement": main_requirement,
-            "main_thread_observation": observation,
-            "current_stage_assignment": None,
-            "stage_agent_assignments": [],
-            "pending_switch": None,
-        }
-
-    def _invalidate_for_startup_mode_change(self, state: dict[str, Any]) -> None:
-        self._mark_reviews_stale(
-            state,
-            tuple(AUTHORIZED_REVIEW_TYPES),
-            reason="startup_modes_authorized",
-        )
-        self._invalidate_requirements_e2e_confirmation(
-            state,
-            reason="startup_modes_authorized",
-            invalidate_open_spec=True,
-            invalidate_planned_e2e=True,
-        )
-        self._invalidate_launch_authorization(
-            state,
-            reason="startup_modes_authorized",
-        )
-
-    @staticmethod
-    def _refresh_startup_gate(state: dict[str, Any]) -> None:
-        decisions = state.setdefault("pending_user_decisions", {})
-        startup_decisions = {
-            "multi_agent_mode",
-            "execution_mode",
-            "main_thread_model",
-        }.intersection(decisions)
-        if startup_decisions:
-            state["next_gate"] = "startup_mode_selection"
-        elif state.get("next_gate") in {
-            None,
-            "startup_mode_selection",
-            "multi_agent_mode_selection",
-            "execution_mode_selection",
-        }:
-            state["next_gate"] = "product_blueprint"
 
     def select_project_type(self, project_type: str) -> dict[str, Any]:
         if project_type not in {"ui", "non_ui"}:
@@ -2421,18 +1939,6 @@ class ProductDeliveryWorkflow:
         }:
             raise WorkflowError(
                 "multi-Agent mode authorization is required before workflow progress"
-            )
-        model_authorization = (state.get("execution_model_policy") or {}).get(
-            "authorization_status"
-        )
-        pending_decisions = state.get("pending_user_decisions") or {}
-        if not allow_pending_authorization and (
-            model_authorization in {"pending", "legacy_unverified", "invalidated"}
-            or "execution_mode" in pending_decisions
-            or "main_thread_model" in pending_decisions
-        ):
-            raise WorkflowError(
-                "execution model mode authorization is required before workflow progress"
             )
         return state
 

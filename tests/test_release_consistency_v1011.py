@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.19"
+EXPECTED_VERSION = "1.0.18"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
@@ -38,19 +38,15 @@ class ReleaseConsistencyV1011Tests(unittest.TestCase):
     def test_readmes_reference_current_release_artifacts(self):
         for relative_path in ("README.md", "README.zh-CN.md"):
             text = (REPO_ROOT / relative_path).read_text("utf-8")
-            self.assertIn("version-1.0.19", text)
+            self.assertIn("version-1.0.18", text)
             self.assertIn(
-                "dist/waygate-product-delivery-1.0.19.tar.gz",
+                "dist/waygate-product-delivery-1.0.18.tar.gz",
                 text,
             )
 
     def test_changelog_records_simplified_post_1_0_10_roadmap(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text("utf-8")
-        self.assertIn("## 1.0.19", changelog)
-        self.assertIn("execution_model_policy", changelog)
-        self.assertIn("启动交付，全速模式，多 Agent 模式", changelog)
-        self.assertIn("recover_stale_launch_package", changelog)
-        self.assertIn("implementation_package_superseded", changelog)
+        self.assertIn("## 1.0.18", changelog)
         self.assertIn("启动交付，多 Agent 模式", changelog)
         self.assertIn("authorization_pending", changelog)
         self.assertIn("prototype_contract", changelog)

@@ -100,8 +100,7 @@ class SkillGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
 
             status = workflow.record_skill_use(
                 "product_blueprint",
@@ -118,8 +117,7 @@ class SkillGateTests(unittest.TestCase):
     def test_workflow_blocks_failed_skill_gate_record(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(execution_mode="automatic",
-                multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
 
             with self.assertRaises(SkillGateError):
                 workflow.record_skill_use("ui_prototype_confirmation", [])

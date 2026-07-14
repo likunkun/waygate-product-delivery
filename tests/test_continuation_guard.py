@@ -62,7 +62,7 @@ class ContinuationGuardTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "wait_for_user")
         self.assertTrue(result["can_stop"])
-        self.assertEqual(result["next_action"], "startup_mode_selection")
+        self.assertEqual(result["next_action"], "multi_agent_mode_selection")
 
     def test_invalidated_multi_agent_authorization_waits_for_user_when_active(self):
         result = derive_continuation_status(
@@ -72,7 +72,7 @@ class ContinuationGuardTests(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "wait_for_user")
-        self.assertEqual(result["next_action"], "startup_mode_selection")
+        self.assertEqual(result["next_action"], "multi_agent_mode_selection")
         self.assertIn("pending_user_decision:multi_agent_mode", result["blockers"])
 
     def test_active_next_gate_without_user_wait_must_continue(self):

@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.19-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-256%20passing-15803d)](#验证)
+[![Version](https://img.shields.io/badge/version-1.0.18-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-187%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
 
@@ -58,19 +58,17 @@ bash scripts/install_waygate_product_delivery.sh
 启动交付
 ```
 
-普通启动会一次询问模型执行模式和评审模式。推荐的效果/经济平衡配置是：
+普通启动会立即询问评审执行模式。要为当前 delivery 显式授权在结构化评审门禁自动启动 subagents，使用：
 
 ```text
-启动交付，自动模式，多 Agent 模式
+启动交付，多 Agent 模式
 ```
 
-如果希望主线程和所有 subagent 全程统一使用高配模型，使用：
+如果 subagents 不可用，并且你明确接受较弱证据，使用：
 
 ```text
-启动交付，全速模式，多 Agent 模式
+启动交付，允许降级评审
 ```
-
-两种模式都支持自定义。用户默认配置位于 `~/.codex/waygate-product-delivery/model-profiles.json`，项目覆盖位于 `.product-delivery/config/model-profiles.json`，也可以通过 runtime API 为单次 delivery 临时覆盖。优先级是 delivery、project、user、内置默认值。
 
 ## 安装
 
@@ -110,17 +108,15 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.19.tar.gz
+dist/waygate-product-delivery-1.0.18.tar.gz
 ```
 
 ## Codex 使用方式
 
 | 启动语 | 作用 |
 | --- | --- |
-| `启动交付` | 开启 Product Delivery，并等待模型执行模式和评审模式选择。 |
-| `启动交付，自动模式，多 Agent 模式` | 按阶段使用不同模型，并授权结构化评审 subagents。 |
-| `启动交付，全速模式，多 Agent 模式` | 主线程和所有 subagent 统一使用 full-speed profile。 |
-| `启动交付，多 Agent 模式` | 只授权评审模式，模型执行模式仍等待选择。 |
+| `启动交付` | 开启 Product Delivery，并立即等待用户选择评审执行模式。 |
+| `启动交付，多 Agent 模式` | 开启 Product Delivery，并授权当前 delivery 在结构化评审门禁自动启动 2–3 个 subagents。 |
 | `启动交付，允许降级评审` | 开启 Product Delivery，并在真实 subagents 不可用时显式允许 role-simulation 弱证据评审。 |
 | `查看状态` | 查看当前阶段、阻塞项和下一门禁。 |
 | `验证闭包` | 对当前 artifacts 执行正式闭包验证。 |

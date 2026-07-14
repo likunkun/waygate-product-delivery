@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.19-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-256%20passing-15803d)](#verify)
+[![Version](https://img.shields.io/badge/version-1.0.18-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-219%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
@@ -59,19 +59,17 @@ Start a new Codex thread after installation, then activate the workflow inside t
 启动交付
 ```
 
-Plain startup asks for both the model execution mode and review mode. The recommended balanced preset is:
+Plain startup immediately asks which review execution mode to use. To explicitly authorize automatic subagent startup at structured review gates for this delivery, start with:
 
 ```text
-启动交付，自动模式，多 Agent 模式
+启动交付，多 Agent 模式
 ```
 
-To use one uniform high-capability profile for the main thread and every subagent, start with:
+If subagents are unavailable and you explicitly accept weaker evidence, start with:
 
 ```text
-启动交付，全速模式，多 Agent 模式
+启动交付，允许降级评审
 ```
-
-Automatic and full-speed profiles can be customized globally at `~/.codex/waygate-product-delivery/model-profiles.json`, per project at `.product-delivery/config/model-profiles.json`, or for one delivery through the runtime API. Precedence is delivery, project, user, then built-in defaults.
 
 ## Install
 
@@ -111,17 +109,15 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.19.tar.gz
+dist/waygate-product-delivery-1.0.18.tar.gz
 ```
 
 ## Use In Codex
 
 | Prompt | Meaning |
 | --- | --- |
-| `启动交付` | Activate Product Delivery and wait for execution-mode and review-mode selection. |
-| `启动交付，自动模式，多 Agent 模式` | Use stage-specific model profiles and authorize spawned review agents. |
-| `启动交付，全速模式，多 Agent 模式` | Use one uniform full-speed profile for the main thread and all subagents. |
-| `启动交付，多 Agent 模式` | Authorize review agents only; model execution mode remains pending. |
+| `启动交付` | Activate Product Delivery and immediately wait for review-mode selection. |
+| `启动交付，多 Agent 模式` | Activate Product Delivery and authorize 2–3 spawned subagents at structured review gates for the current delivery. |
 | `启动交付，允许降级评审` | Activate Product Delivery and explicitly allow role-simulation review only when spawned subagents are unavailable. |
 | `查看状态` | Show the current Product Delivery stage, blockers, and next gate. |
 | `验证闭包` | Run formal closure validation against current artifacts. |
@@ -223,7 +219,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 Current baseline:
 
 ```text
-256 unit tests passing
+219 unit tests passing
 Plugin validation passed
 Packaged validator runs without source PYTHONPATH
 ```

@@ -58,7 +58,7 @@ class ReviewModeV105Tests(unittest.TestCase):
     def test_workflow_rejects_role_simulation_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(execution_mode="automatic")
+            workflow.start()
 
             with self.assertRaises(ReviewGateError) as caught:
                 workflow.record_multi_agent_review(
@@ -74,7 +74,7 @@ class ReviewModeV105Tests(unittest.TestCase):
     def test_pending_workflow_rejects_spawned_subagent_review(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(execution_mode="automatic")
+            workflow.start()
 
             with self.assertRaises(ReviewGateError) as caught:
                 workflow.record_multi_agent_review("scenario", review_payload())
@@ -84,8 +84,7 @@ class ReviewModeV105Tests(unittest.TestCase):
     def test_authorized_workflow_accepts_spawned_subagent_review(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(execution_mode="automatic",
-                multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
 
             state = workflow.record_multi_agent_review("scenario", review_payload())
 
@@ -97,8 +96,7 @@ class ReviewModeV105Tests(unittest.TestCase):
     def test_authorized_workflow_rejects_role_simulation(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(execution_mode="automatic",
-                multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
 
             with self.assertRaises(ReviewGateError) as caught:
                 workflow.record_multi_agent_review(
@@ -115,8 +113,7 @@ class ReviewModeV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
             state_path = project_root / ".product-delivery" / "state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             state["multi_agent_policy"]["authorization_scope"] = "previous_delivery"
@@ -131,8 +128,7 @@ class ReviewModeV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                allow_review_degradation=True)
+            workflow.start(allow_review_degradation=True)
             state_path = project_root / ".product-delivery" / "state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             state["multi_agent_policy"]["execution_authorization"] = "legacy_unverified"
@@ -151,8 +147,7 @@ class ReviewModeV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
             workflow.record_multi_agent_review("scenario", review_payload())
             state_path = project_root / ".product-delivery" / "state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -181,8 +176,7 @@ class ReviewModeV105Tests(unittest.TestCase):
     def test_workflow_accepts_role_simulation_when_degradation_is_enabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(execution_mode="automatic",
-                allow_review_degradation=True)
+            workflow.start(allow_review_degradation=True)
 
             state = workflow.record_multi_agent_review(
                 "scenario",

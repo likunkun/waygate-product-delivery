@@ -336,8 +336,7 @@ def workflow_with_open_spec_and_scenario(project_root):
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
     write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(execution_mode="automatic",
-                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.record_multi_agent_review("scenario", review("scenario"))
     workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
@@ -413,8 +412,7 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(execution_mode="automatic",
-                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
             workflow.record_multi_agent_review("scenario", review("scenario"))
 
@@ -686,8 +684,7 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            state = workflow.start(execution_mode="automatic",
-                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+            state = workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
             state["project_type"] = "web_system"
             write_state(project_root, state)
 

@@ -14,14 +14,12 @@
     ],
     "category": "Productivity",
     "defaultPrompt": [
-      "\u542f\u52a8\u4ea4\u4ed8",
-      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u81ea\u52a8\u6a21\u5f0f\uff0c\u591a Agent \u6a21\u5f0f",
-      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u5168\u901f\u6a21\u5f0f\uff0c\u591a Agent \u6a21\u5f0f",
-      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u591a Agent \u6a21\u5f0f",
-      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u5141\u8bb8\u964d\u7ea7\u8bc4\u5ba1",
-      "\u67e5\u770b\u72b6\u6001",
-      "\u9a8c\u8bc1\u95ed\u5305",
-      "\u505c\u6b62\u4ea4\u4ed8"
+      "启动交付",
+      "启动交付，多 Agent 模式",
+      "启动交付，允许降级评审",
+      "查看状态",
+      "验证闭包",
+      "停止交付"
     ],
     "developerName": "Waygate Product Delivery Maintainers",
     "displayName": "Waygate Product Delivery",
@@ -41,5 +39,5 @@
   "name": "waygate-product-delivery",
   "repository": "https://example.com/waygate-product-delivery.git",
   "skills": "./skills/",
-  "version": "1.0.19+codex.20260713061107"
+  "version": "1.0.18"
 }
