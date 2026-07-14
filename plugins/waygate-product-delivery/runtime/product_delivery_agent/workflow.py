@@ -55,6 +55,7 @@ from product_delivery_agent.gatekeeper import (
     CANONICAL_SCHEMA_VERSION,
     CANONICAL_VALIDATOR,
     PLUGIN_VERSION,
+    TERMINAL_STATUSES,
     GatekeeperError,
     assert_pre_closure_ready,
     assert_pre_handoff_ready,
@@ -111,6 +112,47 @@ class ProductDeliveryWorkflow:
         self.project_root = Path(project_root)
         self.fallback_state = fallback_state
 
+    def inspect_startup_request(
+        self,
+        *,
+        feature_slug: str | None = None,
+    ) -> dict[str, Any]:
+        """Inspect whether startup creates, resumes, or conflicts with a delivery."""
+        state = load_state(self.project_root, fallback_state=self.fallback_state)
+        raw_state = self._load_raw_state()
+        if not state:
+            action = "new_delivery_required"
+        else:
+            current_feature = state.get("feature_slug")
+            terminal = state.get("status") in TERMINAL_STATUSES or (
+                raw_state.get("status") in TERMINAL_STATUSES
+            )
+            same_feature = feature_slug is None or feature_slug == current_feature
+            if state.get("active") and not terminal and same_feature:
+                action = "resume_current_delivery"
+            elif state.get("active") and not terminal and not same_feature:
+                action = "blocked_by_active_delivery"
+            else:
+                action = "new_delivery_required"
+        policy = (state.get("multi_agent_policy") or {}) if state else {}
+        reusable = (
+            action == "resume_current_delivery"
+            and policy.get("execution_authorization")
+            in {"authorized", "degradation_authorized"}
+            and policy.get("authorization_delivery_id") == state.get("delivery_id")
+            and policy.get("authorization_feature_slug") == state.get("feature_slug")
+        )
+        return {
+            "action": action,
+            "requested_feature_slug": feature_slug,
+            "current_feature_slug": state.get("feature_slug") if state else None,
+            "current_delivery_id": state.get("delivery_id") if state else None,
+            "review_mode_selection_required": not reusable,
+            "mode_selection_required": not reusable,
+            "review_authorization_reusable": reusable,
+            "authorization_reusable": reusable,
+        }
+
     def start(
         self,
         *,
@@ -131,6 +173,23 @@ class ProductDeliveryWorkflow:
         }:
             raise WorkflowError("unsupported multi_agent_mode")
 
+        existing_state = load_state(
+            self.project_root,
+            fallback_state=self.fallback_state,
+        )
+        raw_existing_state = self._load_raw_state()
+        startup = self.inspect_startup_request(feature_slug=feature_slug)
+        if startup["action"] == "blocked_by_active_delivery":
+            raise WorkflowError(
+                "a different active delivery already exists; close or stop it before starting another feature"
+            )
+        if startup["action"] == "resume_current_delivery":
+            if multi_agent_mode is not None or allow_review_degradation:
+                raise WorkflowError(
+                    "current delivery is already active; use authorize_multi_agent_mode instead of start"
+                )
+            return write_state(self.project_root, existing_state)
+
         initialize_workspace(self.project_root)
         state = new_delivery_state()
         state["active"] = True
@@ -139,6 +198,13 @@ class ProductDeliveryWorkflow:
         state["stage"] = "product_blueprint"
         state["activation_source"] = "waygate-product-delivery"
         state["feature_slug"] = feature_slug
+        previous_delivery = self._archive_previous_delivery(
+            raw_existing_state
+            if raw_existing_state.get("status") in TERMINAL_STATUSES
+            else existing_state
+        )
+        if previous_delivery:
+            state["previous_delivery"] = previous_delivery
         state["open_spec_draft_ready"] = False
         state["scenario_matrix_draft_ready"] = False
         state["open_spec_freeze"] = {
@@ -171,6 +237,8 @@ class ProductDeliveryWorkflow:
         state["multi_agent_policy"] = self._multi_agent_policy(
             multi_agent_mode,
             authorization_source="startup_command" if multi_agent_mode else None,
+            delivery_id=state["delivery_id"],
+            feature_slug=feature_slug,
         )
         state["ui_prototype"] = {
             "generated": False,
@@ -272,6 +340,8 @@ class ProductDeliveryWorkflow:
         state["multi_agent_policy"] = self._multi_agent_policy(
             mode,
             authorization_source="user_mode_selection",
+            delivery_id=state.get("delivery_id"),
+            feature_slug=state.get("feature_slug"),
         )
         state["multi_agent_policy"]["authorization_user_message"] = (
             user_message.strip()
@@ -673,6 +743,8 @@ class ProductDeliveryWorkflow:
         mode: str | None,
         *,
         authorization_source: str | None,
+        delivery_id: str | None,
+        feature_slug: str | None,
     ) -> dict[str, Any]:
         if mode == "spawned_subagents_authorized":
             return {
@@ -681,6 +753,8 @@ class ProductDeliveryWorkflow:
                 "execution_authorization": "authorized",
                 "authorization_scope": "current_delivery",
                 "authorization_source": authorization_source,
+                "authorization_delivery_id": delivery_id,
+                "authorization_feature_slug": feature_slug,
                 "authorized_review_types": list(AUTHORIZED_REVIEW_TYPES),
             }
         if mode == "role_simulation_allowed":
@@ -690,6 +764,8 @@ class ProductDeliveryWorkflow:
                 "execution_authorization": "degradation_authorized",
                 "authorization_scope": "current_delivery",
                 "authorization_source": authorization_source,
+                "authorization_delivery_id": delivery_id,
+                "authorization_feature_slug": feature_slug,
                 "authorized_review_types": list(AUTHORIZED_REVIEW_TYPES),
             }
         return {
@@ -698,6 +774,8 @@ class ProductDeliveryWorkflow:
             "execution_authorization": "pending",
             "authorization_scope": "current_delivery",
             "authorization_source": None,
+            "authorization_delivery_id": delivery_id,
+            "authorization_feature_slug": feature_slug,
             "authorized_review_types": [],
         }
 
@@ -1921,6 +1999,43 @@ class ProductDeliveryWorkflow:
     def _state(self) -> dict[str, Any]:
         return load_state(self.project_root, fallback_state=self.fallback_state)
 
+    def _archive_previous_delivery(
+        self,
+        state: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not state or not any(
+            state.get(key) for key in ("feature_slug", "status", "activation_source")
+        ):
+            return None
+        state_hash = stable_state_hash(state)
+        delivery_id = str(state.get("delivery_id") or f"legacy-{state_hash[:16]}")
+        archive_dir = self.project_root / ARTIFACT_ROOT / "history" / delivery_id
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path = archive_dir / "state.json"
+        if not snapshot_path.exists():
+            snapshot_path.write_text(
+                json.dumps(state, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        return {
+            "delivery_id": delivery_id,
+            "feature_slug": state.get("feature_slug"),
+            "status": state.get("status"),
+            "state_sha256": state_hash,
+            "state_snapshot_path": str(snapshot_path.relative_to(self.project_root)),
+            "archived_at": self._timestamp_from_state(state),
+        }
+
+    def _load_raw_state(self) -> dict[str, Any]:
+        state_path = self.project_root / ARTIFACT_ROOT / "state.json"
+        if not state_path.is_file():
+            return {}
+        try:
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def _require_started(
         self,
         *,
@@ -1929,6 +2044,8 @@ class ProductDeliveryWorkflow:
         state = self._state()
         if not state.get("active"):
             raise WorkflowError("workflow is not active; run start first")
+        if self._load_raw_state().get("status") not in TERMINAL_STATUSES:
+            self._require_current_delivery_authorization(state)
         execution_authorization = (state.get("multi_agent_policy") or {}).get(
             "execution_authorization"
         )
@@ -1941,6 +2058,22 @@ class ProductDeliveryWorkflow:
                 "multi-Agent mode authorization is required before workflow progress"
             )
         return state
+
+    @staticmethod
+    def _require_current_delivery_authorization(state: dict[str, Any]) -> None:
+        if state.get("status") in TERMINAL_STATUSES:
+            return
+        policy = state.get("multi_agent_policy") or {}
+        if policy.get("execution_authorization") not in {
+            "authorized",
+            "degradation_authorized",
+        }:
+            return
+        if (
+            policy.get("authorization_delivery_id") != state.get("delivery_id")
+            or policy.get("authorization_feature_slug") != state.get("feature_slug")
+        ):
+            raise WorkflowError("authorization is not bound to the current delivery")
 
     def _missing_required_confirmations(self, state: dict[str, Any]) -> list[str]:
         missing = []

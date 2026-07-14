@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -93,6 +95,7 @@ def new_delivery_state(project_type: str | None = None) -> dict[str, Any]:
 
 def _new_state(project_type: str | None) -> dict[str, Any]:
     return {
+        "delivery_id": uuid.uuid4().hex,
         "active": False,
         "stage": "initialized",
         "project_type": project_type,
@@ -133,6 +136,8 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
             "execution_authorization": "pending",
             "authorization_scope": "current_delivery",
             "authorization_source": None,
+            "authorization_delivery_id": None,
+            "authorization_feature_slug": None,
             "authorized_review_types": [],
         },
         "ui_prototype": {
@@ -192,6 +197,8 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
 def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     is_terminal_history = state.get("status") in TERMINAL_STATUSES
     merged = normalize_state_protocol(dict(state))
+    if not is_terminal_history:
+        merged.setdefault("delivery_id", _legacy_delivery_id(merged))
     merged.setdefault("active", False)
     merged.setdefault("stage", "initialized")
     merged.setdefault("project_type", None)
@@ -240,6 +247,8 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
             "execution_authorization": "pending",
             "authorization_scope": "current_delivery",
             "authorization_source": None,
+            "authorization_delivery_id": merged.get("delivery_id"),
+            "authorization_feature_slug": merged.get("feature_slug"),
             "authorized_review_types": [],
         },
     )
@@ -255,6 +264,8 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
                 "execution_authorization": "legacy_unverified",
                 "authorization_scope": "current_delivery",
                 "authorization_source": "legacy_state_migration",
+                "authorization_delivery_id": merged.get("delivery_id"),
+                "authorization_feature_slug": merged.get("feature_slug"),
                 "authorized_review_types": [],
             }
         )
@@ -263,6 +274,9 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
             "status": "pending",
             "reason": "legacy authorization could not be verified",
         }
+    if not is_terminal_history:
+        policy.setdefault("authorization_delivery_id", merged.get("delivery_id"))
+        policy.setdefault("authorization_feature_slug", merged.get("feature_slug"))
     merged["multi_agent_reviews"].setdefault(
         "scenario",
         {
@@ -357,6 +371,19 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
             },
         )
     return merged
+
+
+def _legacy_delivery_id(state: dict[str, Any]) -> str:
+    material = {
+        "feature_slug": state.get("feature_slug"),
+        "activation_source": state.get("activation_source"),
+        "stage": state.get("stage"),
+        "updated_at": state.get("updated_at"),
+    }
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return "legacy-" + hashlib.sha256(encoded).hexdigest()[:16]
 
 
 def _ensure_templates(templates_dir: Path) -> None:

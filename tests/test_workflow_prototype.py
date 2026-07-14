@@ -166,6 +166,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
                     "execution_authorization": "authorized",
                     "authorization_scope": "current_delivery",
                     "authorization_source": "startup_command",
+                    "authorization_delivery_id": started["delivery_id"],
+                    "authorization_feature_slug": "v2.4-ops-security-alerts",
                     "authorized_review_types": [
                         "scenario",
                         "test",
@@ -246,7 +248,8 @@ class WorkflowPrototypeTests(unittest.TestCase):
             state = load_state(project_root)
             state.update(
                 {
-                    "status": "closure_failed",
+                    "active": False,
+                    "status": "closed",
                     "project_type": "ui",
                     "scenario_matrix": {"draft_ready": True},
                     "ui_prototype_review": {"status": "passed"},
