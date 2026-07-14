@@ -5,7 +5,11 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.ui_prototype import UI_PROTOTYPE_TAXONOMY
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    prototype_contract,
+    write_prototype_screenshot,
+)
 
 
 def complete_review_payload():
@@ -79,8 +83,11 @@ def user_confirmation(target):
 
 
 def confirm_scope(workflow):
-    workflow.record_multi_agent_review("scenario", scenario_review_payload())
-    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
+    return confirm_product_baseline(
+        workflow,
+        scenario_review_payload(),
+        "确认需求范围和产品原型",
+    )
 
 
 class UIPrototypeGateTests(unittest.TestCase):
@@ -96,7 +103,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             project_root = Path(tmp)
             self._write_prototype(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
 
             result = workflow.record_ui_prototype_review(complete_review_payload())
@@ -125,7 +133,8 @@ class UIPrototypeGateTests(unittest.TestCase):
     def test_non_ui_project_cannot_enter_ui_prototype_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
 
             with self.assertRaises(WorkflowError):
@@ -134,7 +143,8 @@ class UIPrototypeGateTests(unittest.TestCase):
     def test_missing_taxonomy_blocks_prototype_confirmation(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             payload = complete_review_payload()
             payload["taxonomy"].pop("keyboard")
@@ -149,7 +159,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             with self.subTest(taxonomy_field=taxonomy_field):
                 with tempfile.TemporaryDirectory() as tmp:
                     workflow = ProductDeliveryWorkflow(Path(tmp))
-                    workflow.start(multi_agent_mode="spawned_subagents_authorized")
+                    workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
                     workflow.select_project_type("ui")
                     payload = complete_review_payload()
                     payload["taxonomy"].pop(taxonomy_field)
@@ -164,20 +175,15 @@ class UIPrototypeGateTests(unittest.TestCase):
             project_root = Path(tmp)
             self._write_prototype(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
-            confirm_scope(workflow)
 
             with self.assertRaises(WorkflowError):
                 workflow.prepare_audit_and_handoff_drafts()
 
-            state = workflow.record_ui_prototype_review(complete_review_payload())
-            pending = state["pending_confirmations"]["ui_prototype"]
-            workflow.confirm_ui_prototype(
-                "确认本地 HTML 原型符合预期",
-                "prototype/index.html",
-                nonce=pending["nonce"],
-            )
+            workflow.record_ui_prototype_review(complete_review_payload())
+            confirm_scope(workflow)
             status = workflow.prepare_audit_and_handoff_drafts()
 
             self.assertEqual(status["stage"], "handoff_draft_ready")
@@ -187,7 +193,8 @@ class UIPrototypeGateTests(unittest.TestCase):
             project_root = Path(tmp)
             self._write_prototype(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(complete_review_payload())
 

@@ -14,6 +14,8 @@ from product_delivery_agent.gatekeeper import (
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    confirm_test_coverage_plan,
     prototype_contract,
     record_ui_conformance,
     write_prototype_screenshot,
@@ -47,6 +49,8 @@ def multi_agent_review(review_type):
             "ui scenario reviewer",
             "test strategy reviewer",
         ],
+        "reviewer_agent_ids": ["agent-product", "agent-ui", "agent-test"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": f"{review_type}-review-v1",
         "independent_positions": [
             "Reviewer A: no blocker",
@@ -113,6 +117,23 @@ def multi_agent_review(review_type):
         "annotation_only_findings": [],
         "ordinary_path_findings": [],
     }
+
+
+def ui_scenario_review():
+    review = multi_agent_review("scenario")
+    review.update(
+        {
+            "baseline_inheritance_review": {
+                "ui_change_type": "incremental_existing_surface",
+                "baseline_feature_slug": "v0-existing-owner-edit",
+                "baseline_entry_path": "operator opens the existing owner edit surface",
+                "inherits_existing_surface": True,
+                "parallel_surface_replacement": False,
+            },
+            "ui_continuity_findings": [],
+        }
+    )
+    return review
 
 
 def user_confirmation(target):
@@ -344,26 +365,24 @@ def workflow_ready_for_handoff(project_root):
     prototype_path = "docs/prototypes/v104-prototype.html"
     write_prototype(project_root, prototype_path, "<html>revision one</html>")
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(
+                feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
-    workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
-    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
     workflow.select_project_type("ui")
-    state = workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
-    pending = state["pending_confirmations"]["ui_prototype"]
-    workflow.confirm_ui_prototype(
-        "确认当前本地 HTML 原型，nonce=" + pending["nonce"],
-        prototype_path,
-        nonce=pending["nonce"],
+    workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+    confirm_product_baseline(
+        workflow,
+        multi_agent_review("scenario"),
+        "确认需求范围和当前本地 HTML 原型",
     )
     workflow.record_planned_e2e_obligations([planned_obligation()])
-    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
     workflow.record_test_coverage_audit(
         [coverage_row()],
         negative_guard_records=["billing remains absent"],
     )
     workflow.record_multi_agent_review("test_coverage", multi_agent_review("test_coverage"))
     workflow.record_multi_agent_review("test", multi_agent_review("test"))
+    confirm_test_coverage_plan(workflow)
     return workflow
 
 
@@ -382,18 +401,21 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             prototype_path = "docs/prototypes/v104-prototype.html"
             write_prototype(project_root, prototype_path, "<html>revision one</html>")
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+            workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
 
-            state = workflow.record_ui_prototype_review(
+            workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)
             )
-            first_pending = state["pending_confirmations"]["ui_prototype"]
+            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            state = workflow.prepare_product_baseline_confirmation()
+            first_pending = state["pending_confirmations"]["product_baseline"]
             first_hash = first_pending["artifact_hash"]
-            state = workflow.confirm_ui_prototype(
+            state = workflow.confirm_product_baseline(
                 "确认当前本地 HTML 原型，nonce=" + first_pending["nonce"],
-                prototype_path,
-                nonce=first_pending["nonce"],
+                first_pending["nonce"],
             )
             self.assertTrue(state["ui_prototype"]["confirmed_by_user"])
 
@@ -408,7 +430,10 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             state = workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)
             )
-            second_pending = state["pending_confirmations"]["ui_prototype"]
+            self.assertNotIn("product_baseline", state["pending_confirmations"])
+            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            state = workflow.prepare_product_baseline_confirmation()
+            second_pending = state["pending_confirmations"]["product_baseline"]
 
             self.assertNotEqual(second_pending["artifact_hash"], first_hash)
             self.assertNotEqual(second_pending["nonce"], first_pending["nonce"])
@@ -424,30 +449,32 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             prototype_path = "docs/prototypes/v104-prototype.html"
             write_prototype(project_root, prototype_path, "<html>revision one</html>")
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
+            workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
-            state = workflow.record_ui_prototype_review(
+            workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)
             )
-            pending = state["pending_confirmations"]["ui_prototype"]
+            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            state = workflow.prepare_product_baseline_confirmation()
+            pending = state["pending_confirmations"]["product_baseline"]
 
             with self.assertRaises(ConfirmationError):
-                workflow.confirm_ui_prototype(
+                workflow.confirm_product_baseline(
                     "继续",
-                    prototype_path,
+                    pending["nonce"],
                     agent_explicitly_asked=True,
                 )
             with self.assertRaises(ConfirmationError):
-                workflow.confirm_ui_prototype(
+                workflow.confirm_product_baseline(
                     "确认本地 HTML 原型",
-                    prototype_path,
-                    nonce="wrong-nonce",
+                    "wrong-nonce",
                 )
 
-            state = workflow.confirm_ui_prototype(
+            state = workflow.confirm_product_baseline(
                 "确认本地 HTML 原型，nonce=" + pending["nonce"],
-                prototype_path,
-                nonce=pending["nonce"],
+                pending["nonce"],
             )
 
             self.assertTrue(state["ui_prototype"]["confirmed_by_user"])

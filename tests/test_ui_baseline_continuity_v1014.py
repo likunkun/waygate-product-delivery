@@ -68,6 +68,8 @@ def scenario_review_payload(**overrides):
         "review_type": "scenario",
         "status": "passed",
         "reviewers": ["baseline reviewer", "scenario reviewer"],
+        "reviewer_agent_ids": ["agent-baseline", "agent-scenario"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": "scenario-review-v1",
         "independent_positions": [
             "baseline reviewer traced the previous V1.4.3 entry path",
@@ -168,7 +170,7 @@ class UIBaselineContinuityV1014Tests(unittest.TestCase):
         self.assertIn("continuity_mapping:parallel_surface_replacement", missing)
         self.assertIn("prototype_delta_summary:parallel_surface_replacement", missing)
 
-    def test_new_surface_requires_meaningful_justification_and_user_confirmation(self):
+    def test_new_surface_requires_meaningful_justification_before_baseline_confirmation(self):
         payload = prototype_review_payload(
             ui_change_type="new_surface_in_existing_product",
             baseline_feature_slug="",
@@ -183,7 +185,7 @@ class UIBaselineContinuityV1014Tests(unittest.TestCase):
         missing = validate_ui_prototype_review(payload)
 
         self.assertIn("new_surface_justification", missing)
-        self.assertIn("new_surface_user_confirmation", missing)
+        self.assertNotIn("new_surface_user_confirmation", missing)
 
     def test_scenario_review_rejects_ui_continuity_findings(self):
         review = scenario_review_payload(
@@ -235,8 +237,14 @@ class UIBaselineContinuityV1014Tests(unittest.TestCase):
             prototype.write_text("<html>revision 003</html>", encoding="utf-8")
             write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v1.4.4-standard-course-teachable-confirmation", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.4.4-standard-course-teachable-confirmation", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
+            workflow.record_ui_prototype_review(
+                prototype_review_payload(
+                    prototype_path="docs/prototypes/v144.html"
+                )
+            )
             workflow.record_multi_agent_review("scenario", scenario_review_payload())
 
             state = workflow.record_ui_prototype_feedback(

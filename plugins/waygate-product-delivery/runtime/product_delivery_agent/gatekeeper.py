@@ -33,7 +33,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.18"
+PLUGIN_VERSION = "1.0.21"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -55,7 +55,7 @@ def stable_state_hash(value: Any) -> str:
 
 
 def scenario_input_hash(state: dict[str, Any]) -> str:
-    """Hash the current requirements/scenario package reviewed before handoff."""
+    """Hash the current product/scenario package reviewed before confirmation."""
     scenario_matrix = state.get("scenario_matrix") or {}
     return stable_state_hash(
         {
@@ -65,15 +65,33 @@ def scenario_input_hash(state: dict[str, Any]) -> str:
                 state.get("scenario_matrix_draft_ready")
             ),
             "scenario_rows": scenario_matrix.get("rows", []),
+            "surface": surface_input_hash(state),
         }
     )
 
 
 def surface_input_hash(state: dict[str, Any]) -> str:
-    """Hash the current UI prototype or non-UI behavior contract package."""
+    """Hash product surface facts without user-confirmation metadata."""
     if state.get("project_type") == "non_ui":
         contract = state.get("non_ui_behavior_contract") or {}
-        return stable_state_hash({"project_type": "non_ui", "contract": contract})
+        contract_facts = {
+            key: contract.get(key)
+            for key in (
+                "contract_name",
+                "entry_points",
+                "inputs",
+                "outputs",
+                "taxonomy",
+                "behavior_paths",
+                "negative_boundary_records",
+                "limitations",
+                "contract_artifact_path",
+                "artifact_hash",
+            )
+        }
+        return stable_state_hash(
+            {"project_type": "non_ui", "contract": contract_facts}
+        )
     ui = state.get("ui_prototype") or {}
     review = state.get("ui_prototype_review") or {}
     return stable_state_hash(
@@ -87,8 +105,6 @@ def surface_input_hash(state: dict[str, Any]) -> str:
             "prototype_screenshot_set_hash": ui.get(
                 "prototype_screenshot_set_hash"
             ),
-            "confirmed_by_user": bool(ui.get("confirmed_by_user")),
-            "confirmation_artifact_path": ui.get("confirmation_artifact_path"),
             "ui_change_type": review.get("ui_change_type") or ui.get("ui_change_type"),
             "baseline_feature_slug": (
                 review.get("baseline_feature_slug") or ui.get("baseline_feature_slug")
@@ -103,6 +119,17 @@ def surface_input_hash(state: dict[str, Any]) -> str:
             ),
             "continuity_mapping": review.get("continuity_mapping") or [],
             "prototype_delta_summary": review.get("prototype_delta_summary") or [],
+        }
+    )
+
+
+def product_baseline_hash(state: dict[str, Any]) -> str:
+    """Hash the requirement, scenario, and product-surface baseline."""
+    return stable_state_hash(
+        {
+            "feature_slug": state.get("feature_slug"),
+            "scenario": scenario_input_hash(state),
+            "surface": surface_input_hash(state),
         }
     )
 
@@ -130,6 +157,98 @@ def coverage_audit_input_hash(state: dict[str, Any]) -> str:
             "latest_test_case": audit.get("latest_test_case"),
             "rows": audit.get("rows", []),
             "negative_guard_records": audit.get("negative_guard_records", []),
+        }
+    )
+
+
+def test_coverage_user_semantics_hash(state: dict[str, Any]) -> str:
+    """Hash user-visible coverage semantics, excluding internal test hardening."""
+    planned = state.get("planned_e2e_obligations") or {}
+    obligations = []
+    for obligation in planned.get("obligations", []):
+        obligations.append(
+            {
+                key: obligation.get(key)
+                for key in (
+                    "scenario_id",
+                    "user_story",
+                    "journey",
+                    "acceptance_criteria",
+                    "visible_exception",
+                    "test_layer",
+                    "exemption_status",
+                    "baseline_entry_path",
+                    "required_actor_roles",
+                    "path_kind",
+                    "ordinary_entry_path",
+                    "data_state_contract",
+                )
+            }
+        )
+    audit = state.get("test_coverage_audit") or {}
+    rows = []
+    for row in audit.get("rows", []):
+        rows.append(
+            {
+                key: row.get(key)
+                for key in (
+                    "fr",
+                    "nfr",
+                    "us",
+                    "journey",
+                    "acceptance_criteria",
+                    "test_layer",
+                    "evidence_type",
+                    "coverage_status",
+                    "exemption_status",
+                    "critical",
+                )
+            }
+        )
+    obligation_semantics = {
+        stable_state_hash(record): record for record in obligations
+    }
+    row_semantics = {stable_state_hash(record): record for record in rows}
+    exemptions = list(planned.get("exemptions", []))
+    exemption_semantics = {
+        stable_state_hash(record): record for record in exemptions
+    }
+    return stable_state_hash(
+        {
+            "product_baseline": product_baseline_hash(state),
+            "obligations": [
+                obligation_semantics[key] for key in sorted(obligation_semantics)
+            ],
+            "exemptions": [
+                exemption_semantics[key] for key in sorted(exemption_semantics)
+            ],
+            "coverage_rows": [row_semantics[key] for key in sorted(row_semantics)],
+        }
+    )
+
+
+def test_coverage_plan_hash(state: dict[str, Any]) -> str:
+    """Hash the complete reviewed test-plan snapshot for confirmation evidence."""
+    reviews = state.get("multi_agent_reviews") or {}
+    return stable_state_hash(
+        {
+            "user_semantics": test_coverage_user_semantics_hash(state),
+            "planned_e2e": planned_e2e_input_hash(state),
+            "coverage_audit": coverage_audit_input_hash(state),
+            "reviews": {
+                review_type: {
+                    "status": reviews.get(review_type, {}).get("status"),
+                    "review_id": reviews.get(review_type, {}).get("review_id"),
+                    "artifact_version": reviews.get(review_type, {}).get(
+                        "artifact_version"
+                    ),
+                    "input_snapshot_hash": reviews.get(review_type, {}).get(
+                        "input_snapshot_hash"
+                    ),
+                    "review_mode": reviews.get(review_type, {}).get("review_mode"),
+                }
+                for review_type in ("test", "test_coverage")
+            },
         }
     )
 
@@ -172,29 +291,8 @@ def review_input_hash(state: dict[str, Any], review_type: str) -> str:
 
 
 def requirements_e2e_confirmation_hash(state: dict[str, Any]) -> str:
-    """Hash the package covered by the combined user confirmation."""
-    reviews = state.get("multi_agent_reviews") or {}
-    review_summary = {
-        review_type: {
-            "status": review.get("status"),
-            "review_id": review.get("review_id"),
-            "artifact_version": review.get("artifact_version"),
-            "input_snapshot_hash": review.get("input_snapshot_hash"),
-            "review_mode": review.get("review_mode"),
-        }
-        for review_type, review in sorted(reviews.items())
-        if review_type in {"scenario", "test", "test_coverage"}
-    }
-    return stable_state_hash(
-        {
-            "feature_slug": state.get("feature_slug"),
-            "scenario": scenario_input_hash(state),
-            "surface": surface_input_hash(state),
-            "planned_e2e": planned_e2e_input_hash(state),
-            "coverage_audit": coverage_audit_input_hash(state),
-            "reviews": review_summary,
-        }
-    )
+    """Compatibility alias for the reviewed test coverage plan hash."""
+    return test_coverage_plan_hash(state)
 
 
 def normalize_project_type(raw: Any) -> tuple[str | None, str | None]:
@@ -520,11 +618,16 @@ def derive_blockers(
         "scenario_matrix_draft",
     )
     _append_review_blocker(blockers, normalized, "scenario")
+    product_confirmation = normalized.get("user_confirmations", {}).get(
+        "product_baseline", {}
+    )
     _append_if(
         blockers,
         not normalized.get("open_spec_freeze", {}).get("approved_by_user")
-        or "open_spec_freeze" not in normalized.get("user_confirmations", {}),
-        "user_confirmed_freeze",
+        or not product_confirmation
+        or product_confirmation.get("artifact_hash")
+        != product_baseline_hash(normalized),
+        "product_baseline_user_confirmation",
     )
 
     project_type = normalized.get("project_type")
@@ -547,9 +650,16 @@ def derive_blockers(
             "ui_prototype_user_confirmation",
         )
     elif project_type == "non_ui":
+        contract = normalized.get("non_ui_behavior_contract") or {}
+        confirmation = normalized.get("user_confirmations", {}).get(
+            "non_ui_behavior_contract", {}
+        )
         _append_if(
             blockers,
-            "non_ui_behavior_contract" not in normalized,
+            not contract
+            or not contract.get("confirmed_by_user")
+            or not confirmation
+            or confirmation.get("artifact_hash") != surface_input_hash(normalized),
             "non_ui_behavior_contract_confirmation",
         )
 
@@ -565,13 +675,16 @@ def derive_blockers(
         or "planned_e2e_obligations" not in normalized.get("user_confirmations", {}),
         "planned_e2e_user_confirmation",
     )
-    confirmation = normalized.get("user_confirmations", {}).get("open_spec_freeze", {})
-    if (
-        confirmation.get("snapshot_hash")
-        and confirmation.get("snapshot_hash")
-        != requirements_e2e_confirmation_hash(normalized)
-    ):
-        _append_if(blockers, True, "stale_requirements_e2e_confirmation")
+    test_confirmation = normalized.get("user_confirmations", {}).get(
+        "test_coverage_plan", {}
+    )
+    _append_if(
+        blockers,
+        not test_confirmation
+        or test_confirmation.get("user_semantics_hash")
+        != test_coverage_user_semantics_hash(normalized),
+        "test_coverage_plan_user_confirmation",
+    )
     _append_review_blocker(blockers, normalized, "test")
     _append_review_blocker(blockers, normalized, "test_coverage")
     _append_if(

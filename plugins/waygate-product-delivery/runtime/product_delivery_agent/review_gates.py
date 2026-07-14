@@ -118,8 +118,6 @@ def validate_multi_agent_review(
         )
     elif review_type == "ui_conformance":
         _validate_ui_conformance_review(review, prototype_contract or {})
-
-
 def _validate_ui_conformance_review(
     review: dict[str, Any],
     prototype_contract: dict[str, Any],
@@ -183,6 +181,9 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
         f"Status: {review['status']}",
         f"Review Mode: {review.get('review_mode', 'spawned_subagents')}",
         f"Artifact Version: {review['artifact_version']}",
+        "Reviewer Agent IDs: "
+        + ", ".join(review.get("reviewer_agent_ids") or []),
+        f"Reviewer Spawn Source: {review.get('reviewer_spawn_source') or 'not-applicable'}",
         "",
         "## Independent Positions",
         *_bullets(review["independent_positions"]),

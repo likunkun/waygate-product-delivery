@@ -1,5 +1,7 @@
 # User Confirmation
 
+Formal targets: `product_baseline` or `test_coverage_plan`.
+
 - confirmation_id:
 - target:
 - artifact_path:

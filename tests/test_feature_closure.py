@@ -12,6 +12,8 @@ from product_delivery_agent.gatekeeper import (
     prototype_conformance_closure_binding,
 )
 from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    confirm_test_coverage_plan,
     prototype_contract,
     record_ui_conformance,
     write_prototype_screenshot,
@@ -43,6 +45,12 @@ def multi_agent_review(review_type):
             "ui scenario reviewer",
             "test strategy reviewer",
         ],
+        "reviewer_agent_ids": [
+            "agent-product-intent",
+            "agent-ui-scenario",
+            "agent-test-strategy",
+        ],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": f"{review_type}-review-v1",
         "independent_positions": [
             "Reviewer A: no blocker",
@@ -291,28 +299,28 @@ def ready_workflow(project_root):
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
     write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(
+        feature_slug="v2.5-key-owner-ops",
+        multi_agent_mode="spawned_subagents_authorized",
+    )
     workflow.record_scenario_matrix([scenario_row()])
-    workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
-    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
     workflow.select_project_type("ui")
     workflow.confirm("product_brief")
     workflow.confirm("version_scope")
-    state = workflow.record_ui_prototype_review(ui_review_payload())
-    pending = state["pending_confirmations"]["ui_prototype"]
-    workflow.confirm_ui_prototype(
-        "确认本地 HTML 原型符合预期",
-        "prototype/index.html",
-        nonce=pending["nonce"],
+    workflow.record_ui_prototype_review(ui_review_payload())
+    confirm_product_baseline(
+        workflow,
+        multi_agent_review("scenario"),
+        "确认需求范围和本地 HTML 原型",
     )
     workflow.record_planned_e2e_obligations([planned_obligation()])
-    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
     workflow.record_test_coverage_audit(
         [coverage_row()],
         negative_guard_records=["student billing is absent"],
     )
     workflow.record_multi_agent_review("test_coverage", multi_agent_review("test_coverage"))
     workflow.record_multi_agent_review("test", multi_agent_review("test"))
+    confirm_test_coverage_plan(workflow)
     workflow.record_implementation_launch_authorization(
         scope="Implement classroom dashboard",
         verification_commands=["PYTHONPATH=src python3 -m unittest discover -s tests"],

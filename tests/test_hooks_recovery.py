@@ -17,7 +17,8 @@ class HooksRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_skill_use(
                 "ui_prototype_confirmation",
@@ -37,7 +38,8 @@ class HooksRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
 
             result = build_resume_context(project_root)
 
@@ -50,7 +52,8 @@ class HooksRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
 
             result = build_prompt_context(project_root)
@@ -82,7 +85,8 @@ class HooksRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
 
             state_path = project_root / ARTIFACT_ROOT / "state.json"
             state_path.unlink()
@@ -90,7 +94,8 @@ class HooksRecoveryTests(unittest.TestCase):
             self.assertFalse(missing_result.passed)
             self.assertIn("state.json", missing_result.missing_items)
 
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             state_path.write_text(
                 state_path.read_text("utf-8").replace('"updated_at":', '"missing_updated_at":'),
                 encoding="utf-8",
@@ -103,7 +108,8 @@ class HooksRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.confirm("product_brief")
 
@@ -115,13 +121,14 @@ class HooksRecoveryTests(unittest.TestCase):
             self.assertNotIn("confirmation:ui_prototype_review", result.missing_items)
             self.assertIn("artifact:version_scope", result.missing_items)
             self.assertIn("artifact:ui_prototype_review", result.missing_items)
-            self.assertIn("next_gate:ui_prototype_review", result.missing_items)
+            self.assertNotIn("host_model_capabilities_pending", result.missing_items)
 
     def test_stop_guardrail_uses_non_ui_branch_requirements(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.confirm("product_brief")
 
@@ -135,13 +142,14 @@ class HooksRecoveryTests(unittest.TestCase):
             )
             self.assertIn("artifact:version_scope", result.missing_items)
             self.assertIn("artifact:non_ui_behavior_contract", result.missing_items)
-            self.assertIn("next_gate:non_ui_behavior_contract", result.missing_items)
+            self.assertNotIn("host_model_capabilities_pending", result.missing_items)
 
     def test_inactive_projects_are_silent_for_all_hooks(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.stop()
 
             for hook_result in (

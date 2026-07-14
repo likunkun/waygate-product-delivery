@@ -19,7 +19,12 @@ from product_delivery_agent.workflow import (
     ConfirmationError,
     ProductDeliveryWorkflow,
 )
-from tests.test_feature_closure import ready_workflow, valid_closure_artifact
+from tests.test_feature_closure import (
+    multi_agent_review,
+    ready_workflow,
+    scenario_row,
+    valid_closure_artifact,
+)
 
 
 def write_png(path: Path, width: int = 1280, height: int = 720) -> None:
@@ -224,6 +229,23 @@ def prototype_review_payload() -> dict:
         "prototype_delta_summary": ["adds series management on the existing path"],
         "prototype_contract": prototype_contract(),
     }
+
+
+def scenario_review_payload() -> dict:
+    review = multi_agent_review("scenario")
+    review.update(
+        {
+            "baseline_inheritance_review": {
+                "ui_change_type": "incremental_existing_surface",
+                "baseline_feature_slug": "v1.4.2-standard-unit-content",
+                "baseline_entry_path": "course operations -> series management",
+                "inherits_existing_surface": True,
+                "parallel_surface_replacement": False,
+            },
+            "ui_continuity_findings": [],
+        }
+    )
+    return review
 
 
 class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
@@ -482,13 +504,17 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             root = Path(tmp)
             self.prepare_project(root)
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
 
-            state = workflow.record_ui_prototype_review(prototype_review_payload())
+            workflow.record_ui_prototype_review(prototype_review_payload())
+            workflow.record_multi_agent_review("scenario", scenario_review_payload())
+            state = workflow.prepare_product_baseline_confirmation()
 
             self.assertEqual(state["prototype_contract"]["status"], "ready")
-            pending = state["pending_confirmations"]["ui_prototype"]
+            pending = state["pending_confirmations"]["product_baseline"]
             self.assertEqual(
                 pending["prototype_contract_hash"],
                 state["prototype_contract"]["contract_sha256"],
@@ -503,10 +529,14 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             root = Path(tmp)
             self.prepare_project(root)
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
-            state = workflow.record_ui_prototype_review(prototype_review_payload())
-            pending = state["pending_confirmations"]["ui_prototype"]
+            workflow.record_ui_prototype_review(prototype_review_payload())
+            workflow.record_multi_agent_review("scenario", scenario_review_payload())
+            state = workflow.prepare_product_baseline_confirmation()
+            pending = state["pending_confirmations"]["product_baseline"]
             write_png(
                 root / ".product-delivery/artifacts/prototype/series-desktop.png",
                 width=1024,
@@ -514,11 +544,10 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             )
 
             with self.assertRaises(ConfirmationError) as caught:
-                workflow.confirm_ui_prototype(
+                workflow.confirm_product_baseline(
                     "确认当前原型和一致性合同",
-                    "docs/prototypes/v143.html",
+                    pending["nonce"],
                     agent_explicitly_asked=True,
-                    nonce=pending["nonce"],
                 )
 
             self.assertIn("screenshot", str(caught.exception))
@@ -529,7 +558,8 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             self.prepare_project(root)
             contract = ui_prototype.build_prototype_contract(root, prototype_contract())
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             state = load_state(root)
             state.update(
                 {
@@ -573,7 +603,8 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             root = Path(tmp)
             self.prepare_project(root)
             workflow = ProductDeliveryWorkflow(root)
-            workflow.start(feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             state = load_state(root)
             state.update(
                 {

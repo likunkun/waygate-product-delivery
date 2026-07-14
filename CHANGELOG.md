@@ -1,8 +1,20 @@
 # Changelog
 
+## 1.0.21
+
+- Replaces the early prototype plus combined freeze flow with two layered formal confirmations: `product_baseline` and `test_coverage_plan`.
+- Requires Open Spec, scenario matrix, UI prototype or non-UI behavior contract, and product/scenario review before the first confirmation; detailed test design is blocked until that baseline is confirmed.
+- Adds `prepare_product_baseline_confirmation()`, `confirm_product_baseline()`, `prepare_test_coverage_confirmation()`, and `confirm_test_coverage_plan()` with hash-bound nonces.
+- Preserves product confirmation during internal test hardening and requires `record_user_requested_change()` before revising confirmed product or coverage semantics.
+- Migrates active legacy prototype pending confirmations back to product/scenario review while keeping terminal delivery history read-only.
+- Keeps canonical closure schema `v0.11` unchanged.
+
 ## 1.0.18
 
-- Added canonical launch-package supersession recovery for active deliveries.
+- Adds canonical `recover_stale_launch_package()` recovery when a fresh launch authorization no longer matches the active delivery goal.
+- Archives the previous handoff, delivery goal, implementation state, prompt, and task completion binding before replacement.
+- Records a hash-linked `implementation_package_superseded` transition instead of hand-editing state or deleting the stale blocker.
+- Reuses task completion evidence only when the task ID and `planned_task_hash` are unchanged; revised tasks return to the active queue.
 
 ## 1.0.17
 

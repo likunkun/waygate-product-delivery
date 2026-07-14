@@ -5,12 +5,20 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.coverage_audit import CoverageAuditError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    prototype_contract,
+    write_prototype_screenshot,
+)
 
 
 def ui_review_payload(project_root=None):
     if project_root is not None:
-        write_prototype_screenshot(Path(project_root))
+        project_root = Path(project_root)
+        write_prototype_screenshot(project_root)
+        prototype = project_root / "prototype" / "index.html"
+        prototype.parent.mkdir(parents=True, exist_ok=True)
+        prototype.write_text("<html>coverage audit prototype</html>", encoding="utf-8")
     return {
         "prototype_contract": prototype_contract(),
         "prototype_path": "prototype/index.html",
@@ -66,6 +74,32 @@ def behavior_contract_payload():
     }
 
 
+def scenario_review_payload():
+    return {
+        "review_id": "MR-SC-COVERAGE",
+        "review_type": "scenario",
+        "status": "passed",
+        "reviewers": ["product reviewer", "scenario reviewer"],
+        "artifact_version": "scenario-review-v1",
+        "independent_positions": [
+            "product reviewer found the scope complete",
+            "scenario reviewer found the role paths complete",
+        ],
+        "cross_challenges": ["reviewed exceptions and negative scope guards"],
+        "revisions": ["kept the reviewed product baseline unchanged"],
+        "final_adjudication": "passed",
+        "conclusions": ["product baseline is ready for confirmation"],
+        "accepted_suggestions": [],
+        "rejected_suggestions": [],
+        "unresolved_questions": [],
+        "blocking_findings": [],
+    }
+
+
+def confirm_current_product_baseline(workflow):
+    return confirm_product_baseline(workflow, scenario_review_payload())
+
+
 def coverage_row(tc_id, *, layer="browser_e2e", evidence="browser_e2e", marker="ui-browser-e2e-required", obligation="teacher creates classroom", status="covered", exempt="none", critical=True):
     return {
         "tc_id": tc_id,
@@ -90,9 +124,11 @@ class CoverageAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(project_root))
+            confirm_current_product_baseline(workflow)
 
             result = workflow.record_test_coverage_audit(
                 [
@@ -118,9 +154,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_non_ui_audit_accepts_behavior_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(behavior_contract_payload())
+            confirm_current_product_baseline(workflow)
 
             result = workflow.record_test_coverage_audit(
                 [
@@ -144,9 +182,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_non_continuous_tc_range_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
+            confirm_current_product_baseline(workflow)
 
             with self.assertRaises(CoverageAuditError) as caught:
                 workflow.record_test_coverage_audit(
@@ -159,9 +199,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_missing_trace_anchor_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
+            confirm_current_product_baseline(workflow)
             row = coverage_row("TC-V008-001")
             row["acceptance_criteria"] = ""
 
@@ -176,9 +218,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_ui_supporting_evidence_cannot_replace_browser_e2e(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
+            confirm_current_product_baseline(workflow)
 
             with self.assertRaises(CoverageAuditError) as caught:
                 workflow.record_test_coverage_audit(
@@ -199,9 +243,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_missing_semantic_marker_blocks_high_risk_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
+            confirm_current_product_baseline(workflow)
             row = coverage_row("TC-V008-001")
             row["semantic_marker"] = ""
 
@@ -216,9 +262,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_unexempted_critical_gap_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(behavior_contract_payload())
+            confirm_current_product_baseline(workflow)
 
             with self.assertRaises(CoverageAuditError) as caught:
                 workflow.record_test_coverage_audit(
@@ -240,9 +288,11 @@ class CoverageAuditTests(unittest.TestCase):
     def test_missing_inherited_negative_guard_record_blocks_audit(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload(Path(tmp)))
+            confirm_current_product_baseline(workflow)
 
             with self.assertRaises(CoverageAuditError) as caught:
                 workflow.record_test_coverage_audit(
@@ -256,9 +306,11 @@ class CoverageAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("non_ui")
             workflow.record_non_ui_behavior_contract(behavior_contract_payload())
+            confirm_current_product_baseline(workflow)
             workflow.record_test_coverage_audit(
                 [
                     coverage_row(

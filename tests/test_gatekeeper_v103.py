@@ -16,7 +16,12 @@ from product_delivery_agent.gatekeeper import (
     validate_state_invariants,
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    confirm_test_coverage_plan,
+    prototype_contract,
+    write_prototype_screenshot,
+)
 
 
 def scenario_row(**overrides):
@@ -46,6 +51,8 @@ def review(review_type, **overrides):
             "ui scenario reviewer",
             "test strategy reviewer",
         ],
+        "reviewer_agent_ids": ["agent-product", "agent-ui", "agent-test"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": f"{review_type}-review-v1",
         "independent_positions": [
             "Reviewer A: no blocker",
@@ -336,31 +343,29 @@ def workflow_with_open_spec_and_scenario(project_root):
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
     write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(
+                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
-    workflow.record_multi_agent_review("scenario", review("scenario"))
-    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
     workflow.select_project_type("ui")
     workflow.record_ui_prototype_review(ui_review_payload())
+    confirm_product_baseline(
+        workflow,
+        review("scenario"),
+        "确认需求范围和本地 HTML 原型",
+    )
     return workflow
 
 
 def ready_for_handoff(project_root):
     workflow = workflow_with_open_spec_and_scenario(project_root)
-    pending = workflow.status()["pending_confirmations"]["ui_prototype"]
-    workflow.confirm_ui_prototype(
-        "确认本地 HTML 原型符合预期",
-        "docs/prototypes/v2.5-prototype.html",
-        nonce=pending["nonce"],
-    )
     workflow.record_planned_e2e_obligations([planned_obligation()])
-    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
     workflow.record_test_coverage_audit(
         [coverage_row()],
         negative_guard_records=["student billing remains absent"],
     )
     workflow.record_multi_agent_review("test_coverage", review("test_coverage"))
     workflow.record_multi_agent_review("test", review("test"))
+    confirm_test_coverage_plan(workflow)
     workflow.record_implementation_launch_authorization(
         scope="Implement owner operations",
         verification_commands=["pytest"],
@@ -377,12 +382,6 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = workflow_with_open_spec_and_scenario(project_root)
-            pending = workflow.status()["pending_confirmations"]["ui_prototype"]
-            workflow.confirm_ui_prototype(
-                "确认本地 HTML 原型符合预期",
-                "docs/prototypes/v2.5-prototype.html",
-                nonce=pending["nonce"],
-            )
             workflow.record_planned_e2e_obligations([planned_obligation()])
             workflow.record_test_coverage_audit(
                 [coverage_row()],
@@ -412,7 +411,8 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
             workflow.record_multi_agent_review("scenario", review("scenario"))
 
@@ -546,11 +546,10 @@ class GatekeeperV103Tests(unittest.TestCase):
         self.assertIn("closure-like state requires", str(caught.exception))
         self.assertIn("closure_validation.status=passed", str(caught.exception))
 
-    def test_handoff_blocks_until_ui_prototype_user_confirmation_artifact_exists(self):
+    def test_handoff_blocks_until_test_coverage_plan_confirmation_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = workflow_with_open_spec_and_scenario(Path(tmp))
             workflow.record_planned_e2e_obligations([planned_obligation()])
-            workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
             workflow.record_test_coverage_audit(
                 [coverage_row()],
                 negative_guard_records=["student billing remains absent"],
@@ -564,28 +563,34 @@ class GatekeeperV103Tests(unittest.TestCase):
                     verification_commands=["pytest"],
                 )
 
-            self.assertIn("ui_prototype_user_confirmation", str(caught.exception))
+            self.assertIn("test_coverage_plan_user_confirmation", str(caught.exception))
 
-    def test_legacy_confirm_does_not_clear_ui_prototype_user_confirmation_gate(self):
+    def test_legacy_confirm_does_not_clear_product_baseline_user_confirmation_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = workflow_with_open_spec_and_scenario(Path(tmp))
+            project_root = Path(tmp)
+            prototype = project_root / "docs" / "prototypes" / "v2.5-prototype.html"
+            prototype.parent.mkdir(parents=True, exist_ok=True)
+            prototype.write_text("<html>prototype</html>", encoding="utf-8")
+            write_prototype_screenshot(project_root)
+            workflow = ProductDeliveryWorkflow(project_root)
+            workflow.start(
+                feature_slug="v2.5-key-owner-ops",
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            workflow.record_scenario_matrix([scenario_row()])
+            workflow.select_project_type("ui")
+            workflow.record_ui_prototype_review(ui_review_payload())
             state = workflow.confirm("ui_prototype_review")
 
             self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
-            self.assertIn("ui_html_prototype_confirmation", state["blocked_until"])
+            self.assertNotIn("product_baseline", state["user_confirmations"])
+            self.assertIn("user_confirmed_freeze", state["blocked_until"])
 
     def test_handoff_requires_structured_multi_agent_test_review(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = workflow_with_open_spec_and_scenario(project_root)
-            pending = workflow.status()["pending_confirmations"]["ui_prototype"]
-            workflow.confirm_ui_prototype(
-                "确认本地 HTML 原型符合预期",
-                "docs/prototypes/v2.5-prototype.html",
-                nonce=pending["nonce"],
-            )
             workflow.record_planned_e2e_obligations([planned_obligation()])
-            workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
             workflow.record_test_coverage_audit(
                 [coverage_row()],
                 negative_guard_records=["student billing remains absent"],
@@ -684,7 +689,8 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            state = workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+            state = workflow.start(
+                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
             state["project_type"] = "web_system"
             write_state(project_root, state)
 

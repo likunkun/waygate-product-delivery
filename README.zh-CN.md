@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.18-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-187%20passing-15803d)](#验证)
+[![Version](https://img.shields.io/badge/version-1.0.21-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
 
@@ -31,7 +31,7 @@ Waygate Product Delivery 把这些失败模式变成明确的门禁。
 | 默认休眠 | 插件不会自动介入，必须显式说 `启动交付` 或 `start`。 |
 | 文件化状态 | `.product-delivery/state.json` 和 artifacts 可以跨上下文压缩恢复。 |
 | 强制技能门禁 | 按阶段检查 Product Delivery、Open Spec、planning files、UI/UX、浏览器测试和闭包技能。 |
-| UI 原型门禁 | UI 项目必须有当前 feature 的本地 1:1 HTML 原型，并且用户显式确认。 |
+| 分层产品确认 | 先确认需求范围和 UI 原型或非 UI 行为契约，再生成详细测试设计。 |
 | 非 UI 行为契约 | API、CLI、服务、后台任务用行为契约替代 HTML 原型。 |
 | 多 Agent 评审 artifact | 场景和测试覆盖评审必须留下可见 artifact，不能只在聊天里说做过。 |
 | Goal 驱动实现 | 实现阶段必须按 TASK 队列推进，不能无阻塞就中途停下。 |
@@ -108,7 +108,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.18.tar.gz
+dist/waygate-product-delivery-1.0.21.tar.gz
 ```
 
 ## Codex 使用方式
@@ -124,14 +124,13 @@ dist/waygate-product-delivery-1.0.18.tar.gz
 
 进入实现前必须完成：
 
-1. 当前 feature 的 Open Spec；
-2. scenario matrix 和多 Agent 场景评审 artifact；
-3. 用户确认 freeze；
-4. UI 原型确认或非 UI 行为契约确认；
-5. 测试覆盖审计通过；
-6. 多 Agent 测试覆盖评审通过；
-7. planned E2E obligations 和已批准豁免已由用户确认；
-8. implementation launch authorization。
+1. 当前 feature 的 Open Spec、场景矩阵以及 UI 原型或非 UI 行为契约草稿；
+2. 多 Agent 产品/场景评审通过；
+3. 用户确认 `product_baseline`，只确认需求范围和产品表面；
+4. 基线确认后生成 planned E2E、coverage audit 和详细测试设计；
+5. 多 Agent test/test_coverage 评审通过；
+6. 用户确认 `test_coverage_plan`；
+7. Runtime 自动生成 implementation launch authorization。
 
 ## 工作流
 
@@ -139,20 +138,13 @@ dist/waygate-product-delivery-1.0.18.tar.gz
 flowchart LR
     A[启动] --> B[产品蓝图]
     B --> C[Open Spec]
-    C --> D[项目类型判断]
-    D --> E[场景矩阵]
-    E --> F[多 Agent 场景评审]
-    F --> G[用户确认 freeze]
-    G --> H{项目类型}
-    H -->|UI| I[1:1 HTML 原型]
-    H -->|非 UI| J[行为契约]
-    I --> K[用户确认]
-    J --> K
-    K --> L[测试覆盖审计]
-    L --> M[多 Agent 测试覆盖评审]
-    M --> N[计划 E2E 义务]
-    N --> O[计划 E2E 用户确认]
-    O --> P[实现授权]
+    C --> D[场景矩阵和产品表面草稿]
+    D --> E[多 Agent 产品和场景评审]
+    E --> F[确认 product_baseline]
+    F --> G[planned E2E 和覆盖审计]
+    G --> H[多 Agent 测试和覆盖评审]
+    H --> I[确认 test_coverage_plan]
+    I --> P[Runtime 自动实现授权]
     P --> Q[Codex Goal 移交]
     Q --> R[TASK 队列实现]
     R --> S[执行证据]
@@ -218,7 +210,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 当前基线：
 
 ```text
-179 个单测通过
+完整单测套件通过
 Plugin validation passed
 Packaged validator 可在无源码 PYTHONPATH 下运行
 ```

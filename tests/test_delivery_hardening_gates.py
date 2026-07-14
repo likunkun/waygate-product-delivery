@@ -9,7 +9,13 @@ from product_delivery_agent.coverage_audit import CoverageAuditError
 from product_delivery_agent.review_gates import ReviewGateError
 from product_delivery_agent.scenario_matrix import ScenarioMatrixError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    confirm_test_coverage_plan,
+    prototype_contract,
+    write_prototype_screenshot,
+)
+from tests.test_non_ui_behavior_contract import complete_contract_payload
 
 
 def scenario_row(**overrides):
@@ -39,6 +45,8 @@ def scenario_review(**overrides):
             "ui scenario reviewer",
             "negative boundary reviewer",
         ],
+        "reviewer_agent_ids": ["agent-product", "agent-ui", "agent-negative"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": "scenario-matrix-v1",
         "independent_positions": [
             "product intent reviewer: no blocker",
@@ -56,6 +64,22 @@ def scenario_review(**overrides):
         "blocking_findings": [],
     }
     review.update(overrides)
+    return review
+
+
+def ui_scenario_review(**overrides):
+    review = scenario_review(**overrides)
+    review.setdefault("ui_continuity_findings", [])
+    review.setdefault(
+        "baseline_inheritance_review",
+        {
+            "ui_change_type": "incremental_existing_surface",
+            "baseline_feature_slug": "v0-existing-classroom",
+            "baseline_entry_path": "teacher opens the existing classroom dashboard",
+            "inherits_existing_surface": True,
+            "parallel_surface_replacement": False,
+        },
+    )
     return review
 
 
@@ -254,25 +278,46 @@ def browser_evidence(project_root, **overrides):
 
 
 class DeliveryHardeningGateTests(unittest.TestCase):
-    def _confirmed_ui_workflow_with_planned_e2e(self, project_root: Path):
+    def _ui_workflow_with_draft(self, project_root: Path):
         prototype_path = "docs/prototypes/v2.4.1-alert-triage-whitelist-prototype.html"
         prototype = project_root / prototype_path
         prototype.parent.mkdir(parents=True, exist_ok=True)
         prototype.write_text("<html>prototype</html>", encoding="utf-8")
         write_prototype_screenshot(project_root)
         workflow = ProductDeliveryWorkflow(project_root)
-        workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
-        workflow.record_scenario_matrix([scenario_row()])
-        workflow.record_multi_agent_review("scenario", scenario_review())
-        workflow.select_project_type("ui")
-        state = workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
-        pending = state["pending_confirmations"]["ui_prototype"]
-        workflow.confirm_ui_prototype(
-            "确认本地 HTML 原型符合预期，nonce=" + pending["nonce"],
-            prototype_path,
-            nonce=pending["nonce"],
+        workflow.start(
+            feature_slug="v2.4.1-alert-triage-whitelist",
+            multi_agent_mode="spawned_subagents_authorized",
         )
+        workflow.record_scenario_matrix([scenario_row()])
+        workflow.select_project_type("ui")
+        workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+        return workflow
+
+    def _ui_workflow_with_confirmed_baseline(self, project_root: Path):
+        workflow = self._ui_workflow_with_draft(project_root)
+        confirm_product_baseline(
+            workflow,
+            scenario_review(),
+            "确认需求范围和本地 HTML 原型",
+        )
+        return workflow
+
+    def _confirmed_ui_workflow_with_planned_e2e(self, project_root: Path):
+        workflow = self._ui_workflow_with_confirmed_baseline(project_root)
         workflow.record_planned_e2e_obligations([planned_obligation()])
+        return workflow
+
+    def _non_ui_workflow_with_confirmed_baseline(self, project_root: Path):
+        workflow = ProductDeliveryWorkflow(project_root)
+        workflow.start(
+            feature_slug="v2.4.1-alert-triage-whitelist",
+            multi_agent_mode="spawned_subagents_authorized",
+        )
+        workflow.record_scenario_matrix([scenario_row()])
+        workflow.select_project_type("non_ui")
+        workflow.record_non_ui_behavior_contract(complete_contract_payload())
+        confirm_product_baseline(workflow, scenario_review())
         return workflow
 
     def _record_coverage_and_test_reviews(self, workflow: ProductDeliveryWorkflow):
@@ -326,41 +371,32 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             workflow = self._confirmed_ui_workflow_with_planned_e2e(project_root)
             self._record_coverage_and_test_reviews(workflow)
 
-            state = workflow.confirm_requirements_and_e2e_plan(
-                "确认需求冻结和 planned E2E 覆盖计划",
-            )
+            state = confirm_test_coverage_plan(workflow)
 
             self.assertTrue(state["open_spec_freeze"]["approved_by_user"])
             self.assertTrue(state["planned_e2e_obligations"]["accepted_by_user"])
             self.assertNotIn("user_confirmed_freeze", state["blocked_until"])
             self.assertNotIn("planned_e2e_user_confirmation", state["blocked_until"])
-            open_spec_confirmation = state["user_confirmations"]["open_spec_freeze"]
-            planned_confirmation = state["user_confirmations"]["planned_e2e_obligations"]
-            self.assertEqual(
-                open_spec_confirmation["confirmation_artifact_path"],
-                planned_confirmation["confirmation_artifact_path"],
-            )
-            self.assertEqual(
-                open_spec_confirmation["snapshot_hash"],
-                planned_confirmation["snapshot_hash"],
-            )
+            planned_confirmation = state["user_confirmations"]["test_coverage_plan"]
             self.assertTrue(
                 (
                     project_root
                     / ARTIFACT_ROOT
-                    / open_spec_confirmation["confirmation_artifact_path"]
+                    / planned_confirmation["confirmation_artifact_path"]
                 ).is_file()
             )
 
     def test_scenario_review_routes_to_surface_gate_not_standalone_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
-            workflow.record_scenario_matrix([scenario_row()])
+            workflow = self._ui_workflow_with_draft(Path(tmp))
 
-            state = workflow.record_multi_agent_review("scenario", scenario_review())
+            state = workflow.record_multi_agent_review(
+                "scenario", ui_scenario_review()
+            )
 
-            self.assertEqual(state["next_gate"], "ui_or_non_ui_confirmation")
+            self.assertEqual(
+                state["next_gate"], "product_baseline_confirmation_preparation"
+            )
             self.assertIn("user_confirmed_freeze", state["blocked_until"])
 
     def test_reconfirming_requirements_e2e_plan_preserves_prior_artifact(self):
@@ -368,16 +404,18 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = self._confirmed_ui_workflow_with_planned_e2e(project_root)
             self._record_coverage_and_test_reviews(workflow)
-            first = workflow.confirm_requirements_and_e2e_plan(
-                "确认需求冻结和 planned E2E 覆盖计划",
-            )
-            first_record = first["user_confirmations"]["open_spec_freeze"]
+            first = confirm_test_coverage_plan(workflow)
+            first_record = first["user_confirmations"]["test_coverage_plan"]
             first_path = (
                 project_root
                 / ARTIFACT_ROOT
                 / first_record["confirmation_artifact_path"]
             )
 
+            workflow.record_user_requested_change(
+                targets=["test_coverage_plan"],
+                user_message="调整 planned E2E 覆盖要求",
+            )
             workflow.record_planned_e2e_obligations(
                 [
                     planned_obligation(
@@ -387,10 +425,11 @@ class DeliveryHardeningGateTests(unittest.TestCase):
                 ]
             )
             self._record_coverage_and_test_reviews(workflow)
-            second = workflow.confirm_requirements_and_e2e_plan(
-                "确认修订后的需求冻结和 planned E2E 覆盖计划",
+            second = confirm_test_coverage_plan(
+                workflow,
+                "确认修订后的 planned E2E 和测试覆盖计划",
             )
-            second_record = second["user_confirmations"]["open_spec_freeze"]
+            second_record = second["user_confirmations"]["test_coverage_plan"]
             second_path = (
                 project_root
                 / ARTIFACT_ROOT
@@ -403,7 +442,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             stale_targets = second["stale_user_confirmations"][-1]["targets"]
             self.assertEqual(
                 sorted(stale_targets),
-                ["open_spec_freeze", "planned_e2e_obligations"],
+                ["planned_e2e_obligations", "test_coverage_plan"],
             )
 
     def test_coverage_audit_change_stales_reviews_confirmation_and_authorization(self):
@@ -411,9 +450,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = self._confirmed_ui_workflow_with_planned_e2e(project_root)
             self._record_coverage_and_test_reviews(workflow)
-            workflow.confirm_requirements_and_e2e_plan(
-                "确认需求冻结和 planned E2E 覆盖计划",
-            )
+            confirm_test_coverage_plan(workflow)
 
             state = workflow.record_test_coverage_audit(
                 [
@@ -431,16 +468,27 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             self.assertEqual(state["multi_agent_reviews"]["test"]["status"], "stale")
             self.assertIn("stale_multi_agent_test_coverage_review", state["blocked_until"])
             self.assertIn("stale_multi_agent_test_review", state["blocked_until"])
-            self.assertIn("user_confirmed_freeze", state["blocked_until"])
-            self.assertIn("planned_e2e_user_confirmation", state["blocked_until"])
-            self.assertNotIn("open_spec_freeze", state["user_confirmations"])
-            self.assertNotIn("planned_e2e_obligations", state["user_confirmations"])
+            self.assertIn("product_baseline", state["user_confirmations"])
+            self.assertIn("test_coverage_plan", state["user_confirmations"])
+            self.assertNotIn(
+                "product_baseline_user_confirmation", state["blocked_until"]
+            )
+            self.assertNotIn(
+                "test_coverage_plan_user_confirmation", state["blocked_until"]
+            )
+
+            self._record_coverage_and_test_reviews(workflow)
+            self.assertEqual(
+                workflow.status()["next_gate"],
+                "implementation_launch_authorization",
+            )
 
     def test_scenario_matrix_draft_ready_is_not_user_confirmed_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
 
             state = workflow.record_scenario_matrix([scenario_row()])
 
@@ -460,7 +508,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
 
             workflow.record_scenario_matrix(
                 [
@@ -486,25 +535,24 @@ class DeliveryHardeningGateTests(unittest.TestCase):
 
     def test_missing_scenario_review_blocks_user_confirmed_freeze(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
-            workflow.record_scenario_matrix([scenario_row()])
+            workflow = self._ui_workflow_with_draft(Path(tmp))
 
             with self.assertRaises(WorkflowError) as caught:
-                workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
+                workflow.prepare_product_baseline_confirmation()
 
             self.assertIn("multi-agent scenario review", str(caught.exception))
 
     def test_multi_agent_review_then_user_confirmation_freezes_open_spec(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(feature_slug="v2.4.1-alert-triage-whitelist", multi_agent_mode="spawned_subagents_authorized")
-            workflow.record_scenario_matrix([scenario_row()])
-            workflow.record_multi_agent_review("scenario", scenario_review())
+            workflow = self._ui_workflow_with_draft(project_root)
+            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            pending_state = workflow.prepare_product_baseline_confirmation()
+            pending = pending_state["pending_confirmations"]["product_baseline"]
 
-            state = workflow.record_user_confirmation(
-                user_confirmation("open_spec_freeze")
+            state = workflow.confirm_product_baseline(
+                "确认需求范围和本地 HTML 原型",
+                pending["nonce"],
             )
 
             self.assertTrue(state["open_spec_freeze"]["approved_by_user"])
@@ -512,16 +560,17 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             confirmation_artifact = (
                 project_root
                 / ARTIFACT_ROOT
-                / "artifacts"
-                / "user-confirmations"
-                / "open_spec_freeze.md"
+                / state["user_confirmations"]["product_baseline"][
+                    "confirmation_artifact_path"
+                ]
             )
             self.assertTrue(confirmation_artifact.is_file())
 
     def test_scenario_matrix_requires_traceable_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             bad_row = scenario_row(journey="")
 
             with self.assertRaises(ScenarioMatrixError) as caught:
@@ -532,7 +581,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_blocking_multi_agent_finding_rejects_review(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
 
             with self.assertRaises(ReviewGateError):
@@ -550,30 +600,33 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             prototype.write_text("<html>prototype</html>", encoding="utf-8")
             write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
-            state = workflow.record_ui_prototype_review(
+            workflow.record_ui_prototype_review(
                 ui_review_payload(prototype_path)
             )
-            pending = state["pending_confirmations"]["ui_prototype"]
+            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            state = workflow.prepare_product_baseline_confirmation()
+            pending = state["pending_confirmations"]["product_baseline"]
 
             with self.assertRaises(ConfirmationError):
-                workflow.confirm_ui_prototype(
+                workflow.confirm_product_baseline(
                     "继续",
-                    prototype_path,
+                    pending["nonce"],
                     agent_explicitly_asked=True,
                 )
             with self.assertRaises(ConfirmationError):
-                workflow.confirm_ui_prototype(
+                workflow.confirm_product_baseline(
                     "确认本地 HTML 原型符合预期",
-                    prototype_path,
-                    nonce="wrong-nonce",
+                    "wrong-nonce",
                 )
 
-            state = workflow.confirm_ui_prototype(
+            state = workflow.confirm_product_baseline(
                 "确认本地 HTML 原型符合预期，nonce=" + pending["nonce"],
-                prototype_path,
-                nonce=pending["nonce"],
+                pending["nonce"],
             )
 
             self.assertTrue(state["ui_prototype"]["confirmed_by_user"])
@@ -584,8 +637,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
 
     def test_planned_e2e_obligations_allow_empty_executed_evidence_before_implementation(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow = self._ui_workflow_with_confirmed_baseline(Path(tmp))
 
             state = workflow.record_planned_e2e_obligations(
                 [planned_obligation()],
@@ -599,9 +651,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_non_ui_planned_obligations_accept_behavior_evidence_layer(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
-            workflow.select_project_type("non_ui")
+            workflow = self._non_ui_workflow_with_confirmed_baseline(project_root)
 
             state = workflow.record_planned_e2e_obligations(
                 [
@@ -639,9 +689,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
 
     def test_non_ui_planned_obligations_reject_browser_e2e_mislabeling(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
-            workflow.select_project_type("non_ui")
+            workflow = self._non_ui_workflow_with_confirmed_baseline(Path(tmp))
 
             with self.assertRaises(CoverageAuditError) as caught:
                 workflow.record_planned_e2e_obligations([planned_obligation()])
@@ -650,8 +698,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
 
     def test_structured_exemption_requires_approval_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = ProductDeliveryWorkflow(Path(tmp))
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow = self._ui_workflow_with_confirmed_baseline(Path(tmp))
             exemption = structured_exemption(approved_at="")
 
             with self.assertRaises(CoverageAuditError) as caught:
@@ -665,8 +712,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_executed_browser_evidence_requires_existing_path_and_semantic_assertions(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow = self._ui_workflow_with_confirmed_baseline(project_root)
             workflow.record_planned_e2e_obligations([planned_obligation()])
             record = browser_evidence(project_root, semantic_assertions=[])
 
@@ -678,8 +724,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
     def test_valid_executed_browser_evidence_records_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow = self._ui_workflow_with_confirmed_baseline(project_root)
             workflow.record_planned_e2e_obligations([planned_obligation()])
 
             state = workflow.record_executed_browser_evidence(
@@ -694,7 +739,8 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.generate_codex_goal_handoff = lambda **kwargs: None
 
             with self.assertRaises(Exception):

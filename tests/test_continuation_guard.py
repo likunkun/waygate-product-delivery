@@ -62,7 +62,7 @@ class ContinuationGuardTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "wait_for_user")
         self.assertTrue(result["can_stop"])
-        self.assertEqual(result["next_action"], "multi_agent_mode_selection")
+        self.assertEqual(result["next_action"], "startup_mode_selection")
 
     def test_invalidated_multi_agent_authorization_waits_for_user_when_active(self):
         result = derive_continuation_status(
@@ -72,7 +72,7 @@ class ContinuationGuardTests(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "wait_for_user")
-        self.assertEqual(result["next_action"], "multi_agent_mode_selection")
+        self.assertEqual(result["next_action"], "startup_mode_selection")
         self.assertIn("pending_user_decision:multi_agent_mode", result["blockers"])
 
     def test_active_next_gate_without_user_wait_must_continue(self):
@@ -85,14 +85,14 @@ class ContinuationGuardTests(unittest.TestCase):
     def test_pending_confirmation_allows_waiting_for_user(self):
         result = derive_continuation_status(
             active_state(
-                next_gate="ui_prototype_review_confirmation",
-                pending_confirmations={"ui_prototype": {"nonce": "abc"}},
+                next_gate="product_baseline_user_confirmation",
+                pending_confirmations={"product_baseline": {"nonce": "abc"}},
             )
         )
 
         self.assertEqual(result["status"], "wait_for_user")
         self.assertTrue(result["can_stop"])
-        self.assertIn("pending_confirmation:ui_prototype", result["blockers"])
+        self.assertIn("pending_confirmation:product_baseline", result["blockers"])
 
     def test_internal_pending_confirmation_must_continue(self):
         result = derive_continuation_status(
@@ -127,7 +127,7 @@ class ContinuationGuardTests(unittest.TestCase):
         self.assertEqual(result["next_action"], "multi_agent_test_coverage_review")
         self.assertIn("stale_multi_agent_test_coverage_review", result["blockers"])
 
-    def test_stale_requirements_e2e_confirmation_returns_to_combined_confirmation(self):
+    def test_stale_requirements_e2e_confirmation_returns_to_product_preparation(self):
         result = derive_continuation_status(
             active_state(
                 next_gate="codex_goal_handoff",
@@ -137,7 +137,9 @@ class ContinuationGuardTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "must_continue")
         self.assertFalse(result["can_stop"])
-        self.assertEqual(result["next_action"], "requirements_e2e_user_confirmation")
+        self.assertEqual(
+            result["next_action"], "product_baseline_confirmation_preparation"
+        )
         self.assertIn("stale_requirements_e2e_confirmation", result["blockers"])
 
     def test_closure_plugin_version_mismatch_blocks_continuation(self):

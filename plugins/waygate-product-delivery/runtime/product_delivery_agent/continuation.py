@@ -70,15 +70,18 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
 
     pending_decisions = state.get("pending_user_decisions") or {}
     policy = state.get("multi_agent_policy") or {}
+    startup_blockers = []
     if "multi_agent_mode" in pending_decisions or policy.get(
         "execution_authorization"
     ) in {"pending", "legacy_unverified", "invalidated"}:
+        startup_blockers.append("pending_user_decision:multi_agent_mode")
+    if startup_blockers:
         return _decision(
             "wait_for_user",
             can_stop=True,
-            reason="waiting for multi-Agent mode authorization",
-            blockers=["pending_user_decision:multi_agent_mode"],
-            next_action="multi_agent_mode_selection",
+            reason="waiting for startup review mode authorization",
+            blockers=startup_blockers,
+            next_action="startup_mode_selection",
         )
 
     pending = _pending_confirmation_blockers(state)
@@ -106,27 +109,17 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
             next_action=review_gate["next_action"],
         )
     if "stale_requirements_e2e_confirmation" in blocker_names + derived_stale_blockers:
+        product_baseline_stale = "product_baseline_user_confirmation" in derived_blockers
         return _decision(
             "must_continue",
             can_stop=False,
-            reason="stale requirements and planned E2E confirmation requires refresh",
+            reason="stale layered confirmation requires review and preparation",
             blockers=["stale_requirements_e2e_confirmation"],
-            next_action="requirements_e2e_user_confirmation",
-        )
-    if state.get("next_gate") == "requirements_e2e_user_confirmation" and (
-        "user_confirmed_freeze" in derived_blockers
-        or "planned_e2e_user_confirmation" in derived_blockers
-    ):
-        return _decision(
-            "wait_for_user",
-            can_stop=True,
-            reason="waiting for requirements and planned E2E confirmation",
-            blockers=[
-                blocker
-                for blocker in ("user_confirmed_freeze", "planned_e2e_user_confirmation")
-                if blocker in derived_blockers
-            ],
-            next_action="requirements_e2e_user_confirmation",
+            next_action=(
+                "product_baseline_confirmation_preparation"
+                if product_baseline_stale
+                else "test_coverage_confirmation_preparation"
+            ),
         )
     user_wait = _matching_blockers(blocker_names, USER_WAIT_MARKERS)
     if user_wait or state.get("paused"):

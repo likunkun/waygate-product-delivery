@@ -1,8 +1,8 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.18-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
-[![Tests](https://img.shields.io/badge/tests-219%20passing-15803d)](#verify)
+[![Version](https://img.shields.io/badge/version-1.0.21-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
@@ -31,7 +31,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | Dormant-by-default activation | The plugin does nothing until the project explicitly says `启动交付` or `start`. |
 | File-backed workflow state | `.product-delivery/state.json` and artifacts outlive chat context and compaction. |
 | Required skill gates | Product Delivery, Open Spec, planning files, UI/UX, browser testing, and closure skills are checked by stage. |
-| UI prototype gate | UI projects require a current-feature local 1:1 HTML prototype and explicit user confirmation. |
+| Layered product confirmation | Product scope and the UI prototype or non-UI behavior contract are confirmed before detailed test design. |
 | Prototype-to-production conformance | UI closure requires frozen prototype contracts, production PNG and semantic evidence, plus an independent UI conformance review. |
 | Non-UI behavior gate | API, CLI, service, and background-job projects use behavior contracts instead of HTML prototypes. |
 | Multi-agent review artifacts | Scenario and test coverage reviews must be visible artifacts, not vague chat claims. |
@@ -109,7 +109,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.18.tar.gz
+dist/waygate-product-delivery-1.0.21.tar.gz
 ```
 
 ## Use In Codex
@@ -125,14 +125,13 @@ dist/waygate-product-delivery-1.0.18.tar.gz
 
 Implementation must not begin until the current feature has:
 
-1. current-feature Open Spec documents;
-2. scenario matrix and multi-agent scenario review artifacts;
-3. user-confirmed freeze;
-4. UI prototype confirmation or non-UI behavior contract confirmation;
-5. passed test coverage audit;
-6. passed multi-agent test coverage review;
-7. planned E2E obligations and accepted exemptions confirmed by the user;
-8. implementation launch authorization.
+1. current-feature Open Spec, scenario matrix, and UI prototype or non-UI behavior-contract draft;
+2. passed multi-agent product/scenario review;
+3. user-confirmed `product_baseline` for scope and surface behavior;
+4. planned E2E obligations, coverage audit, and detailed test design created after that baseline;
+5. passed multi-agent test and test-coverage reviews;
+6. user-confirmed `test_coverage_plan`;
+7. automatic implementation launch authorization.
 
 ## Workflow
 
@@ -140,20 +139,13 @@ Implementation must not begin until the current feature has:
 flowchart LR
     A[Start] --> B[Product brief]
     B --> C[Open Spec]
-    C --> D[Project type decision]
-    D --> E[Scenario matrix]
-    E --> F[Multi-agent scenario review]
-    F --> G[User-confirmed freeze]
-    G --> H{Project type}
-    H -->|UI| I[1:1 HTML prototype]
-    H -->|Non-UI| J[Behavior contract]
-    I --> K[User confirmation]
-    J --> K
-    K --> L[Test coverage audit]
-    L --> M[Multi-agent test coverage review]
-    M --> N[Planned E2E obligations]
-    N --> O[Planned E2E user confirmation]
-    O --> P[Implementation launch authorization]
+    C --> D[Scenario matrix and surface draft]
+    D --> E[Multi-agent product and scenario review]
+    E --> F[Confirm product_baseline]
+    F --> G[Planned E2E and coverage audit]
+    G --> H[Multi-agent test and coverage review]
+    H --> I[Confirm test_coverage_plan]
+    I --> P[Automatic implementation launch authorization]
     P --> Q[Codex Goal handoff]
     Q --> R[Task queue execution]
     R --> S[Executed evidence]
@@ -219,7 +211,7 @@ env -u PYTHONPATH PYTHONNOUSERSITE=1 \
 Current baseline:
 
 ```text
-219 unit tests passing
+Full unit test suite passing
 Plugin validation passed
 Packaged validator runs without source PYTHONPATH
 ```

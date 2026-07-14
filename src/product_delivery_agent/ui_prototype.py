@@ -272,7 +272,7 @@ def render_ui_prototype_review(review: dict[str, Any]) -> str:
             "",
             "### New Surface Justification",
             _render_new_surface_justification(review.get("new_surface_justification")),
-            f"- User Confirmation: {bool(review.get('new_surface_user_confirmation'))}",
+            "- User Confirmation: bound to final product_baseline confirmation",
             "",
             "## Prototype Limitations",
             *_bullets(review["limitations"]),
@@ -302,8 +302,6 @@ def _validate_continuity_fields(review: dict[str, Any], missing: list[str]) -> N
             review.get("new_surface_justification")
         ):
             missing.append("new_surface_justification")
-        if review.get("new_surface_user_confirmation") is not True:
-            missing.append("new_surface_user_confirmation")
 
 
 def _has_meaningful_new_surface_justification(value: Any) -> bool:

@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.18")
+            self.assertEqual(manifest["version"], "1.0.21")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -96,6 +96,8 @@ class PluginPackagingTests(unittest.TestCase):
             ).read_text("utf-8")
             self.assertIn("启动交付", skill_markdown)
             self.assertIn("启动交付，多 Agent 模式", skill_markdown)
+            self.assertNotIn("启动交付，自动模式，多 Agent 模式", skill_markdown)
+            self.assertNotIn("启动交付，全速模式，多 Agent 模式", skill_markdown)
             self.assertIn("停止交付", skill_markdown)
             self.assertIn("`start` / `stop`", skill_markdown)
             self.assertIn("planning-with-files", skill_markdown)
@@ -103,12 +105,14 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("ui-ux-pro-max", skill_markdown)
             self.assertIn("webapp-testing", skill_markdown)
             self.assertIn("禁止实现", skill_markdown)
-            self.assertIn("未确认 prototype", skill_markdown)
-            self.assertIn("未显式确认本地 1:1 HTML prototype", skill_markdown)
+            self.assertIn("product_baseline", skill_markdown)
+            self.assertIn("test_coverage_plan", skill_markdown)
             self.assertIn("pre-handoff", skill_markdown)
             self.assertIn("pre-closure", skill_markdown)
-            self.assertIn("confirm_ui_prototype", skill_markdown)
-            self.assertIn("prototype 每次修订后都必须重新确认", skill_markdown)
+            self.assertIn("prepare_product_baseline_confirmation", skill_markdown)
+            self.assertIn("confirm_product_baseline", skill_markdown)
+            self.assertIn("prepare_test_coverage_confirmation", skill_markdown)
+            self.assertIn("confirm_test_coverage_plan", skill_markdown)
             self.assertIn("record_prototype_production_conformance", skill_markdown)
             self.assertIn("ui_conformance", skill_markdown)
             self.assertIn("semantic snapshot", skill_markdown)
@@ -120,14 +124,18 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("review_mode", skill_markdown)
             self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
             self.assertIn("启动交付，允许降级评审", skill_markdown)
-            self.assertIn("authorization_pending", skill_markdown)
+            self.assertIn("multi_agent_mode_selection", skill_markdown)
+            self.assertNotIn("execution_model_policy", skill_markdown)
+            self.assertNotIn("model-profiles.json", skill_markdown)
+            self.assertIn("inspect_startup_request", skill_markdown)
             self.assertIn("current_delivery", skill_markdown)
             self.assertIn("结构化 review gate", skill_markdown)
             self.assertIn("用户面对的确认只保留两次", skill_markdown)
             self.assertIn(
-                "combined requirements freeze + planned E2E coverage 确认",
+                "先确认需求范围和 UI 原型或非 UI 行为契约",
                 skill_markdown,
             )
+            self.assertIn("产品基线确认前不得生成详细测试用例", skill_markdown)
             self.assertNotIn("确认按当前交付包开始实现", skill_markdown)
             self.assertIn("implementation_launch_authorization", skill_markdown)
             self.assertIn("custom artifact", skill_markdown)
@@ -160,6 +168,8 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("execution_segment_id", skill_markdown)
             self.assertIn("role-accurate Browser E2E", skill_markdown)
             self.assertIn("verified_action_assertions", skill_markdown)
+            self.assertIn("recover_stale_launch_package", skill_markdown)
+            self.assertIn("implementation_package_superseded", skill_markdown)
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
@@ -175,6 +185,17 @@ class PluginPackagingTests(unittest.TestCase):
             ).read_text("utf-8")
             self.assertIn("ui_change_type", ui_template)
             self.assertIn("continuity_mapping", ui_template)
+            self.assertIn("product_baseline", ui_template)
+            self.assertNotIn("confirm_ui_prototype", ui_template)
+            startup_template = (
+                root / "templates" / "startup-checklist.md"
+            ).read_text("utf-8")
+            self.assertIn("product_baseline", startup_template)
+            self.assertIn("test_coverage_plan", startup_template)
+            self.assertLess(
+                startup_template.index("product_baseline"),
+                startup_template.index("planned E2E"),
+            )
             scenario_review_template = (
                 root / "templates" / "multi-agent-scenario-review.md"
             ).read_text("utf-8")
@@ -207,7 +228,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.18")
+            self.assertEqual(closure_template["plugin_version"], "1.0.21")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -259,7 +280,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.18.tar.gz",
+                "waygate-product-delivery-1.0.21.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

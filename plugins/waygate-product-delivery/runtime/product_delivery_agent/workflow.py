@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -60,10 +62,14 @@ from product_delivery_agent.gatekeeper import (
     assert_pre_closure_ready,
     assert_pre_handoff_ready,
     derive_blockers,
+    product_baseline_hash,
     requirements_e2e_confirmation_hash,
     render_closure_validator_result,
     review_input_hash,
     stable_state_hash,
+    surface_input_hash,
+    test_coverage_plan_hash,
+    test_coverage_user_semantics_hash,
 )
 from product_delivery_agent.handoff import (
     build_codex_goal_handoff,
@@ -271,6 +277,11 @@ class ProductDeliveryWorkflow:
         }
         state["user_confirmations"] = {}
         state["pending_confirmations"] = {}
+        state["confirmation_readiness"] = {
+            "product_baseline": "draft",
+            "test_coverage_plan": "blocked_on_product_baseline",
+        }
+        state["user_change_requests"] = []
         state["pending_user_decisions"] = {}
         if multi_agent_mode is None:
             state["pending_user_decisions"]["multi_agent_mode"] = {
@@ -292,6 +303,8 @@ class ProductDeliveryWorkflow:
         if feature_slug:
             state["required_artifacts"].append(f"docs/open-spec/{feature_slug}/")
         return write_state(self.project_root, state)
+
+
 
     def authorize_multi_agent_mode(
         self,
@@ -347,12 +360,23 @@ class ProductDeliveryWorkflow:
             user_message.strip()
         )
         state.setdefault("pending_user_decisions", {}).pop("multi_agent_mode", None)
-        if state.get("next_gate") == "multi_agent_mode_selection":
-            state["next_gate"] = "product_blueprint"
+        self._refresh_startup_gate(state)
         return write_state(self.project_root, state)
+
+
+
+
+
+
 
     def record_scenario_matrix(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         state = self._require_started()
+        if self._product_baseline_is_confirmed(state) and not self._has_user_change_authorization(
+            state, "product_baseline"
+        ):
+            raise WorkflowError(
+                "confirmed product baseline requires user change authorization"
+            )
         validate_scenario_matrix(rows)
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
@@ -398,6 +422,21 @@ class ProductDeliveryWorkflow:
         review: dict[str, Any],
     ) -> dict[str, Any]:
         state = self._require_started(allow_pending_authorization=True)
+        if review_type == "scenario":
+            if state.get("project_type") == "ui" and not state.get(
+                "ui_prototype", {}
+            ).get("generated"):
+                raise ReviewGateError(
+                    "UI prototype draft is required before scenario review"
+                )
+            if state.get("project_type") == "non_ui" and not state.get(
+                "non_ui_behavior_contract"
+            ):
+                raise ReviewGateError(
+                    "non-UI behavior contract is required before scenario review"
+                )
+        if review_type in {"test", "test_coverage"}:
+            self._require_product_baseline_confirmed(state)
         ui_change_type = None
         if review_type == "scenario" and state.get("project_type") == "ui":
             ui_change_type = (
@@ -436,6 +475,8 @@ class ProductDeliveryWorkflow:
             raise ReviewGateError(
                 "spawned_subagents review requires explicit execution authorization for the current delivery"
             )
+        if review_mode == "spawned_subagents":
+            self._validate_spawned_reviewer_agents(review)
         if review_mode == "role_simulation" and (
             policy_mode != "role_simulation_allowed"
             or execution_authorization != "degradation_authorized"
@@ -459,6 +500,8 @@ class ProductDeliveryWorkflow:
             "review_id": review["review_id"],
             "artifact_version": review["artifact_version"],
             "review_mode": review_mode,
+            "reviewer_agent_ids": list(review.get("reviewer_agent_ids") or []),
+            "reviewer_spawn_source": review.get("reviewer_spawn_source"),
             "input_snapshot_hash": review_input_hash(state, review_type),
         }
         self._remove_blockers(
@@ -468,13 +511,30 @@ class ProductDeliveryWorkflow:
         )
         state["stage"] = f"multi_agent_{review_type}_review_passed"
         next_gates = {
-            "scenario": "ui_or_non_ui_confirmation",
-            "test": "requirements_e2e_user_confirmation",
-            "test_coverage": "requirements_e2e_user_confirmation",
+            "scenario": "product_baseline_confirmation_preparation",
+            "test": "multi_agent_test_coverage_review",
+            "test_coverage": "multi_agent_test_review",
             "test_implementation": "feature_closure_after_implementation",
             "ui_conformance": "multi_agent_test_implementation_review",
         }
         next_gate = next_gates.get(review_type, "codex_goal_handoff")
+        if review_type in {"test", "test_coverage"}:
+            required_reviews = ("test", "test_coverage")
+            reviews_current = all(
+                state.get("multi_agent_reviews", {}).get(required, {}).get("status")
+                == "passed"
+                and state.get("multi_agent_reviews", {})
+                .get(required, {})
+                .get("input_snapshot_hash")
+                == review_input_hash(state, required)
+                for required in required_reviews
+            )
+            if reviews_current:
+                next_gate = (
+                    "implementation_launch_authorization"
+                    if self._test_coverage_plan_is_user_confirmed(state)
+                    else "test_coverage_confirmation_preparation"
+                )
         if state.get("project_type") == "ui" and review_type == "test_implementation":
             conformance = state.get("prototype_production_conformance") or {}
             ui_review = (state.get("multi_agent_reviews") or {}).get(
@@ -541,52 +601,342 @@ class ProductDeliveryWorkflow:
         self,
         confirmation: dict[str, Any],
     ) -> dict[str, Any]:
-        state = self._require_started()
+        self._require_started()
         validate_user_confirmation(confirmation)
         target = confirmation["target"]
         if not is_recordable_user_confirmation_target(target):
             raise WorkflowError(f"{target} is not a user confirmation gate")
         if target == "open_spec_freeze":
-            review = state.get("multi_agent_reviews", {}).get("scenario", {})
-            if review.get("status") != "passed":
-                raise WorkflowError("multi-agent scenario review is required before freeze")
+            raise WorkflowError(
+                "use prepare_product_baseline_confirmation and "
+                "confirm_product_baseline for modern deliveries"
+            )
+        raise WorkflowError(
+            "use prepare_test_coverage_confirmation and "
+            "confirm_test_coverage_plan for modern deliveries"
+        )
 
+    def prepare_product_baseline_confirmation(self) -> dict[str, Any]:
+        """Create the single requirements-and-surface confirmation request."""
+        state = self._require_started()
+        project_type = state.get("project_type")
+        if project_type not in {"ui", "non_ui"}:
+            raise WorkflowError("project type is required before product baseline")
+        review = state.get("multi_agent_reviews", {}).get("scenario", {})
+        if review.get("status") != "passed" or review.get(
+            "input_snapshot_hash"
+        ) != review_input_hash(state, "scenario"):
+            raise WorkflowError(
+                "current multi-agent scenario review is required before product baseline confirmation"
+            )
+        if project_type == "ui":
+            ui = state.get("ui_prototype") or {}
+            if not ui.get("generated") or not ui.get("reviewed_by_agent"):
+                raise WorkflowError("current UI prototype draft is required")
+            artifact_path = str(ui.get("prototype_path") or "")
+            surface_artifact_hash = str(ui.get("artifact_hash") or "")
+            prototype_revision = str(ui.get("prototype_revision") or "")
+            contract_hash = str(ui.get("prototype_contract_hash") or "")
+            screenshot_hash = str(ui.get("prototype_screenshot_set_hash") or "")
+        else:
+            contract = state.get("non_ui_behavior_contract") or {}
+            if not contract:
+                raise WorkflowError("current non-UI behavior contract is required")
+            artifact_path = str(contract.get("contract_artifact_path") or "")
+            surface_artifact_hash = str(contract.get("artifact_hash") or "")
+            prototype_revision = "non-ui-behavior-contract"
+            contract_hash = None
+            screenshot_hash = None
+        baseline_hash = product_baseline_hash(state)
+        pending = self._build_pending_confirmation(
+            target="product_baseline",
+            artifact_path=artifact_path,
+            artifact_hash=baseline_hash,
+            artifact_version=f"product-baseline-{baseline_hash[:12]}",
+            prototype_revision=prototype_revision,
+            state=state,
+            prototype_contract_hash=contract_hash,
+            prototype_screenshot_set_hash=screenshot_hash,
+        )
+        pending["surface_artifact_hash"] = surface_artifact_hash
+        pending["surface_hash"] = surface_input_hash(state)
+        state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
+        state["pending_confirmations"]["product_baseline"] = pending
+        state.setdefault("confirmation_readiness", {})[
+            "product_baseline"
+        ] = "ready_for_user"
+        state["stage"] = "product_baseline_confirmation_ready"
+        state["next_gate"] = "product_baseline_user_confirmation"
+        return write_state(self.project_root, state)
+
+    def confirm_product_baseline(
+        self,
+        user_message: str,
+        nonce: str,
+        *,
+        agent_explicitly_asked: bool = False,
+    ) -> dict[str, Any]:
+        """Confirm requirement scope and the final UI/non-UI surface together."""
+        state = self._require_started()
+        pending = state.get("pending_confirmations", {}).get("product_baseline")
+        if not pending:
+            raise ConfirmationError("pending product baseline confirmation is required")
+        if nonce != pending.get("nonce"):
+            raise ConfirmationError("current product baseline confirmation nonce is required")
+        current_baseline_hash = product_baseline_hash(state)
+        if pending.get("artifact_hash") != current_baseline_hash:
+            raise ConfirmationError("product baseline changed after confirmation preparation")
+        validate_confirmation_message(
+            user_message,
+            agent_explicitly_asked=agent_explicitly_asked,
+        )
+        project_type = state.get("project_type")
+        if project_type == "ui":
+            ui = state.get("ui_prototype") or {}
+            current_artifact_hash = self._artifact_hash(
+                str(ui.get("prototype_path") or ""), require_exists=True
+            )
+            if current_artifact_hash != pending.get("surface_artifact_hash"):
+                raise ConfirmationError("prototype changed after confirmation preparation")
+            try:
+                current_contract = build_prototype_contract(
+                    self.project_root,
+                    state.get("prototype_contract") or {},
+                )
+            except UIPrototypeError as cause:
+                raise ConfirmationError(str(cause)) from cause
+            if current_contract.get("contract_sha256") != pending.get(
+                "prototype_contract_hash"
+            ):
+                raise ConfirmationError("prototype contract changed after preparation")
+            if current_contract.get("prototype_screenshot_set_sha256") != pending.get(
+                "prototype_screenshot_set_hash"
+            ):
+                raise ConfirmationError("prototype screenshots changed after preparation")
+        elif project_type != "non_ui":
+            raise WorkflowError("project type is required before product baseline")
+
+        confirmation = {
+            "confirmation_id": "CONF-product_baseline",
+            "target": "product_baseline",
+            "artifact_path": pending["artifact_path"],
+            "artifact_version": pending["artifact_version"],
+            "artifact_hash": pending["artifact_hash"],
+            "surface_hash": pending["surface_hash"],
+            "nonce": pending["nonce"],
+            "confirmed_by": "user",
+            "confirmation_source": "chat_user_reply",
+            "confirmed_at": self._timestamp_from_state(state),
+            "decision": "approved",
+            "user_message": user_message,
+        }
+        if project_type == "ui":
+            confirmation.update(
+                {
+                    "prototype_revision": pending["prototype_revision"],
+                    "prototype_contract_hash": pending[
+                        "prototype_contract_hash"
+                    ],
+                    "prototype_screenshot_set_hash": pending[
+                        "prototype_screenshot_set_hash"
+                    ],
+                }
+            )
+        artifact_name = f"product-baseline-{pending['nonce']}.md"
+        relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
         confirmations_dir = (
             self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
         )
         confirmations_dir.mkdir(parents=True, exist_ok=True)
-        confirmation_path = confirmations_dir / f"{target}.md"
-        confirmation_path.write_text(
-            render_user_confirmation(confirmation),
-            encoding="utf-8",
+        (confirmations_dir / artifact_name).write_text(
+            render_user_confirmation(confirmation), encoding="utf-8"
         )
-
-        artifact_path = f"artifacts/user-confirmations/{target}.md"
-        state.setdefault("user_confirmations", {})
-        state["user_confirmations"][target] = {
+        logical = {
             **confirmation,
-            "confirmation_artifact_path": artifact_path,
+            "confirmation_artifact_path": relative_artifact_path,
         }
-        if target == "open_spec_freeze":
-            state["open_spec_freeze"] = {
-                "approved_by_user": True,
-                "approved_at": confirmation["confirmed_at"],
-                "confirmation_artifact_path": artifact_path,
+        confirmations = state.setdefault("user_confirmations", {})
+        confirmations["product_baseline"] = logical
+        confirmations["open_spec_freeze"] = {
+            **logical,
+            "target": "open_spec_freeze",
+        }
+        state["open_spec_freeze"] = {
+            "approved_by_user": True,
+            "approved_at": confirmation["confirmed_at"],
+            "confirmation_artifact_path": relative_artifact_path,
+            "product_baseline_hash": pending["artifact_hash"],
+        }
+        state["freeze"] = {
+            **state.get("freeze", {}),
+            "frozen": True,
+        }
+        if project_type == "ui":
+            ui_confirmation = {
+                **logical,
+                "target": "ui_prototype",
+                "artifact_path": state["ui_prototype"]["prototype_path"],
+                "artifact_hash": pending["surface_artifact_hash"],
             }
-            state["freeze"] = {
-                **state.get("freeze", {}),
-                "frozen": True,
+            confirmations["ui_prototype"] = ui_confirmation
+            state["ui_prototype"] = {
+                **state["ui_prototype"],
+                "confirmed_by_user": True,
+                "confirmation_status": "confirmed",
+                "pending_confirmation_nonce": None,
+                "confirmation_source": "chat_user_reply",
+                "confirmation_artifact_path": relative_artifact_path,
             }
-            self._remove_blockers(state, "user_confirmed_freeze")
-            state["stage"] = "open_spec_user_confirmed_freeze"
-            state["next_gate"] = "ui_or_non_ui_confirmation"
-        elif target == "planned_e2e_obligations":
-            state.setdefault("planned_e2e_obligations", {})
-            state["planned_e2e_obligations"]["accepted_by_user"] = True
-            self._remove_blockers(state, "planned_e2e_user_confirmation")
-            state["stage"] = "planned_e2e_user_confirmed"
         else:
-            state["stage"] = f"{target}_user_confirmed"
+            contract_confirmation = {
+                **logical,
+                "target": "non_ui_behavior_contract",
+                "artifact_hash": pending["surface_hash"],
+            }
+            confirmations["non_ui_behavior_contract"] = contract_confirmation
+            state["non_ui_behavior_contract"] = {
+                **state["non_ui_behavior_contract"],
+                "confirmed_by_user": True,
+                "confirmation_status": "confirmed",
+                "confirmation_artifact_path": relative_artifact_path,
+            }
+        state.setdefault("pending_confirmations", {}).pop("product_baseline", None)
+        state.setdefault("confirmation_readiness", {})[
+            "product_baseline"
+        ] = "confirmed"
+        state["confirmation_readiness"][
+            "test_coverage_plan"
+        ] = "internal_review_pending"
+        self._close_user_change_authorizations(state, "product_baseline")
+        self._remove_blockers(
+            state,
+            "user_confirmed_freeze",
+            "product_baseline_user_confirmation",
+            "ui_html_prototype_confirmation",
+            "ui_prototype_user_confirmation",
+            "non_ui_behavior_contract_confirmation",
+        )
+        state["stage"] = "product_baseline_user_confirmed"
+        state["next_gate"] = "planned_e2e_obligations"
+        return write_state(self.project_root, state)
+
+    def prepare_test_coverage_confirmation(self) -> dict[str, Any]:
+        """Create the reviewed planned-E2E confirmation request."""
+        state = self._require_started()
+        self._require_product_baseline_confirmed(state)
+        planned = state.get("planned_e2e_obligations") or {}
+        if not planned.get("accepted") or not planned.get("obligations"):
+            raise WorkflowError("planned E2E obligations are required")
+        if not state.get("test_coverage_audit", {}).get("passed"):
+            raise WorkflowError("passed test coverage audit is required")
+        for review_type in ("test_coverage", "test"):
+            review = state.get("multi_agent_reviews", {}).get(review_type, {})
+            if review.get("status") != "passed" or review.get(
+                "input_snapshot_hash"
+            ) != review_input_hash(state, review_type):
+                raise WorkflowError(
+                    f"current multi-agent {review_type} review is required"
+                )
+        plan_hash = test_coverage_plan_hash(state)
+        pending = self._build_pending_confirmation(
+            target="test_coverage_plan",
+            artifact_path=str(planned.get("artifact_path") or ""),
+            artifact_hash=plan_hash,
+            artifact_version=f"test-coverage-plan-{plan_hash[:12]}",
+            prototype_revision="test-coverage-plan",
+            state=state,
+        )
+        pending["user_semantics_hash"] = test_coverage_user_semantics_hash(state)
+        pending["product_baseline_hash"] = product_baseline_hash(state)
+        state.setdefault("pending_confirmations", {})[
+            "test_coverage_plan"
+        ] = pending
+        state.setdefault("confirmation_readiness", {})[
+            "test_coverage_plan"
+        ] = "ready_for_user"
+        state["stage"] = "test_coverage_confirmation_ready"
+        state["next_gate"] = "test_coverage_plan_user_confirmation"
+        return write_state(self.project_root, state)
+
+    def confirm_test_coverage_plan(
+        self,
+        user_message: str,
+        nonce: str,
+        *,
+        agent_explicitly_asked: bool = False,
+    ) -> dict[str, Any]:
+        """Confirm planned E2E and coverage without re-confirming product scope."""
+        state = self._require_started()
+        self._require_product_baseline_confirmed(state)
+        pending = state.get("pending_confirmations", {}).get("test_coverage_plan")
+        if not pending:
+            raise ConfirmationError("pending test coverage confirmation is required")
+        if nonce != pending.get("nonce"):
+            raise ConfirmationError("current test coverage confirmation nonce is required")
+        if pending.get("artifact_hash") != test_coverage_plan_hash(state):
+            raise ConfirmationError("test coverage plan changed after preparation")
+        validate_confirmation_message(
+            user_message,
+            agent_explicitly_asked=agent_explicitly_asked,
+        )
+        confirmation = {
+            "confirmation_id": "CONF-test_coverage_plan",
+            "target": "test_coverage_plan",
+            "artifact_path": pending["artifact_path"],
+            "artifact_version": pending["artifact_version"],
+            "artifact_hash": pending["artifact_hash"],
+            "user_semantics_hash": pending["user_semantics_hash"],
+            "product_baseline_hash": pending["product_baseline_hash"],
+            "nonce": pending["nonce"],
+            "confirmed_by": "user",
+            "confirmation_source": "chat_user_reply",
+            "confirmed_at": self._timestamp_from_state(state),
+            "decision": "approved",
+            "user_message": user_message,
+        }
+        artifact_name = f"test-coverage-plan-{pending['nonce']}.md"
+        relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
+        confirmations_dir = (
+            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
+        )
+        confirmations_dir.mkdir(parents=True, exist_ok=True)
+        (confirmations_dir / artifact_name).write_text(
+            render_user_confirmation(confirmation), encoding="utf-8"
+        )
+        logical = {
+            **confirmation,
+            "confirmation_artifact_path": relative_artifact_path,
+        }
+        confirmations = state.setdefault("user_confirmations", {})
+        confirmations["test_coverage_plan"] = logical
+        confirmations["planned_e2e_obligations"] = {
+            **logical,
+            "target": "planned_e2e_obligations",
+        }
+        state.setdefault("planned_e2e_obligations", {})[
+            "accepted_by_user"
+        ] = True
+        state["planned_e2e_obligations"][
+            "confirmation_artifact_path"
+        ] = relative_artifact_path
+        state["planned_e2e_obligations"][
+            "confirmation_user_semantics_hash"
+        ] = pending["user_semantics_hash"]
+        state.setdefault("pending_confirmations", {}).pop(
+            "test_coverage_plan", None
+        )
+        state.setdefault("confirmation_readiness", {})[
+            "test_coverage_plan"
+        ] = "confirmed"
+        self._close_user_change_authorizations(state, "test_coverage_plan")
+        self._remove_blockers(
+            state,
+            "planned_e2e_user_confirmation",
+            "test_coverage_plan_user_confirmation",
+            "stale_requirements_e2e_confirmation",
+        )
+        state["stage"] = "test_coverage_plan_user_confirmed"
+        state["next_gate"] = "implementation_launch_authorization"
         return write_state(self.project_root, state)
 
     def confirm_requirements_and_e2e_plan(
@@ -595,112 +945,18 @@ class ProductDeliveryWorkflow:
         *,
         agent_explicitly_asked: bool = False,
     ) -> dict[str, Any]:
-        """Confirm requirements freeze and planned E2E coverage with one artifact."""
+        """Compatibility entry for the v1.0.21 test coverage confirmation."""
         state = self._require_started()
-        validate_confirmation_message(
+        pending = state.get("pending_confirmations", {}).get("test_coverage_plan")
+        if not pending:
+            raise WorkflowError(
+                "prepare_test_coverage_confirmation is required before confirmation"
+            )
+        return self.confirm_test_coverage_plan(
             user_message,
+            str(pending.get("nonce") or ""),
             agent_explicitly_asked=agent_explicitly_asked,
         )
-        if state.get("project_type") == "ui":
-            ui = state.get("ui_prototype", {})
-            if not ui.get("confirmed_by_user") or "ui_prototype" not in state.get(
-                "user_confirmations", {}
-            ):
-                raise WorkflowError("confirmed UI prototype is required before freeze")
-        elif state.get("project_type") == "non_ui":
-            if "non_ui_behavior_contract" not in state:
-                raise WorkflowError("non-UI behavior contract is required before freeze")
-        else:
-            raise WorkflowError("project type is required before freeze")
-        planned = state.get("planned_e2e_obligations", {})
-        if not planned.get("accepted") or not planned.get("obligations"):
-            raise WorkflowError("planned E2E obligations are required before freeze")
-        for review_type in ("scenario", "test_coverage", "test"):
-            review = state.get("multi_agent_reviews", {}).get(review_type, {})
-            if review.get("status") != "passed":
-                raise WorkflowError(f"multi-agent {review_type} review is required")
-            expected_hash = review_input_hash(state, review_type)
-            if review.get("input_snapshot_hash") != expected_hash:
-                raise WorkflowError(f"stale multi-agent {review_type} review")
-
-        snapshot_hash = requirements_e2e_confirmation_hash(state)
-        nonce = stable_state_hash(
-            {
-                "target": "requirements_e2e_plan",
-                "snapshot_hash": snapshot_hash,
-                "feature_slug": state.get("feature_slug"),
-            }
-        )[:16]
-        artifact_name = f"requirements-e2e-plan-{nonce}.md"
-        confirmation = {
-            "confirmation_id": "CONF-requirements_e2e_plan",
-            "target": "requirements_e2e_plan",
-            "artifact_path": f".product-delivery/artifacts/user-confirmations/{artifact_name}",
-            "artifact_version": snapshot_hash,
-            "artifact_hash": snapshot_hash,
-            "snapshot_hash": snapshot_hash,
-            "nonce": nonce,
-            "shared_confirmation_target": "requirements_e2e_plan",
-            "confirmed_by": "user",
-            "confirmation_source": "chat_user_reply",
-            "confirmed_at": self._timestamp_from_state(state),
-            "decision": "approved",
-            "user_message": user_message,
-        }
-        confirmations_dir = (
-            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
-        )
-        confirmations_dir.mkdir(parents=True, exist_ok=True)
-        artifact_path = confirmations_dir / artifact_name
-        artifact_text = render_user_confirmation(confirmation) + "\n".join(
-            [
-                "## Snapshot",
-                f"Snapshot Hash: {snapshot_hash}",
-                f"Shared Logical Gates: open_spec_freeze, planned_e2e_obligations",
-                "",
-            ]
-        )
-        artifact_path.write_text(artifact_text, encoding="utf-8")
-
-        relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
-        logical_confirmation = {
-            **confirmation,
-            "confirmation_artifact_path": relative_artifact_path,
-        }
-        state.setdefault("user_confirmations", {})
-        state["user_confirmations"]["open_spec_freeze"] = {
-            **logical_confirmation,
-            "target": "open_spec_freeze",
-        }
-        state["user_confirmations"]["planned_e2e_obligations"] = {
-            **logical_confirmation,
-            "target": "planned_e2e_obligations",
-        }
-        state["open_spec_freeze"] = {
-            "approved_by_user": True,
-            "approved_at": confirmation["confirmed_at"],
-            "confirmation_artifact_path": relative_artifact_path,
-            "snapshot_hash": snapshot_hash,
-        }
-        state.setdefault("planned_e2e_obligations", {})
-        state["planned_e2e_obligations"]["accepted_by_user"] = True
-        state["planned_e2e_obligations"]["confirmation_artifact_path"] = (
-            relative_artifact_path
-        )
-        state["planned_e2e_obligations"]["confirmation_snapshot_hash"] = snapshot_hash
-        state["freeze"] = {
-            **state.get("freeze", {}),
-            "frozen": True,
-        }
-        self._remove_blockers(
-            state,
-            "user_confirmed_freeze",
-            "planned_e2e_user_confirmation",
-            "stale_requirements_e2e_confirmation",
-        )
-        state["stage"] = "requirements_e2e_plan_user_confirmed"
-        state["next_gate"] = "codex_goal_handoff"
-        return write_state(self.project_root, state)
 
     def status(self) -> dict[str, Any]:
         state = self._state()
@@ -779,6 +1035,21 @@ class ProductDeliveryWorkflow:
             "authorized_review_types": [],
         }
 
+
+
+    @staticmethod
+    def _refresh_startup_gate(state: dict[str, Any]) -> None:
+        decisions = state.setdefault("pending_user_decisions", {})
+        startup_decisions = {"multi_agent_mode"}.intersection(decisions)
+        if startup_decisions:
+            state["next_gate"] = "startup_mode_selection"
+        elif state.get("next_gate") in {
+            None,
+            "startup_mode_selection",
+            "multi_agent_mode_selection",
+        }:
+            state["next_gate"] = "product_blueprint"
+
     def select_project_type(self, project_type: str) -> dict[str, Any]:
         if project_type not in {"ui", "non_ui"}:
             raise WorkflowError("project_type must be 'ui' or 'non_ui'")
@@ -850,6 +1121,12 @@ class ProductDeliveryWorkflow:
         state = self._require_started()
         if state.get("project_type") != "ui":
             raise WorkflowError("UI prototype review is only available for UI projects")
+        if state.get("ui_prototype", {}).get("confirmed_by_user") and not self._has_user_change_authorization(
+            state, "product_baseline"
+        ):
+            raise WorkflowError(
+                "confirmed product surface requires user change authorization"
+            )
 
         missing = validate_ui_prototype_review(review)
         if missing:
@@ -872,23 +1149,7 @@ class ProductDeliveryWorkflow:
         revision_number = (
             int(state.get("ui_prototype", {}).get("revision_number") or 0) + 1
         )
-        stales_prior_scenario_review = bool(
-            state.get("ui_prototype", {}).get("prototype_revision")
-            or state.get("ui_prototype_feedback")
-        )
         prototype_revision = f"prototype-revision-{revision_number:03d}"
-        pending_confirmation = self._build_pending_confirmation(
-            target="ui_prototype",
-            artifact_path=review["prototype_path"],
-            artifact_hash=artifact_hash,
-            artifact_version=prototype_revision,
-            prototype_revision=prototype_revision,
-            state=state,
-            prototype_contract_hash=prototype_contract["contract_sha256"],
-            prototype_screenshot_set_hash=prototype_contract[
-                "prototype_screenshot_set_sha256"
-            ],
-        )
 
         state["ui_prototype_review"] = {
             "prototype_path": review["prototype_path"],
@@ -907,9 +1168,6 @@ class ProductDeliveryWorkflow:
             "continuity_mapping": list(review.get("continuity_mapping", [])),
             "prototype_delta_summary": list(review.get("prototype_delta_summary", [])),
             "new_surface_justification": review.get("new_surface_justification"),
-            "new_surface_user_confirmation": bool(
-                review.get("new_surface_user_confirmation")
-            ),
             "review_artifact_path": f"artifacts/{CORE_ARTIFACTS['ui_prototype_review']}",
             "prototype_contract_hash": prototype_contract["contract_sha256"],
         }
@@ -938,42 +1196,47 @@ class ProductDeliveryWorkflow:
             "artifact_hash": artifact_hash,
             "artifact_version": prototype_revision,
             "prototype_revision": prototype_revision,
+            "prototype_contract_hash": prototype_contract["contract_sha256"],
+            "prototype_screenshot_set_hash": prototype_contract[
+                "prototype_screenshot_set_sha256"
+            ],
             "revision_number": revision_number,
             "ui_change_type": review.get("ui_change_type"),
             "baseline_feature_slug": review.get("baseline_feature_slug"),
             "baseline_surface_paths": list(review.get("baseline_surface_paths", [])),
             "baseline_user_journey": review.get("baseline_user_journey"),
-            "confirmation_status": "pending_user_confirmation",
-            "pending_confirmation_nonce": pending_confirmation["nonce"],
+            "confirmation_status": "draft_internal_review",
+            "pending_confirmation_nonce": None,
             "confirmation_source": None,
         }
-        state.setdefault("pending_confirmations", {})
-        state["pending_confirmations"]["ui_prototype"] = pending_confirmation
+        state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
+        state["pending_confirmations"].pop("product_baseline", None)
         state.setdefault("user_confirmations", {}).pop("ui_prototype", None)
         self._mark_reviews_stale(
             state,
-            (
-                ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance")
-                if stales_prior_scenario_review
-                else ("test", "test_coverage", "test_implementation", "ui_conformance")
-            ),
+            ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance"),
             reason="ui_prototype_changed",
         )
         self._invalidate_prototype_production_conformance(
             state,
             reason="ui_prototype_changed",
         )
-        self._invalidate_requirements_e2e_confirmation(
-            state,
-            reason="ui_prototype_changed",
-            invalidate_open_spec=False,
-            invalidate_planned_e2e=True,
-        )
+        if self._has_user_change_authorization(state, "product_baseline"):
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="ui_prototype_changed",
+                invalidate_open_spec=True,
+                invalidate_planned_e2e=True,
+            )
         self._invalidate_launch_authorization(
             state,
             reason="ui_prototype_changed",
         )
-        self._add_blockers(state, "ui_html_prototype_confirmation")
+        self._add_blockers(
+            state,
+            "multi_agent_scenario_review",
+            "product_baseline_user_confirmation",
+        )
         state.setdefault("handoff_inputs", {})
         state["handoff_inputs"]["ui_prototype_limitations"] = list(
             review["limitations"]
@@ -982,8 +1245,11 @@ class ProductDeliveryWorkflow:
         state["closure_inputs"]["ui_prototype_limitations"] = list(
             review["limitations"]
         )
+        state.setdefault("confirmation_readiness", {})[
+            "product_baseline"
+        ] = "internal_review_pending"
         state["stage"] = "ui_prototype_review_ready"
-        state["next_gate"] = "ui_prototype_review_confirmation"
+        state["next_gate"] = "multi_agent_scenario_review"
         return write_state(self.project_root, state)
 
     def confirm_ui_prototype(
@@ -1103,6 +1369,11 @@ class ProductDeliveryWorkflow:
             raise WorkflowError("UI prototype feedback is only available for UI projects")
         if not user_message.strip():
             raise WorkflowError("UI prototype feedback message is required")
+        self._register_user_change_request(
+            state,
+            targets=["product_baseline"],
+            user_message=user_message,
+        )
         state.setdefault("ui_prototype_feedback", [])
         state["ui_prototype_feedback"].append(
             {
@@ -1126,6 +1397,7 @@ class ProductDeliveryWorkflow:
         }
         state.setdefault("user_confirmations", {}).pop("ui_prototype", None)
         state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
+        state["pending_confirmations"].pop("product_baseline", None)
         self._mark_reviews_stale(
             state,
             ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance"),
@@ -1138,7 +1410,7 @@ class ProductDeliveryWorkflow:
         self._invalidate_requirements_e2e_confirmation(
             state,
             reason="ui_prototype_feedback",
-            invalidate_open_spec=False,
+            invalidate_open_spec=True,
             invalidate_planned_e2e=True,
         )
         self._invalidate_launch_authorization(
@@ -1150,6 +1422,65 @@ class ProductDeliveryWorkflow:
         state["next_gate"] = "ui_prototype_revision_review"
         return write_state(self.project_root, state)
 
+    def record_user_requested_change(
+        self,
+        *,
+        targets: list[str],
+        user_message: str,
+    ) -> dict[str, Any]:
+        """Authorize revision of an already confirmed product or test baseline."""
+        state = self._require_started()
+        if not user_message.strip():
+            raise WorkflowError("user-requested change message is required")
+        allowed = {"product_baseline", "test_coverage_plan"}
+        requested = sorted({str(target) for target in targets})
+        if not requested or any(target not in allowed for target in requested):
+            raise WorkflowError(
+                "change targets must be product_baseline or test_coverage_plan"
+            )
+        self._register_user_change_request(
+            state,
+            targets=requested,
+            user_message=user_message,
+        )
+        if "product_baseline" in requested:
+            self._mark_reviews_stale(
+                state,
+                ("scenario", "test", "test_coverage"),
+                reason="user_requested_product_baseline_change",
+            )
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="user_requested_product_baseline_change",
+                invalidate_open_spec=True,
+                invalidate_planned_e2e=True,
+            )
+            self._invalidate_launch_authorization(
+                state,
+                reason="user_requested_product_baseline_change",
+            )
+            state["stage"] = "product_baseline_revision"
+            state["next_gate"] = "product_blueprint"
+        else:
+            self._mark_reviews_stale(
+                state,
+                ("test", "test_coverage"),
+                reason="user_requested_test_coverage_change",
+            )
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="user_requested_test_coverage_change",
+                invalidate_open_spec=False,
+                invalidate_planned_e2e=True,
+            )
+            self._invalidate_launch_authorization(
+                state,
+                reason="user_requested_test_coverage_change",
+            )
+            state["stage"] = "test_coverage_plan_revision"
+            state["next_gate"] = "planned_e2e_obligations"
+        return write_state(self.project_root, state)
+
     def record_non_ui_behavior_contract(
         self,
         contract: dict[str, Any],
@@ -1158,6 +1489,12 @@ class ProductDeliveryWorkflow:
         if state.get("project_type") != "non_ui":
             raise WorkflowError(
                 "Non-UI behavior contract is only available for non-UI projects"
+            )
+        if self._product_baseline_is_confirmed(state) and not self._has_user_change_authorization(
+            state, "product_baseline"
+        ):
+            raise WorkflowError(
+                "confirmed product behavior contract requires user change authorization"
             )
 
         missing = validate_non_ui_behavior_contract(contract)
@@ -1173,6 +1510,7 @@ class ProductDeliveryWorkflow:
             render_non_ui_behavior_contract(contract),
             encoding="utf-8",
         )
+        artifact_hash = self._artifact_hash(str(contract_path))
 
         state["non_ui_behavior_contract"] = {
             "contract_name": contract["contract_name"],
@@ -1189,6 +1527,9 @@ class ProductDeliveryWorkflow:
             "contract_artifact_path": (
                 f"artifacts/{CORE_ARTIFACTS['non_ui_behavior_contract']}"
             ),
+            "artifact_hash": artifact_hash,
+            "confirmed_by_user": False,
+            "confirmation_status": "draft_internal_review",
         }
         state["downstream_inputs"] = {
             "behavior_evidence_candidates": list(contract["behavior_paths"]),
@@ -1205,8 +1546,29 @@ class ProductDeliveryWorkflow:
         state["closure_inputs"]["non_ui_behavior_limitations"] = list(
             contract["limitations"]
         )
+        state.setdefault("pending_confirmations", {}).pop("product_baseline", None)
+        self._mark_reviews_stale(
+            state,
+            ("scenario", "test", "test_coverage", "test_implementation"),
+            reason="non_ui_behavior_contract_changed",
+        )
+        if self._has_user_change_authorization(state, "product_baseline"):
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="non_ui_behavior_contract_changed",
+                invalidate_open_spec=True,
+                invalidate_planned_e2e=True,
+            )
+        self._add_blockers(
+            state,
+            "multi_agent_scenario_review",
+            "product_baseline_user_confirmation",
+        )
+        state.setdefault("confirmation_readiness", {})[
+            "product_baseline"
+        ] = "internal_review_pending"
         state["stage"] = "non_ui_behavior_contract_ready"
-        state["next_gate"] = "non_ui_behavior_contract_confirmation"
+        state["next_gate"] = "multi_agent_scenario_review"
         return write_state(self.project_root, state)
 
     def record_test_coverage_audit(
@@ -1216,6 +1578,7 @@ class ProductDeliveryWorkflow:
         negative_guard_records: list[str] | None = None,
     ) -> dict[str, Any]:
         state = self._require_started()
+        self._require_product_baseline_confirmed(state)
         project_type = state.get("project_type")
         inherited_limitations = []
         if project_type == "ui":
@@ -1232,6 +1595,21 @@ class ProductDeliveryWorkflow:
             inherited_limitations=inherited_limitations,
             negative_guard_records=negative_guard_records,
         )
+        candidate_state = {
+            **state,
+            "test_coverage_audit": {
+                **audit,
+                "audit_artifact_path": (
+                    f"artifacts/{CORE_ARTIFACTS['test_coverage_audit']}"
+                ),
+            },
+        }
+        if self._test_coverage_change_requires_user_authorization(
+            state, candidate_state
+        ):
+            raise WorkflowError(
+                "confirmed test coverage semantics require user change authorization"
+            )
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -1249,11 +1627,13 @@ class ProductDeliveryWorkflow:
             ("test", "test_coverage"),
             reason="test_coverage_audit_changed",
         )
-        if self._has_snapshot_bound_requirements_e2e_confirmation(state):
+        if self._has_snapshot_bound_requirements_e2e_confirmation(
+            state
+        ) and not self._test_coverage_plan_is_user_confirmed(state):
             self._invalidate_requirements_e2e_confirmation(
                 state,
                 reason="test_coverage_audit_changed",
-                invalidate_open_spec=True,
+                invalidate_open_spec=False,
                 invalidate_planned_e2e=True,
             )
         self._invalidate_launch_authorization(
@@ -1277,11 +1657,28 @@ class ProductDeliveryWorkflow:
         exemptions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         state = self._require_started()
+        self._require_product_baseline_confirmed(state)
+        existing_test_confirmation = dict(
+            state.get("user_confirmations", {}).get("test_coverage_plan") or {}
+        )
         planned = build_planned_e2e_obligations(
             obligations,
             exemptions,
             project_type=state.get("project_type") or "ui",
         )
+        candidate_state = {
+            **state,
+            "planned_e2e_obligations": {
+                **planned,
+                "artifact_path": "artifacts/planned-e2e-obligations.md",
+            },
+        }
+        if self._test_coverage_change_requires_user_authorization(
+            state, candidate_state
+        ):
+            raise WorkflowError(
+                "confirmed test coverage semantics require user change authorization"
+            )
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -1300,12 +1697,44 @@ class ProductDeliveryWorkflow:
             ("test", "test_coverage"),
             reason="planned_e2e_changed",
         )
-        self._invalidate_requirements_e2e_confirmation(
-            state,
-            reason="planned_e2e_changed",
-            invalidate_open_spec=False,
-            invalidate_planned_e2e=True,
-        )
+        if existing_test_confirmation and self._test_coverage_plan_is_user_confirmed(
+            state
+        ):
+            state["planned_e2e_obligations"].update(
+                {
+                    "accepted_by_user": True,
+                    "confirmation_artifact_path": existing_test_confirmation.get(
+                        "confirmation_artifact_path"
+                    ),
+                    "confirmation_user_semantics_hash": existing_test_confirmation.get(
+                        "user_semantics_hash"
+                    ),
+                }
+            )
+            self._remove_blockers(
+                state,
+                "planned_e2e_user_confirmation",
+                "test_coverage_plan_user_confirmation",
+            )
+        elif existing_test_confirmation or state.get(
+            "confirmation_readiness", {}
+        ).get("test_coverage_plan") == "revision_pending":
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="planned_e2e_changed",
+                invalidate_open_spec=False,
+                invalidate_planned_e2e=True,
+            )
+        else:
+            state["planned_e2e_obligations"]["accepted_by_user"] = False
+            state.setdefault("confirmation_readiness", {})[
+                "test_coverage_plan"
+            ] = "internal_review_pending"
+            self._add_blockers(
+                state,
+                "planned_e2e_user_confirmation",
+                "test_coverage_plan_user_confirmation",
+            )
         self._invalidate_launch_authorization(
             state,
             reason="planned_e2e_changed",
@@ -1316,21 +1745,19 @@ class ProductDeliveryWorkflow:
                 "records": [],
             }
             self._remove_blockers(state, "executed_browser_evidence")
-            self._add_blockers(
-                state,
-                "planned_e2e_user_confirmation",
-                "executed_behavior_evidence",
-            )
+            self._add_blockers(state, "executed_behavior_evidence")
         else:
             state["executed_browser_evidence"] = {
                 "status": "missing",
                 "records": [],
             }
             self._remove_blockers(state, "executed_behavior_evidence")
+            self._add_blockers(state, "executed_browser_evidence")
+        if not state["planned_e2e_obligations"].get("accepted_by_user"):
             self._add_blockers(
                 state,
                 "planned_e2e_user_confirmation",
-                "executed_browser_evidence",
+                "test_coverage_plan_user_confirmation",
             )
         self._remove_blockers(state, "planned_e2e_obligations")
         state["stage"] = "planned_e2e_obligations_ready"
@@ -1755,6 +2182,22 @@ class ProductDeliveryWorkflow:
         cr_id: str,
     ) -> dict[str, Any]:
         state = self._require_started()
+        authorization_target = None
+        if change_type == "scope_change":
+            authorization_target = "product_baseline"
+        elif change_type == "test_gap":
+            authorization_target = "test_coverage_plan"
+        elif change_type == "acceptance_feedback":
+            if self._has_user_change_authorization(state, "product_baseline"):
+                authorization_target = "product_baseline"
+            elif self._has_user_change_authorization(state, "test_coverage_plan"):
+                authorization_target = "test_coverage_plan"
+        if authorization_target is None or not self._has_user_change_authorization(
+            state, authorization_target
+        ):
+            raise WorkflowError(
+                "post-freeze change requires explicit user change authorization"
+            )
         state.setdefault("change_requests", [])
         state["change_requests"].append(
             {
@@ -1764,7 +2207,7 @@ class ProductDeliveryWorkflow:
                 "status": "recorded",
             }
         )
-        if change_type == "scope_change":
+        if authorization_target == "product_baseline":
             state["freeze"] = {
                 **state.get("freeze", {}),
                 "frozen": False,
@@ -1788,10 +2231,10 @@ class ProductDeliveryWorkflow:
                 state,
                 reason=f"post_freeze_{change_type}",
             )
-            state["stage"] = "version_scope_confirmation"
+            state["stage"] = "product_baseline_revision"
             state["status"] = "scope_revision"
-            state["next_gate"] = "version_scope"
-        elif change_type == "test_gap":
+            state["next_gate"] = "product_blueprint"
+        elif authorization_target == "test_coverage_plan":
             self._mark_reviews_stale(
                 state,
                 ("test", "test_coverage"),
@@ -1814,20 +2257,7 @@ class ProductDeliveryWorkflow:
             state["stage"] = "planned_e2e_obligations_revision"
             state["status"] = "coverage_revision"
             state["next_gate"] = "planned_e2e_obligations"
-        elif change_type == "acceptance_feedback":
-            self._mark_reviews_stale(
-                state,
-                ("test", "test_coverage"),
-                reason=f"post_freeze_{change_type}",
-            )
-            self._invalidate_launch_authorization(
-                state,
-                reason=f"post_freeze_{change_type}",
-            )
-            self._supersede_active_implementation_package(
-                state,
-                reason=f"post_freeze_{change_type}",
-            )
+        self._close_user_change_authorizations(state, authorization_target)
         return write_state(self.project_root, state)
 
     def record_superseded_closure(
@@ -1996,9 +2426,6 @@ class ProductDeliveryWorkflow:
         state["next_gate"] = "test_coverage_audit"
         return write_state(self.project_root, state)
 
-    def _state(self) -> dict[str, Any]:
-        return load_state(self.project_root, fallback_state=self.fallback_state)
-
     def _archive_previous_delivery(
         self,
         state: dict[str, Any] | None,
@@ -2035,6 +2462,9 @@ class ProductDeliveryWorkflow:
         except (OSError, json.JSONDecodeError):
             return {}
         return payload if isinstance(payload, dict) else {}
+
+    def _state(self) -> dict[str, Any]:
+        return load_state(self.project_root, fallback_state=self.fallback_state)
 
     def _require_started(
         self,
@@ -2075,14 +2505,36 @@ class ProductDeliveryWorkflow:
         ):
             raise WorkflowError("authorization is not bound to the current delivery")
 
+    @staticmethod
+    def _validate_spawned_reviewer_agents(review: dict[str, Any]) -> None:
+        reviewer_ids = review.get("reviewer_agent_ids")
+        reviewers = review.get("reviewers") or []
+        if (
+            not isinstance(reviewer_ids, list)
+            or len(reviewer_ids) != len(reviewers)
+            or not 2 <= len(reviewer_ids) <= 3
+            or not all(
+                isinstance(agent_id, str) and agent_id.strip()
+                for agent_id in reviewer_ids
+            )
+        ):
+            raise ReviewGateError(
+                "spawned_subagents review requires 2-3 reviewer_agent_ids matching reviewers"
+            )
+        if len(set(reviewer_ids)) != len(reviewer_ids):
+            raise ReviewGateError("reviewer_agent_ids must be unique")
+        spawn_source = review.get("reviewer_spawn_source")
+        if not isinstance(spawn_source, str) or not spawn_source.strip():
+            raise ReviewGateError("reviewer_spawn_source is required")
+
+
+
+
     def _missing_required_confirmations(self, state: dict[str, Any]) -> list[str]:
         missing = []
         user_confirmations = state.get("user_confirmations", {})
-        if (
-            not state.get("open_spec_freeze", {}).get("approved_by_user")
-            or "open_spec_freeze" not in user_confirmations
-        ):
-            missing.append("open_spec_freeze")
+        if not self._product_baseline_is_confirmed(state):
+            missing.append("product_baseline")
 
         if state.get("project_type") == "ui":
             ui = state.get("ui_prototype", {})
@@ -2092,11 +2544,101 @@ class ProductDeliveryWorkflow:
             ):
                 missing.append("ui_prototype")
         elif state.get("project_type") == "non_ui":
-            if "non_ui_behavior_contract" not in state:
+            contract = state.get("non_ui_behavior_contract") or {}
+            if not contract.get("confirmed_by_user"):
                 missing.append("non_ui_behavior_contract")
         else:
             missing.append("project_type")
         return missing
+
+    @staticmethod
+    def _product_baseline_is_confirmed(state: dict[str, Any]) -> bool:
+        confirmation = (state.get("user_confirmations") or {}).get(
+            "product_baseline"
+        ) or {}
+        return bool(confirmation) and confirmation.get(
+            "artifact_hash"
+        ) == product_baseline_hash(state)
+
+    def _require_product_baseline_confirmed(self, state: dict[str, Any]) -> None:
+        if not self._product_baseline_is_confirmed(state):
+            raise WorkflowError(
+                "product baseline confirmation is required before test planning"
+            )
+
+    @staticmethod
+    def _test_coverage_plan_is_user_confirmed(state: dict[str, Any]) -> bool:
+        confirmation = state.get("user_confirmations", {}).get(
+            "test_coverage_plan"
+        ) or {}
+        return bool(confirmation) and confirmation.get(
+            "user_semantics_hash"
+        ) == test_coverage_user_semantics_hash(state)
+
+    def _test_coverage_change_requires_user_authorization(
+        self,
+        state: dict[str, Any],
+        candidate_state: dict[str, Any],
+    ) -> bool:
+        if self._has_user_change_authorization(state, "test_coverage_plan"):
+            return False
+        confirmation = state.get("user_confirmations", {}).get(
+            "test_coverage_plan"
+        ) or {}
+        if confirmation:
+            return confirmation.get(
+                "user_semantics_hash"
+            ) != test_coverage_user_semantics_hash(candidate_state)
+        return (
+            state.get("confirmation_readiness", {}).get("test_coverage_plan")
+            == "revision_pending"
+        )
+
+    @staticmethod
+    def _has_user_change_authorization(
+        state: dict[str, Any], target: str
+    ) -> bool:
+        return any(
+            request.get("status") == "authorized"
+            and target in (request.get("targets") or [])
+            for request in state.get("user_change_requests", [])
+        )
+
+    def _register_user_change_request(
+        self,
+        state: dict[str, Any],
+        *,
+        targets: list[str],
+        user_message: str,
+    ) -> None:
+        request_hash = stable_state_hash(
+            {
+                "targets": sorted(targets),
+                "user_message": user_message.strip(),
+                "feature_slug": state.get("feature_slug"),
+                "delivery_id": state.get("delivery_id"),
+            }
+        )
+        state.setdefault("user_change_requests", []).append(
+            {
+                "request_id": f"UCR-{request_hash[:16]}",
+                "targets": sorted(targets),
+                "user_message": user_message.strip(),
+                "status": "authorized",
+                "recorded_at": self._timestamp_from_state(state),
+            }
+        )
+
+    def _close_user_change_authorizations(
+        self, state: dict[str, Any], target: str
+    ) -> None:
+        closed_at = self._timestamp_from_state(state)
+        for request in state.get("user_change_requests", []):
+            if request.get("status") == "authorized" and target in (
+                request.get("targets") or []
+            ):
+                request["status"] = "consumed"
+                request["consumed_at"] = closed_at
 
     @staticmethod
     def _write_artifact_if_missing(path: Path, content: str) -> None:
@@ -2292,12 +2834,16 @@ class ProductDeliveryWorkflow:
         invalidate_planned_e2e: bool,
     ) -> None:
         confirmations = state.setdefault("user_confirmations", {})
-        targets = []
+        targets: list[str] = []
         if invalidate_open_spec:
-            targets.append("open_spec_freeze")
+            targets.extend(["product_baseline", "open_spec_freeze"])
+            if state.get("project_type") == "ui":
+                targets.append("ui_prototype")
+            elif state.get("project_type") == "non_ui":
+                targets.append("non_ui_behavior_contract")
         if invalidate_planned_e2e:
-            targets.append("planned_e2e_obligations")
-        targets = self._expand_shared_requirements_e2e_targets(confirmations, targets)
+            targets.extend(["test_coverage_plan", "planned_e2e_obligations"])
+        targets = list(dict.fromkeys(targets))
         existing = [confirmations.get(target) for target in targets]
         stale = [confirmation for confirmation in existing if confirmation]
         if stale:
@@ -2310,7 +2856,13 @@ class ProductDeliveryWorkflow:
                 }
             )
         if invalidate_open_spec:
-            confirmations.pop("open_spec_freeze", None)
+            for target in (
+                "product_baseline",
+                "open_spec_freeze",
+                "ui_prototype",
+                "non_ui_behavior_contract",
+            ):
+                confirmations.pop(target, None)
             state["open_spec_freeze"] = {
                 **state.get("open_spec_freeze", {}),
                 "approved_by_user": False,
@@ -2318,14 +2870,45 @@ class ProductDeliveryWorkflow:
                 "confirmation_artifact_path": None,
                 "stale_reason": reason,
             }
-            self._add_blockers(state, "user_confirmed_freeze")
+            if state.get("project_type") == "ui":
+                state["ui_prototype"] = {
+                    **state.get("ui_prototype", {}),
+                    "confirmed_by_user": False,
+                    "confirmation_status": "changes_requested",
+                    "confirmation_source": None,
+                    "confirmation_artifact_path": None,
+                }
+            elif state.get("project_type") == "non_ui":
+                state["non_ui_behavior_contract"] = {
+                    **state.get("non_ui_behavior_contract", {}),
+                    "confirmed_by_user": False,
+                    "confirmation_status": "changes_requested",
+                    "confirmation_artifact_path": None,
+                }
+            state.setdefault("confirmation_readiness", {})[
+                "product_baseline"
+            ] = "revision_pending"
+            self._add_blockers(
+                state,
+                "user_confirmed_freeze",
+                "product_baseline_user_confirmation",
+            )
         if invalidate_planned_e2e:
+            confirmations.pop("test_coverage_plan", None)
             confirmations.pop("planned_e2e_obligations", None)
             planned = state.setdefault("planned_e2e_obligations", {})
             planned["accepted_by_user"] = False
             planned.pop("confirmation_artifact_path", None)
             planned.pop("confirmation_snapshot_hash", None)
-            self._add_blockers(state, "planned_e2e_user_confirmation")
+            planned.pop("confirmation_user_semantics_hash", None)
+            state.setdefault("confirmation_readiness", {})[
+                "test_coverage_plan"
+            ] = "revision_pending"
+            self._add_blockers(
+                state,
+                "planned_e2e_user_confirmation",
+                "test_coverage_plan_user_confirmation",
+            )
 
     @staticmethod
     def _expand_shared_requirements_e2e_targets(
@@ -2362,9 +2945,15 @@ class ProductDeliveryWorkflow:
         state: dict[str, Any],
     ) -> bool:
         confirmations = state.get("user_confirmations") or {}
-        for target in ("open_spec_freeze", "planned_e2e_obligations"):
+        for target in (
+            "test_coverage_plan",
+            "open_spec_freeze",
+            "planned_e2e_obligations",
+        ):
             record = confirmations.get(target)
-            if isinstance(record, dict) and record.get("snapshot_hash"):
+            if isinstance(record, dict) and (
+                record.get("snapshot_hash") or record.get("user_semantics_hash")
+            ):
                 return True
         return False
 

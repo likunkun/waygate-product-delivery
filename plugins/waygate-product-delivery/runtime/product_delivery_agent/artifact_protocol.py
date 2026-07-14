@@ -10,7 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from product_delivery_agent.gatekeeper import TERMINAL_STATUSES, normalize_state_protocol
+from product_delivery_agent.gatekeeper import (
+    TERMINAL_STATUSES,
+    normalize_state_protocol,
+    review_input_hash,
+)
 
 ARTIFACT_ROOT = ".product-delivery"
 
@@ -173,6 +177,11 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
         },
         "user_confirmations": {},
         "pending_confirmations": {},
+        "confirmation_readiness": {
+            "product_baseline": "draft",
+            "test_coverage_plan": "blocked_on_product_baseline",
+        },
+        "user_change_requests": [],
         "pending_user_decisions": {},
         "delivery_goal": None,
         "confirmation_points": {
@@ -354,11 +363,22 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     )
     merged.setdefault("user_confirmations", {})
     merged.setdefault("pending_confirmations", {})
+    merged.setdefault(
+        "confirmation_readiness",
+        {
+            "product_baseline": "draft",
+            "test_coverage_plan": "blocked_on_product_baseline",
+        },
+    )
+    merged.setdefault("user_change_requests", [])
     merged.setdefault("pending_user_decisions", {})
     merged.setdefault("delivery_goal", None)
     merged.setdefault("confirmation_points", {})
     merged.setdefault("artifact_paths", {})
     merged.setdefault("freeze", {"frozen": False, "scope_version": None})
+
+    if not is_terminal_history:
+        _migrate_layered_confirmation_state(merged)
 
     for artifact_name, template_file in CORE_ARTIFACTS.items():
         artifact_path = f"artifacts/{template_file}"
@@ -371,6 +391,57 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
             },
         )
     return merged
+
+
+def _migrate_layered_confirmation_state(state: dict[str, Any]) -> None:
+    pending = state.setdefault("pending_confirmations", {})
+    legacy_ui_pending = pending.pop("ui_prototype", None)
+    if not legacy_ui_pending:
+        return
+
+    state.setdefault("legacy_pending_confirmations", []).append(
+        {
+            "target": "ui_prototype",
+            "record": legacy_ui_pending,
+            "migration_reason": "replaced_by_layered_product_baseline_confirmation",
+            "migrated_at": _timestamp(),
+        }
+    )
+    blockers = state.setdefault("blocked_until", [])
+    blockers[:] = [
+        blocker
+        for blocker in blockers
+        if blocker
+        not in {
+            "ui_html_prototype_confirmation",
+            "ui_prototype_user_confirmation",
+        }
+    ]
+    if "product_baseline_user_confirmation" not in blockers:
+        blockers.append("product_baseline_user_confirmation")
+
+    scenario_review = state.get("multi_agent_reviews", {}).get("scenario", {})
+    review_is_current = scenario_review.get("status") == "passed" and scenario_review.get(
+        "input_snapshot_hash"
+    ) == review_input_hash(state, "scenario")
+    readiness = state.setdefault("confirmation_readiness", {})
+    if review_is_current:
+        readiness["product_baseline"] = "ready_for_preparation"
+        state["next_gate"] = "product_baseline_confirmation_preparation"
+        return
+
+    if scenario_review.get("status") == "passed":
+        state["multi_agent_reviews"]["scenario"] = {
+            **scenario_review,
+            "status": "stale",
+            "stale_reason": "layered_confirmation_migration",
+        }
+        if "stale_multi_agent_scenario_review" not in blockers:
+            blockers.append("stale_multi_agent_scenario_review")
+    elif "multi_agent_scenario_review" not in blockers:
+        blockers.append("multi_agent_scenario_review")
+    readiness["product_baseline"] = "blocked_on_scenario_review"
+    state["next_gate"] = "multi_agent_scenario_review"
 
 
 def _legacy_delivery_id(state: dict[str, Any]) -> str:

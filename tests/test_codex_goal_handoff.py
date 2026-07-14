@@ -6,7 +6,12 @@ from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.gatekeeper import GatekeeperError
 from product_delivery_agent.handoff import HandoffError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    confirm_test_coverage_plan,
+    prototype_contract,
+    write_prototype_screenshot,
+)
 
 
 def scenario_row():
@@ -34,6 +39,8 @@ def multi_agent_review(review_type):
             "ui scenario reviewer",
             "test strategy reviewer",
         ],
+        "reviewer_agent_ids": ["agent-product", "agent-ui", "agent-test"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": f"{review_type}-review-v1",
         "independent_positions": [
             "Reviewer A: no blocker",
@@ -213,28 +220,26 @@ def ready_workflow(project_root):
     prototype.write_text("<html>prototype</html>", encoding="utf-8")
     write_prototype_screenshot(project_root)
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(
+                feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
-    workflow.record_multi_agent_review("scenario", multi_agent_review("scenario"))
-    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
     workflow.select_project_type("ui")
     workflow.confirm("product_brief")
     workflow.confirm("version_scope")
-    state = workflow.record_ui_prototype_review(ui_review_payload())
-    pending = state["pending_confirmations"]["ui_prototype"]
-    workflow.confirm_ui_prototype(
-        "确认本地 HTML 原型符合预期",
-        "prototype/index.html",
-        nonce=pending["nonce"],
+    workflow.record_ui_prototype_review(ui_review_payload())
+    confirm_product_baseline(
+        workflow,
+        multi_agent_review("scenario"),
+        "确认需求范围和本地 HTML 原型",
     )
     workflow.record_planned_e2e_obligations([planned_obligation()])
-    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
     workflow.record_test_coverage_audit(
         [coverage_row()],
         negative_guard_records=["student billing is absent"],
     )
     workflow.record_multi_agent_review("test_coverage", multi_agent_review("test_coverage"))
     workflow.record_multi_agent_review("test", multi_agent_review("test"))
+    confirm_test_coverage_plan(workflow)
     return workflow
 
 
@@ -299,7 +304,8 @@ class CodexGoalHandoffTests(unittest.TestCase):
             project_root = Path(tmp)
             write_prototype_screenshot(project_root)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+            workflow.start(
+                multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
             workflow.record_ui_prototype_review(ui_review_payload())
 
@@ -328,7 +334,7 @@ class CodexGoalHandoffTests(unittest.TestCase):
 
             self.assertIn("verification commands", str(caught.exception))
 
-    def test_scope_change_after_freeze_returns_to_version_scope_confirmation(self):
+    def test_scope_change_after_freeze_returns_to_product_baseline_revision(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ready_workflow(project_root)
@@ -338,6 +344,10 @@ class CodexGoalHandoffTests(unittest.TestCase):
                 verification_commands=["pytest"],
             )
 
+            workflow.record_user_requested_change(
+                targets=["product_baseline"],
+                user_message="增加 billing dashboard 到当前版本范围",
+            )
             state = workflow.record_post_freeze_change(
                 change_type="scope_change",
                 description="Add billing dashboard",
@@ -345,7 +355,8 @@ class CodexGoalHandoffTests(unittest.TestCase):
             )
 
             self.assertFalse(state["freeze"]["frozen"])
-            self.assertEqual(state["stage"], "version_scope_confirmation")
+            self.assertEqual(state["stage"], "product_baseline_revision")
+            self.assertEqual(state["next_gate"], "product_blueprint")
             self.assertEqual(state["change_requests"][-1]["cr_id"], "CR-002")
 
     def test_acceptance_feedback_and_test_gaps_after_freeze_are_recorded_as_crs(self):
@@ -357,10 +368,18 @@ class CodexGoalHandoffTests(unittest.TestCase):
                 verification_commands=["pytest"],
             )
 
+            workflow.record_user_requested_change(
+                targets=["product_baseline"],
+                user_message="修改空状态文案",
+            )
             feedback_state = workflow.record_post_freeze_change(
                 change_type="acceptance_feedback",
                 description="Empty state copy must change",
                 cr_id="CR-004",
+            )
+            workflow.record_user_requested_change(
+                targets=["test_coverage_plan"],
+                user_message="增加 duplicate-name Browser E2E 覆盖要求",
             )
             gap_state = workflow.record_post_freeze_change(
                 change_type="test_gap",
@@ -368,7 +387,7 @@ class CodexGoalHandoffTests(unittest.TestCase):
                 cr_id="CR-005",
             )
 
-            self.assertTrue(feedback_state["freeze"]["frozen"])
+            self.assertFalse(feedback_state["freeze"]["frozen"])
             self.assertEqual(gap_state["change_requests"][-2]["change_type"], "acceptance_feedback")
             self.assertEqual(gap_state["change_requests"][-1]["change_type"], "test_gap")
             self.assertEqual(gap_state["change_requests"][-1]["status"], "recorded")

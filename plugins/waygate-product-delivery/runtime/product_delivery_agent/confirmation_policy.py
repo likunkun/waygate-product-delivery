@@ -5,12 +5,20 @@ from __future__ import annotations
 from typing import Any
 
 
-USER_CONFIRMATION_TARGETS = frozenset(
+FORMAL_USER_CONFIRMATION_TARGETS = frozenset(
+    {"product_baseline", "test_coverage_plan"}
+)
+
+LEGACY_USER_CONFIRMATION_TARGETS = frozenset(
     {
         "open_spec_freeze",
         "ui_prototype",
         "planned_e2e_obligations",
     }
+)
+
+USER_CONFIRMATION_TARGETS = (
+    FORMAL_USER_CONFIRMATION_TARGETS | LEGACY_USER_CONFIRMATION_TARGETS
 )
 
 RECORDABLE_USER_CONFIRMATION_TARGETS = frozenset(
@@ -42,9 +50,14 @@ def pending_user_confirmation_blockers(state: dict[str, Any]) -> list[str]:
 
 def confirmed_user_confirmation_targets(state: dict[str, Any]) -> list[str]:
     confirmations = state.get("user_confirmations") or {}
+    formal = sorted(
+        name for name in FORMAL_USER_CONFIRMATION_TARGETS if name in confirmations
+    )
+    if formal:
+        return formal
     confirmed = [
         name
-        for name in sorted(USER_CONFIRMATION_TARGETS)
+        for name in sorted(LEGACY_USER_CONFIRMATION_TARGETS)
         if name in confirmations
     ]
     ui = state.get("ui_prototype") or {}

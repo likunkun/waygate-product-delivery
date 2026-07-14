@@ -75,6 +75,51 @@ def write_prototype_screenshot(
     path.write_bytes(image)
 
 
+def confirm_product_baseline(workflow, review: dict, message: str = "确认产品基线"):
+    review = dict(review)
+    reviewers = list(review.get("reviewers") or [])
+    review.setdefault(
+        "reviewer_agent_ids",
+        [f"fixture-agent-{index}" for index, _ in enumerate(reviewers, start=1)],
+    )
+    review.setdefault(
+        "reviewer_spawn_source",
+        "codex.multi_agent_v1.spawn_agent",
+    )
+    state = workflow.status()
+    if state.get("project_type") == "ui":
+        ui_review = state.get("ui_prototype_review") or {}
+        change_type = ui_review.get("ui_change_type")
+        review.setdefault("ui_continuity_findings", [])
+        if change_type == "incremental_existing_surface":
+            review.setdefault(
+                "baseline_inheritance_review",
+                {
+                    "ui_change_type": change_type,
+                    "baseline_feature_slug": ui_review.get(
+                        "baseline_feature_slug"
+                    ),
+                    "baseline_entry_path": ui_review.get(
+                        "baseline_user_journey"
+                    ),
+                    "inherits_existing_surface": True,
+                    "parallel_surface_replacement": False,
+                },
+            )
+    workflow.record_multi_agent_review("scenario", review)
+    state = workflow.prepare_product_baseline_confirmation()
+    pending = state["pending_confirmations"]["product_baseline"]
+    return workflow.confirm_product_baseline(message, pending["nonce"])
+
+
+def confirm_test_coverage_plan(
+    workflow, message: str = "确认 planned E2E 和测试覆盖计划"
+):
+    state = workflow.prepare_test_coverage_confirmation()
+    pending = state["pending_confirmations"]["test_coverage_plan"]
+    return workflow.confirm_test_coverage_plan(message, pending["nonce"])
+
+
 def record_ui_conformance(workflow, project_root: Path) -> dict:
     state = workflow.status()
     executed = state["executed_browser_evidence"]["records"][0]
@@ -190,6 +235,8 @@ def ui_conformance_review_payload(state: dict) -> dict:
         "status": "passed",
         "review_mode": "spawned_subagents",
         "reviewers": ["prototype reviewer", "production reviewer"],
+        "reviewer_agent_ids": ["agent-prototype", "agent-production"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": "ui-conformance-v1",
         "independent_positions": ["all frozen regions were compared"],
         "cross_challenges": ["reviewed semantic and viewport evidence"],

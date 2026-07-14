@@ -17,7 +17,12 @@ from product_delivery_agent.hooks import (
 )
 from product_delivery_agent.review_gates import ReviewGateError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    confirm_product_baseline,
+    confirm_test_coverage_plan,
+    prototype_contract,
+    write_prototype_screenshot,
+)
 
 
 def write_raw_state(project_root, state):
@@ -69,6 +74,8 @@ def review_payload(review_type, **overrides):
         "status": "passed",
         "review_mode": "spawned_subagents",
         "reviewers": ["agent-a", "agent-b"],
+        "reviewer_agent_ids": ["agent-id-a", "agent-id-b"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": f"{review_type}-review-v1",
         "independent_positions": ["A: no blocker", "B: no blocker"],
         "cross_challenges": ["A challenged B on E2E journey coverage"],
@@ -290,26 +297,26 @@ def workflow_ready_for_launch(project_root):
     write_prototype_screenshot(project_root)
 
     workflow = ProductDeliveryWorkflow(project_root)
-    workflow.start(feature_slug="v1.0.6-canonical-launch", multi_agent_mode="spawned_subagents_authorized")
+    workflow.start(
+        feature_slug="v1.0.6-canonical-launch",
+        multi_agent_mode="spawned_subagents_authorized",
+    )
     workflow.record_scenario_matrix([scenario_row()])
-    workflow.record_multi_agent_review("scenario", review_payload("scenario"))
-    workflow.record_user_confirmation(user_confirmation("open_spec_freeze"))
     workflow.select_project_type("ui")
-    state = workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
-    pending = state["pending_confirmations"]["ui_prototype"]
-    workflow.confirm_ui_prototype(
-        "确认本地 HTML 原型，nonce=" + pending["nonce"],
-        prototype_path,
-        nonce=pending["nonce"],
+    workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+    confirm_product_baseline(
+        workflow,
+        review_payload("scenario"),
+        "确认需求范围和本地 HTML 原型",
     )
     workflow.record_planned_e2e_obligations([planned_obligation()])
-    workflow.record_user_confirmation(user_confirmation("planned_e2e_obligations"))
     workflow.record_test_coverage_audit(
         [coverage_row()],
         negative_guard_records=["billing remains absent"],
     )
     workflow.record_multi_agent_review("test_coverage", review_payload("test_coverage"))
     workflow.record_multi_agent_review("test", review_payload("test"))
+    confirm_test_coverage_plan(workflow)
     return workflow
 
 

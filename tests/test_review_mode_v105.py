@@ -14,6 +14,8 @@ def review_payload(**overrides):
         "status": "passed",
         "review_mode": "spawned_subagents",
         "reviewers": ["agent-a", "agent-b"],
+        "reviewer_agent_ids": ["agent-id-a", "agent-id-b"],
+        "reviewer_spawn_source": "codex.multi_agent_v1.spawn_agent",
         "artifact_version": "scenario-review-v1",
         "independent_positions": ["A: no blocker", "B: no blocker"],
         "cross_challenges": ["A challenged B on E2E journey coverage"],
@@ -30,6 +32,21 @@ def review_payload(**overrides):
 
 
 class ReviewModeV105Tests(unittest.TestCase):
+    def test_spawned_review_requires_unique_real_agent_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+            workflow.start(multi_agent_mode="spawned_subagents_authorized")
+
+            with self.assertRaisesRegex(ReviewGateError, "reviewer_agent_ids"):
+                workflow.record_multi_agent_review(
+                    "scenario", review_payload(reviewer_agent_ids=[])
+                )
+            with self.assertRaisesRegex(ReviewGateError, "unique"):
+                workflow.record_multi_agent_review(
+                    "scenario",
+                    review_payload(reviewer_agent_ids=["agent-id-a", "agent-id-a"]),
+                )
+
     def test_role_simulation_requires_explicit_user_acceptance(self):
         review = review_payload(review_mode="role_simulation")
 
