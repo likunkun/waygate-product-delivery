@@ -584,7 +584,9 @@ class GatekeeperV103Tests(unittest.TestCase):
 
             self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
             self.assertNotIn("product_baseline", state["user_confirmations"])
-            self.assertIn("user_confirmed_freeze", state["blocked_until"])
+            self.assertIn(
+                "product_baseline_user_confirmation", state["blocked_until"]
+            )
 
     def test_handoff_requires_structured_multi_agent_test_review(self):
         with tempfile.TemporaryDirectory() as tmp:

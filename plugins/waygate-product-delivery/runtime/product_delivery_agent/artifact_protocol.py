@@ -396,27 +396,40 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
 def _migrate_layered_confirmation_state(state: dict[str, Any]) -> None:
     pending = state.setdefault("pending_confirmations", {})
     legacy_ui_pending = pending.pop("ui_prototype", None)
-    if not legacy_ui_pending:
-        return
+    if legacy_ui_pending:
+        state.setdefault("legacy_pending_confirmations", []).append(
+            {
+                "target": "ui_prototype",
+                "record": legacy_ui_pending,
+                "migration_reason": (
+                    "replaced_by_layered_product_baseline_confirmation"
+                ),
+                "migrated_at": _timestamp(),
+            }
+        )
+    ui = state.get("ui_prototype")
+    if isinstance(ui, dict) and (
+        ui.get("confirmation_status") == "pending_user_confirmation"
+        or ui.get("pending_confirmation_nonce")
+    ):
+        ui["confirmation_status"] = "superseded_by_product_baseline"
+        ui.pop("pending_confirmation_nonce", None)
 
-    state.setdefault("legacy_pending_confirmations", []).append(
-        {
-            "target": "ui_prototype",
-            "record": legacy_ui_pending,
-            "migration_reason": "replaced_by_layered_product_baseline_confirmation",
-            "migrated_at": _timestamp(),
-        }
-    )
     blockers = state.setdefault("blocked_until", [])
     blockers[:] = [
         blocker
         for blocker in blockers
         if blocker
         not in {
+            "pending_user_confirmation",
+            "planned_e2e_user_confirmation",
             "ui_html_prototype_confirmation",
             "ui_prototype_user_confirmation",
+            "user_confirmed_freeze",
         }
     ]
+    if not legacy_ui_pending:
+        return
     if "product_baseline_user_confirmation" not in blockers:
         blockers.append("product_baseline_user_confirmation")
 

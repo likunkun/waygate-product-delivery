@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -631,24 +632,30 @@ def derive_blockers(
     )
 
     project_type = normalized.get("project_type")
+    layered_confirmation = bool(normalized.get("confirmation_readiness"))
     if project_type not in VALID_PROJECT_TYPES:
         blockers.append("project_type_decision")
     elif project_type == "ui":
         ui = normalized.get("ui_prototype", {})
-        confirmation = normalized.get("user_confirmations", {}).get("ui_prototype", {})
         _append_if(
             blockers,
             not ui.get("generated") or not ui.get("reviewed_by_agent"),
             "ui_html_prototype_review",
         )
-        _append_if(
-            blockers,
-            not ui.get("confirmed_by_user")
-            or not confirmation
-            or "ui_prototype" in normalized.get("pending_confirmations", {})
-            or _ui_prototype_confirmation_is_stale(ui, confirmation, project_root),
-            "ui_prototype_user_confirmation",
-        )
+        if not layered_confirmation:
+            confirmation = normalized.get("user_confirmations", {}).get(
+                "ui_prototype", {}
+            )
+            _append_if(
+                blockers,
+                not ui.get("confirmed_by_user")
+                or not confirmation
+                or "ui_prototype" in normalized.get("pending_confirmations", {})
+                or _ui_prototype_confirmation_is_stale(
+                    ui, confirmation, project_root
+                ),
+                "ui_prototype_user_confirmation",
+            )
     elif project_type == "non_ui":
         contract = normalized.get("non_ui_behavior_contract") or {}
         confirmation = normalized.get("user_confirmations", {}).get(
@@ -657,9 +664,15 @@ def derive_blockers(
         _append_if(
             blockers,
             not contract
-            or not contract.get("confirmed_by_user")
-            or not confirmation
-            or confirmation.get("artifact_hash") != surface_input_hash(normalized),
+            or (
+                not layered_confirmation
+                and (
+                    not contract.get("confirmed_by_user")
+                    or not confirmation
+                    or confirmation.get("artifact_hash")
+                    != surface_input_hash(normalized)
+                )
+            ),
             "non_ui_behavior_contract_confirmation",
         )
 
@@ -669,12 +682,14 @@ def derive_blockers(
         not planned.get("accepted") or not planned.get("obligations"),
         "planned_e2e_obligations",
     )
-    _append_if(
-        blockers,
-        not planned.get("accepted_by_user")
-        or "planned_e2e_obligations" not in normalized.get("user_confirmations", {}),
-        "planned_e2e_user_confirmation",
-    )
+    if not layered_confirmation:
+        _append_if(
+            blockers,
+            not planned.get("accepted_by_user")
+            or "planned_e2e_obligations"
+            not in normalized.get("user_confirmations", {}),
+            "planned_e2e_user_confirmation",
+        )
     test_confirmation = normalized.get("user_confirmations", {}).get(
         "test_coverage_plan", {}
     )
@@ -757,26 +772,68 @@ def docs_ahead_of_state_errors(
                 "08-stage-handoff.md",
             )
         )
-    claim_text = "\n".join(
-        _read_candidate(path)
-        for path in candidates
-        if path.is_file()
-    )
-    if not claim_text or str(feature_slug) not in claim_text:
+    scoped_claims: list[str] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        text = _read_candidate(path)
+        if path.is_relative_to(open_spec_dir):
+            scoped_claims.append(text)
+        else:
+            scoped_claims.append(_feature_scoped_claim_text(text, str(feature_slug)))
+    claim_text = "\n".join(part for part in scoped_claims if part)
+    if not claim_text:
         return []
     lowered = claim_text.lower()
     errors: list[str] = []
-    executed_terms = ("executed", "status=executed", "已执行", "完成验证")
-    closure_terms = ("closed", "closure in progress", "closure complete", "闭包完成")
     executed = _as_dict(state.get("executed_browser_evidence"))
-    if executed.get("status") != "passed" and any(term in lowered for term in executed_terms):
+    if executed.get("status") != "passed" and _contains_executed_claim(lowered):
         errors.append("docs_ahead_of_executed_evidence")
     closure_validation = _as_dict(state.get("closure_validation"))
-    if closure_validation.get("status") != "passed" and any(
-        term in lowered for term in closure_terms
+    if (
+        closure_validation.get("status") != "passed"
+        and _contains_closure_claim(lowered)
     ):
         errors.append("docs_ahead_of_closure_validation")
     return errors
+
+
+def _feature_scoped_claim_text(text: str, feature_slug: str) -> str:
+    selected: list[str] = []
+    active_heading_level: int | None = None
+    for line in text.splitlines():
+        heading = re.match(r"^(#{1,6})\s+", line)
+        if heading:
+            level = len(heading.group(1))
+            if feature_slug in line:
+                active_heading_level = level
+                selected.append(line)
+            elif active_heading_level is not None and level > active_heading_level:
+                selected.append(line)
+            else:
+                active_heading_level = None
+            continue
+        if active_heading_level is not None or feature_slug in line:
+            selected.append(line)
+    return "\n".join(selected)
+
+
+def _contains_executed_claim(text: str) -> bool:
+    return bool(
+        re.search(r"\bstatus\s*[:=][^\n]*\bexecuted\b", text)
+        or any(term in text for term in ("execution complete", "已执行", "完成验证"))
+    )
+
+
+def _contains_closure_claim(text: str) -> bool:
+    without_fail_closed = text.replace("fail closed", "")
+    return bool(
+        re.search(r"\bstatus\s*[:=][^\n]*\bclosed\b", without_fail_closed)
+        or any(
+            term in without_fail_closed
+            for term in ("closure in progress", "closure complete", "闭包完成")
+        )
+    )
 
 
 def assert_pre_handoff_ready(

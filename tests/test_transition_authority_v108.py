@@ -146,6 +146,31 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
             self.assertIn("docs_ahead_of_executed_evidence", blockers)
             self.assertIn("docs_ahead_of_closure_validation", blockers)
 
+    def test_historical_status_terms_outside_current_feature_section_are_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            write_raw_state(
+                project_root,
+                {
+                    "active": True,
+                    "feature_slug": "v2.8-current",
+                    "project_type": "ui",
+                    "executed_browser_evidence": {"status": "not_started"},
+                    "closure_validation": {"status": "not_run"},
+                },
+            )
+            (project_root / "progress.md").write_text(
+                "## v2.8-current\n\nStatus: product design in progress\n\n"
+                "## Historical glossary\n\n"
+                "Older releases were executed and closed; validators fail closed.\n",
+                encoding="utf-8",
+            )
+
+            blockers = derive_blockers(load_state(project_root), project_root)
+
+            self.assertNotIn("docs_ahead_of_executed_evidence", blockers)
+            self.assertNotIn("docs_ahead_of_closure_validation", blockers)
+
     def test_closure_validation_feature_slug_must_match_current_feature(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

@@ -630,7 +630,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                     planned_tasks=planned_tasks(),
                 )
 
-            self.assertIn("ui_prototype_user_confirmation", str(caught.exception))
+            self.assertIn("product_baseline_user_confirmation", str(caught.exception))
 
 
 if __name__ == "__main__":

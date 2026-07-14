@@ -397,7 +397,9 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             self.assertEqual(
                 state["next_gate"], "product_baseline_confirmation_preparation"
             )
-            self.assertIn("user_confirmed_freeze", state["blocked_until"])
+            self.assertIn(
+                "product_baseline_user_confirmation", state["blocked_until"]
+            )
 
     def test_reconfirming_requirements_e2e_plan_preserves_prior_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:

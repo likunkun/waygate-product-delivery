@@ -5,6 +5,7 @@
 - Read or create `task_plan.md`, `findings.md`, and `progress.md`.
 - Create or recover `.product-delivery/state.json`.
 - Call `inspect_startup_request(feature_slug=...)` before startup; a new feature never reuses a previous delivery authorization.
+- For an active pre-v1.0.22 state with `execution_model_policy`, call `retire_model_execution_policy()`; do not edit state or restart the delivery.
 - Record the current feature slug and blocked gates in state.
 - Plain startup enters `multi_agent_mode_selection` and asks for the review mode immediately.
 - `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.

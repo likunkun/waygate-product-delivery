@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -165,7 +166,19 @@ class ProductDeliveryWorkflow:
         feature_slug: str | None = None,
         allow_review_degradation: bool = False,
         multi_agent_mode: str | None = None,
+        **deprecated_options: Any,
     ) -> dict[str, Any]:
+        if deprecated_options:
+            model_options = {
+                "execution_mode",
+                "model_profile_overrides",
+            }
+            if model_options.intersection(deprecated_options):
+                self._raise_model_orchestration_retired()
+            raise WorkflowError(
+                "unsupported startup options: "
+                + ", ".join(sorted(deprecated_options))
+            )
         if allow_review_degradation:
             if multi_agent_mode not in {None, "role_simulation_allowed"}:
                 raise WorkflowError(
@@ -2174,6 +2187,120 @@ class ProductDeliveryWorkflow:
         state["stop_guard"] = result
         return write_state(self.project_root, state)
 
+    def retire_model_execution_policy(self) -> dict[str, Any]:
+        """Archive and remove plugin-managed model execution from an active delivery."""
+        state = self._require_started(allow_pending_authorization=True)
+        changed = False
+        policy = state.pop("execution_model_policy", None)
+        if isinstance(policy, dict) and policy:
+            policy_hash = self._stable_hash(policy)
+            history = state.setdefault("retired_model_execution_policies", [])
+            if not any(
+                record.get("policy_sha256") == policy_hash
+                for record in history
+                if isinstance(record, dict)
+            ):
+                history.append(
+                    {
+                        "policy_sha256": policy_hash,
+                        "policy": policy,
+                        "retired_at": self._timestamp_from_state(state),
+                        "retirement_reason": (
+                            "model orchestration transferred to the Codex host"
+                        ),
+                    }
+                )
+            changed = True
+
+        pending_decisions = state.setdefault("pending_user_decisions", {})
+        for decision in ("execution_mode", "main_thread_model"):
+            if decision in pending_decisions:
+                pending_decisions.pop(decision, None)
+                changed = True
+
+        obsolete_blockers = {
+            "execution_mode",
+            "main_thread_model",
+            "host_capabilities_pending",
+            "host_model_capabilities_pending",
+            "host_model_control_unavailable",
+            "legacy_unverified_model_execution",
+            "pending_stage_agent_spawn",
+            "stage_agent_model_mismatch",
+            "unverified_stage_agent_model",
+            "verify_stage_agent_model_execution",
+            "pending_user_confirmation",
+            "planned_e2e_user_confirmation",
+            "ui_html_prototype_confirmation",
+            "ui_prototype_user_confirmation",
+            "user_confirmed_freeze",
+        }
+        blocked_until = list(state.get("blocked_until", []))
+        filtered_blockers = [
+            blocker for blocker in blocked_until if blocker not in obsolete_blockers
+        ]
+        if filtered_blockers != blocked_until:
+            state["blocked_until"] = filtered_blockers
+            changed = True
+        blocking_gates = state.setdefault("blocking_gates", {})
+        for blocker in obsolete_blockers:
+            if blocker in blocking_gates:
+                blocking_gates.pop(blocker, None)
+                changed = True
+
+        ui = state.get("ui_prototype")
+        if isinstance(ui, dict) and (
+            ui.get("confirmation_status") == "pending_user_confirmation"
+            or ui.get("pending_confirmation_nonce")
+        ):
+            ui["confirmation_status"] = "superseded_by_product_baseline"
+            ui.pop("pending_confirmation_nonce", None)
+            changed = True
+
+        if state.get("next_gate") in {
+            "startup_mode_selection",
+            "execution_mode_selection",
+            "host_model_capabilities",
+            "verify_stage_agent_model_execution",
+        }:
+            policy = state.get("multi_agent_policy") or {}
+            if policy.get("execution_authorization") in {
+                "authorized",
+                "degradation_authorized",
+            }:
+                state["next_gate"] = "multi_agent_scenario_review"
+            else:
+                state["next_gate"] = "multi_agent_mode_selection"
+            changed = True
+
+        if not changed:
+            return state
+        return write_state(self.project_root, state)
+
+    def authorize_execution_mode(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        self._raise_model_orchestration_retired()
+
+    def request_execution_mode_switch(
+        self, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        self._raise_model_orchestration_retired()
+
+    def begin_execution_stage(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        self._raise_model_orchestration_retired()
+
+    def bind_execution_stage_agent(
+        self, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        self._raise_model_orchestration_retired()
+
+    def record_host_model_capabilities(
+        self, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        self._raise_model_orchestration_retired()
+
+    def save_model_profiles(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        self._raise_model_orchestration_retired()
+
     def record_post_freeze_change(
         self,
         *,
@@ -3235,7 +3362,14 @@ class ProductDeliveryWorkflow:
 
     @staticmethod
     def _timestamp_from_state(state: dict[str, Any]) -> str:
-        return str(state.get("updated_at") or "not-recorded")
+        del state
+        return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+    @staticmethod
+    def _raise_model_orchestration_retired() -> None:
+        raise WorkflowError(
+            "model orchestration has been retired to the Codex host"
+        )
 
     @staticmethod
     def _render_planned_e2e_obligations(planned: dict[str, Any]) -> str:

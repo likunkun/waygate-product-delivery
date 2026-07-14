@@ -15,6 +15,8 @@ description: Codex-native product delivery workflow.
 
 模型选择完全由用户和 Codex 宿主管理。Product Delivery 不选择、不记录、不验证、也不声称当前线程或 subagent 使用了任何特定模型。
 
+恢复 v1.0.19–v1.0.21 的 active state 时，如果存在旧 `execution_model_policy`，必须调用公共 `retire_model_execution_policy()` 归档旧 policy、清理模型 blocker 并保留当前 delivery、feature、原型、review 和确认；不得重新 start 当前 delivery，也不得手改 state。旧模型 API 只保留一版明确退役错误。
+
 active mode 下必须先使用这些 baseline skills：`superpowers:using-superpowers`、`planning-with-files`、`waygate-product-delivery`。`planning-with-files` 必须执行 session catchup，并读取或创建 `task_plan.md`、`findings.md`、`progress.md`。
 
 ## Blocking Gates

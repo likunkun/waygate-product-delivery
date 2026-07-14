@@ -198,7 +198,7 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
             workflow = self._stale_launch_workflow(project_root, changed_task_queue())
             state_path = project_root / ARTIFACT_ROOT / "state.json"
             state = load_state(project_root)
-            state["user_confirmations"].pop("planned_e2e_obligations", None)
+            state["user_confirmations"].pop("test_coverage_plan", None)
             state["planned_e2e_obligations"]["accepted_by_user"] = False
             state_path.write_text(json.dumps(state), encoding="utf-8")
 
@@ -209,7 +209,7 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
                     planned_tasks=changed_task_queue(),
                 )
 
-            self.assertIn("planned_e2e_user_confirmation", str(caught.exception))
+            self.assertIn("test_coverage_plan_user_confirmation", str(caught.exception))
 
 
 if __name__ == "__main__":
