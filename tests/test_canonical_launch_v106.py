@@ -20,6 +20,7 @@ from product_delivery_agent.workflow import ProductDeliveryWorkflow
 from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
+    record_bundled_ui_prototype_review,
     prototype_contract,
     write_prototype_screenshot,
 )
@@ -303,7 +304,9 @@ def workflow_ready_for_launch(project_root):
     )
     workflow.record_scenario_matrix([scenario_row()])
     workflow.select_project_type("ui")
-    workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+    record_bundled_ui_prototype_review(
+        workflow, project_root, ui_review_payload(prototype_path)
+    )
     confirm_product_baseline(
         workflow,
         review_payload("scenario"),

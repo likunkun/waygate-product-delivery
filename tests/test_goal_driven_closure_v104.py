@@ -17,6 +17,8 @@ from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
+    record_bundled_ui_prototype_review,
+    record_scenario_review,
     record_ui_conformance,
     write_prototype_screenshot,
 )
@@ -369,7 +371,9 @@ def workflow_ready_for_handoff(project_root):
                 feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.select_project_type("ui")
-    workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+    record_bundled_ui_prototype_review(
+        workflow, project_root, ui_review_payload(prototype_path)
+    )
     confirm_product_baseline(
         workflow,
         multi_agent_review("scenario"),
@@ -406,10 +410,10 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
 
-            workflow.record_ui_prototype_review(
-                ui_review_payload(prototype_path)
+            record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload(prototype_path)
             )
-            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            record_scenario_review(workflow, ui_scenario_review())
             state = workflow.prepare_product_baseline_confirmation()
             first_pending = state["pending_confirmations"]["product_baseline"]
             first_hash = first_pending["artifact_hash"]
@@ -427,11 +431,11 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
 
             write_prototype(project_root, prototype_path, "<html>revision two</html>")
-            state = workflow.record_ui_prototype_review(
-                ui_review_payload(prototype_path)
+            state = record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload(prototype_path)
             )
             self.assertNotIn("product_baseline", state["pending_confirmations"])
-            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            record_scenario_review(workflow, ui_scenario_review())
             state = workflow.prepare_product_baseline_confirmation()
             second_pending = state["pending_confirmations"]["product_baseline"]
 
@@ -453,10 +457,10 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
-            workflow.record_ui_prototype_review(
-                ui_review_payload(prototype_path)
+            record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload(prototype_path)
             )
-            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            record_scenario_review(workflow, ui_scenario_review())
             state = workflow.prepare_product_baseline_confirmation()
             pending = state["pending_confirmations"]["product_baseline"]
 
@@ -621,7 +625,9 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 prototype_path,
             )
             write_prototype(project_root, prototype_path, "<html>revision two</html>")
-            workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+            record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload(prototype_path)
+            )
 
             with self.assertRaises(GatekeeperError) as caught:
                 workflow.generate_codex_goal_handoff(

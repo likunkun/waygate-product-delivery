@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.22")
+            self.assertEqual(manifest["version"], "1.0.23")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -62,6 +62,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/open-spec-gate.md",
                 "templates/ui-prototype-gate.md",
                 "templates/ui-prototype-contract.json",
+                "templates/ui-prototype-design-bundle.json",
                 "templates/prototype-production-conformance.md",
                 "templates/scope-scenario-matrix.md",
                 "templates/multi-agent-scenario-review.md",
@@ -84,6 +85,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "runtime/product_delivery_agent/continuation.py",
                 "runtime/product_delivery_agent/transition_journal.py",
                 "runtime/product_delivery_agent/evidence_artifacts.py",
+                "runtime/product_delivery_agent/prototype_design.py",
                 "runtime/product_delivery_agent/ui_prototype.py",
                 "policies/lifecycle.json",
                 "policies/upgrade-retention.md",
@@ -116,6 +118,12 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("record_prototype_production_conformance", skill_markdown)
             self.assertIn("ui_conformance", skill_markdown)
             self.assertIn("semantic snapshot", skill_markdown)
+            self.assertIn("record_ui_prototype_design_bundle", skill_markdown)
+            self.assertIn("prototype_design_integrity", skill_markdown)
+            self.assertIn("clean_surface", skill_markdown)
+            self.assertIn("review_annotation_set", skill_markdown)
+            self.assertIn("门禁验证客观事实", skill_markdown)
+            self.assertIn("多 Agent 判断设计质量", skill_markdown)
             self.assertIn("不要在 TASK 未完成时停止", skill_markdown)
             self.assertIn("delivery goal", skill_markdown)
             self.assertIn("validate-closure-artifact.py", skill_markdown)
@@ -195,14 +203,56 @@ class PluginPackagingTests(unittest.TestCase):
             ).read_text("utf-8")
             self.assertIn("product_baseline", startup_template)
             self.assertIn("test_coverage_plan", startup_template)
+            self.assertIn("record_ui_prototype_design_bundle", startup_template)
+            self.assertIn("clean_surface", startup_template)
+            self.assertIn("review_annotation_set", startup_template)
             self.assertLess(
                 startup_template.index("product_baseline"),
                 startup_template.index("planned E2E"),
+            )
+            design_bundle_template = json.loads(
+                (root / "templates" / "ui-prototype-design-bundle.json").read_text(
+                    "utf-8"
+                )
+            )
+            self.assertEqual(design_bundle_template["bundle_version"], "v1")
+            self.assertIn("clean_surface", design_bundle_template)
+            self.assertIn(
+                "browser_preflight_probe_path",
+                design_bundle_template["clean_surface"],
+            )
+            runtime_check = design_bundle_template["clean_surface"][
+                "runtime_checks"
+            ][0]
+            self.assertNotIn("status", runtime_check)
+            self.assertNotIn("annotation_nodes_present", runtime_check)
+            self.assertIn("product_context_contract", design_bundle_template)
+            self.assertIn("review_annotation_set", design_bundle_template)
+            self.assertIn(
+                "intended_product_ui_callouts",
+                design_bundle_template,
+            )
+            evidence_ref = design_bundle_template["product_context_contract"][
+                "coverage_rows"
+            ][0]["evidence_refs"][0]
+            self.assertEqual(
+                set(evidence_ref), {"artifact_path", "artifact_sha256"}
             )
             scenario_review_template = (
                 root / "templates" / "multi-agent-scenario-review.md"
             ).read_text("utf-8")
             self.assertIn("baseline_inheritance_review", scenario_review_template)
+            self.assertIn("prototype_design_bundle_hash", scenario_review_template)
+            self.assertIn("prototype_design_audit_hash", scenario_review_template)
+            self.assertIn("reviewed_design_dimensions", scenario_review_template)
+            self.assertIn("global_visual_continuity_findings", scenario_review_template)
+            self.assertIn("annotation_separation_findings", scenario_review_template)
+            ui_conformance_template = (
+                root / "templates" / "multi-agent-ui-conformance-review.md"
+            ).read_text("utf-8")
+            self.assertIn("reviewed_design_dimensions", ui_conformance_template)
+            self.assertIn("global_visual_continuity_findings", ui_conformance_template)
+            self.assertIn("annotation_separation_findings", ui_conformance_template)
             planned_template = (
                 root / "templates" / "planned-e2e-obligations.md"
             ).read_text("utf-8")
@@ -243,7 +293,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.22")
+            self.assertEqual(closure_template["plugin_version"], "1.0.23")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -295,7 +345,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.22.tar.gz",
+                "waygate-product-delivery-1.0.23.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

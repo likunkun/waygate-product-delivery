@@ -1,0 +1,108 @@
+{
+  "bundle_version": "v1",
+  "clean_surface": {
+    "browser_preflight_probe_path": ".product-delivery/artifacts/prototype-design/<surface>-browser-preflight.json",
+    "prototype_contract": {},
+    "prototype_path": "docs/prototypes/<feature-slug>-prototype.html",
+    "runtime_checks": [
+      {
+        "clean_screenshot_path": ".product-delivery/artifacts/prototype-design/<surface>-<viewport>.png",
+        "state_id": "",
+        "surface_id": "",
+        "viewport": "desktop"
+      }
+    ],
+    "semantic_snapshot_path": ".product-delivery/artifacts/prototype-design/<surface>-semantic.json"
+  },
+  "intended_product_ui_callouts": [],
+  "product_context_contract": {
+    "baseline_identity": {
+      "baseline_feature_slug": "",
+      "baseline_snapshot_paths": [],
+      "baseline_surface_paths": [],
+      "canonical_baseline_id": ""
+    },
+    "coverage_rows": [
+      {
+        "covered_region_ids": [],
+        "dimension": "global_shell",
+        "evidence_refs": [
+          {
+            "artifact_path": ".product-delivery/artifacts/prototype-design/evidence/<surface>-<state>-global_shell.json",
+            "artifact_sha256": "<sha256>"
+          }
+        ],
+        "state_id": "",
+        "status": "passed",
+        "surface_id": ""
+      },
+      {
+        "covered_region_ids": [],
+        "dimension": "navigation",
+        "evidence_refs": [
+          {
+            "artifact_path": ".product-delivery/artifacts/prototype-design/evidence/<surface>-<state>-navigation.json",
+            "artifact_sha256": "<sha256>"
+          }
+        ],
+        "state_id": "",
+        "status": "passed",
+        "surface_id": ""
+      },
+      {
+        "covered_region_ids": [],
+        "dimension": "visual_language",
+        "evidence_refs": [
+          {
+            "artifact_path": ".product-delivery/artifacts/prototype-design/evidence/<surface>-<state>-visual_language.json",
+            "artifact_sha256": "<sha256>"
+          }
+        ],
+        "state_id": "",
+        "status": "passed",
+        "surface_id": ""
+      },
+      {
+        "covered_region_ids": [],
+        "dimension": "information_density",
+        "evidence_refs": [
+          {
+            "artifact_path": ".product-delivery/artifacts/prototype-design/evidence/<surface>-<state>-information_density.json",
+            "artifact_sha256": "<sha256>"
+          }
+        ],
+        "state_id": "",
+        "status": "passed",
+        "surface_id": ""
+      },
+      {
+        "covered_region_ids": [],
+        "dimension": "component_system",
+        "evidence_refs": [
+          {
+            "artifact_path": ".product-delivery/artifacts/prototype-design/evidence/<surface>-<state>-component_system.json",
+            "artifact_sha256": "<sha256>"
+          }
+        ],
+        "state_id": "",
+        "status": "passed",
+        "surface_id": ""
+      },
+      {
+        "covered_region_ids": [],
+        "dimension": "responsive_behavior",
+        "evidence_refs": [
+          {
+            "artifact_path": ".product-delivery/artifacts/prototype-design/evidence/<surface>-<state>-responsive_behavior.json",
+            "artifact_sha256": "<sha256>"
+          }
+        ],
+        "state_id": "",
+        "status": "passed",
+        "surface_id": ""
+      }
+    ]
+  },
+  "review_annotation_set": null,
+  "ui_change_type": "incremental_existing_surface"
+}

@@ -261,7 +261,11 @@ def _write_templates(templates_dir: Path) -> None:
             "- `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.\n"
             "- `启动交付，允许降级评审` explicitly allows structured role simulation when subagents are unavailable.\n"
             "- Draft Open Spec, scenario matrix, and the UI prototype or non-UI behavior contract before asking for product confirmation.\n"
+            "- For UI work, call `record_ui_prototype_design_bundle()` after the prototype draft and before product/scenario review.\n"
+            "- The bundle must keep the product-facing `clean_surface` separate from the optional external `review_annotation_set` and prove all six product-context dimensions.\n"
+            "- Run the internal `prototype_design_integrity` gate before multi-Agent judgment; a review cannot override a failed deterministic gate.\n"
             "- Run product/scenario review, then call `prepare_product_baseline_confirmation()` and `confirm_product_baseline()`.\n"
+            "- Present only the clean product prototype and clean screenshots during `product_baseline`; never show the review-only annotation page as the product surface.\n"
             "- Do not generate detailed test cases, planned E2E, or coverage audit before `product_baseline` is confirmed.\n"
             "- After the baseline is confirmed, create planned E2E and coverage evidence, run test/test-coverage reviews, then call `prepare_test_coverage_confirmation()` and `confirm_test_coverage_plan()`.\n"
         ),
@@ -285,7 +289,14 @@ def _write_templates(templates_dir: Path) -> None:
             "`baseline_surface_paths`, `baseline_user_journey`, `continuity_mapping`, "
             "and `prototype_delta_summary`.\n"
             "- New surfaces must include meaningful `new_surface_justification`; the exception is confirmed as part of `product_baseline`, not through a third confirmation.\n"
+            "- After generating the prototype, call `record_ui_prototype_design_bundle()` before product/scenario review.\n"
+            "- `clean_surface` must bind the product HTML, prototype contract, clean PNGs, semantic snapshot, and browser checks for every required state and viewport.\n"
+            "- `product_context_contract` must positively cover `global_shell`, `navigation`, `visual_language`, `information_density`, `component_system`, and `responsive_behavior`.\n"
+            "- Review annotations belong in an independent `review_annotation_set`; the clean product page must not load review assets, overlays, annotation scripts, or an annotation query mode.\n"
+            "- Product guidance is allowed only as declared `intended_product_ui_callouts` bound to requirements, scenarios, triggers, lifecycle, and a contract region.\n"
+            "- The `prototype_design_integrity` gate verifies these objective facts. Multi-Agent review judges whether the baseline is representative, globally coherent, and justified; it cannot override a failed gate.\n"
             "- Product/scenario review must pass before `prepare_product_baseline_confirmation()`.\n"
+            "- Product baseline preparation must present only the clean product surface and clean screenshots, never the review annotation artifact.\n"
             "- Detailed test design is blocked until `confirm_product_baseline()` records the requirements-and-surface baseline.\n"
         ),
         "ui-prototype-contract.json": json.dumps(
@@ -303,6 +314,65 @@ def _write_templates(templates_dir: Path) -> None:
                         "critical_interactions": [],
                     }
                 ],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        "ui-prototype-design-bundle.json": json.dumps(
+            {
+                "bundle_version": "v1",
+                "ui_change_type": "incremental_existing_surface",
+                "clean_surface": {
+                    "prototype_path": "docs/prototypes/<feature-slug>-prototype.html",
+                    "prototype_contract": {},
+                    "semantic_snapshot_path": ".product-delivery/artifacts/prototype-design/<surface>-semantic.json",
+                    "browser_preflight_probe_path": ".product-delivery/artifacts/prototype-design/<surface>-browser-preflight.json",
+                    "runtime_checks": [
+                        {
+                            "surface_id": "",
+                            "state_id": "",
+                            "viewport": "desktop",
+                            "clean_screenshot_path": ".product-delivery/artifacts/prototype-design/<surface>-<viewport>.png",
+                        }
+                    ],
+                },
+                "product_context_contract": {
+                    "baseline_identity": {
+                        "canonical_baseline_id": "",
+                        "baseline_feature_slug": "",
+                        "baseline_surface_paths": [],
+                        "baseline_snapshot_paths": [],
+                    },
+                    "coverage_rows": [
+                        {
+                            "surface_id": "",
+                            "state_id": "",
+                            "dimension": dimension,
+                            "status": "passed",
+                            "evidence_refs": [
+                                {
+                                    "artifact_path": (
+                                        ".product-delivery/artifacts/prototype-design/evidence/"
+                                        f"<surface>-<state>-{dimension}.json"
+                                    ),
+                                    "artifact_sha256": "<sha256>",
+                                }
+                            ],
+                            "covered_region_ids": [],
+                        }
+                        for dimension in (
+                            "global_shell",
+                            "navigation",
+                            "visual_language",
+                            "information_density",
+                            "component_system",
+                            "responsive_behavior",
+                        )
+                    ],
+                },
+                "intended_product_ui_callouts": [],
+                "review_annotation_set": None,
             },
             indent=2,
             sort_keys=True,
@@ -343,10 +413,16 @@ def _write_templates(templates_dir: Path) -> None:
             "- final_adjudication:\n"
             "- baseline_inheritance_review: {}\n"
             "- ui_continuity_findings: []\n"
+            "- prototype_design_bundle_hash:\n"
+            "- prototype_design_audit_hash:\n"
+            "- reviewed_design_dimensions: [global_shell, navigation, visual_language, information_density, component_system, responsive_behavior]\n"
+            "- global_visual_continuity_findings: []\n"
+            "- annotation_separation_findings: []\n"
             "- blocking_findings: []\n"
             "\nFor incremental existing-surface UI, `baseline_inheritance_review` must prove "
             "the scenario inherits the previous real entry path and does not replace it "
             "with a parallel page.\n"
+            "The review must bind the current design bundle and audit, positively cover every product-context dimension, and judge whether the inherited shell and overall composition are coherent. Empty findings alone are not positive coverage, and reviewers cannot waive a failed `prototype_design_integrity` gate.\n"
         ),
         "multi-agent-test-review.md": (
             "# Multi-Agent Test Review\n\n"
@@ -422,6 +498,9 @@ def _write_templates(templates_dir: Path) -> None:
             "- reviewed_surface_ids: []\n"
             "- reviewed_state_ids: []\n"
             "- reviewed_region_ids: []\n"
+            "- reviewed_design_dimensions: [global_shell, navigation, visual_language, information_density, component_system, responsive_behavior]\n"
+            "- global_visual_continuity_findings: []\n"
+            "- annotation_separation_findings: []\n"
             "- structural_findings: []\n"
             "- visual_findings: []\n"
             "- interaction_findings: []\n"
@@ -429,7 +508,10 @@ def _write_templates(templates_dir: Path) -> None:
             "- unmapped_regions: []\n"
             "- blocking_findings: []\n\n"
             "Review every frozen surface, state, region, relationship, and interaction "
-            "against production PNG and controlled semantic snapshot evidence.\n"
+            "against production PNG and controlled semantic snapshot evidence. Positively "
+            "cover every product-context dimension and confirm that production preserves "
+            "the clean-surface and external-annotation separation; empty findings alone "
+            "are not evidence of complete review.\n"
         ),
         "user-confirmation.md": (
             "# User Confirmation\n\n"
@@ -559,8 +641,9 @@ def _skill_markdown() -> str:
         "包含 `00-change-request.md` 到 `08-stage-handoff.md`。\n"
         "3. 项目类型已经确认。UI 项目必须进入本地 1:1 HTML 原型 gate；"
         "非 UI 项目必须进入 behavior contract gate。\n"
-        "4. UI 产品/场景评审必须使用 `ui-ux-pro-max` 和 `webapp-testing`，"
-        "通过后才能准备 `product_baseline` 确认。\n"
+        "4. UI 原型生成后必须先调用 `record_ui_prototype_design_bundle()` 通过内部 "
+        "`prototype_design_integrity` 门禁，再使用 `ui-ux-pro-max` 和 `webapp-testing` "
+        "完成产品/场景评审；两者通过后才能准备 `product_baseline` 确认。\n"
         "5. 产品基线确认后才使用 `test-strategy` 或 `testing-strategy` 生成测试覆盖计划。\n"
         "6. closure 必须使用 `open-spec-feature-closure` 和 "
         "`superpowers:verification-before-completion`。\n\n"
@@ -584,6 +667,32 @@ def _skill_markdown() -> str:
         "`new_surface_justification`，并随 `product_baseline` 一起确认，不增加第三次确认。"
         "用户明确要求修改 prototype 后，旧 product baseline、test coverage plan、相关 review 和"
         "实现授权必须 stale；重新 review 前不得进入实现。\n\n"
+        "V1.0.23 起，UI 原型生成后、multi-Agent 产品/场景评审前必须调用 "
+        "`record_ui_prototype_design_bundle()`。bundle 的 `clean_surface` 绑定产品 HTML、"
+        "prototype contract、纯净 PNG、semantic snapshot，以及全部关键 state/viewport 的 "
+        "browser preflight。semantic snapshot 和 browser preflight 必须是固定 schema 的 JSON "
+        "artifact，probe 必须绑定 snapshot、截图与 region identity 的 runtime hash；调用方自报的 "
+        "`status=passed` 或 annotation flags 不能作为通过依据。`product_context_contract` 的每个 "
+        "coverage row 必须引用结构化 `artifact_path`/`artifact_sha256` 设计证据，并正向覆盖 `global_shell`、"
+        "`navigation`、`visual_language`、`information_density`、`component_system` 和 "
+        "`responsive_behavior`。可选 `review_annotation_set` 必须是独立评审页，通过外部 "
+        "region anchor 引用纯净原型；产品原型不得加载标注资源、注入 overlay、暴露标注查询模式"
+        "或把评审编号混入产品页面。真实产品引导只能作为 `intended_product_ui_callouts`，"
+        "并绑定需求、场景、触发条件、生命周期和 contract region。\n\n"
+        "`prototype_design_integrity` 门禁验证客观事实，多 Agent 判断设计质量。门禁负责路径、"
+        "hash、状态/viewport 覆盖、全局上下文六维覆盖和标注分离，失败时评审不得覆盖；"
+        "评审负责判断基线是否有代表性、局部设计是否与全局产品协调、例外是否合理。"
+        "scenario 和 `ui_conformance` review 必须绑定当前 bundle/audit hash，记录完整 "
+        "`reviewed_design_dimensions`、`global_visual_continuity_findings` 和 "
+        "`annotation_separation_findings`；空 findings 不能替代正向覆盖证据。\n\n"
+        "`product_domain_hash` 只绑定用户实际确认的纯净产品原型、contract、截图和全局上下文；"
+        "`review_domain_hash` 只绑定内部设计审计和标注；`bundle_hash` 绑定两域关系。"
+        "只有产品域变化才使 `product_baseline`、`test_coverage_plan` 和下游授权 stale。"
+        "仅标注变化只重开绑定旧标注 revision 的内部 scenario review，不增加用户确认。"
+        "`prepare_product_baseline_confirmation()` 只能展示 `clean_surface` 和纯净截图，不得展示 "
+        "review-only artifact。已确认的 v1.0.22 active delivery 在未修改原型或重开基线时保持 "
+        "grandfathered；尚未确认的 UI delivery 必须先补齐 bundle。用户仍只确认 "
+        "`product_baseline` 与 `test_coverage_plan` 两次，closure schema 保持 `v0.11`。\n\n"
         "多 agent scenario/test review 必须落成结构化 artifact，包含 independent positions、"
         "cross challenges、revisions、final adjudication 和 blocking findings。"
         "session log、Open Spec 摘要、quick review 不能替代这些 artifact。\n\n"

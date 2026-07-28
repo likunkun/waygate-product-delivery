@@ -1,12 +1,39 @@
 import struct
 import json
 import zlib
+from copy import deepcopy
 from pathlib import Path
+
+from product_delivery_agent.evidence_artifacts import sha256_file, stable_json_hash
 
 
 DEFAULT_PROTOTYPE_SCREENSHOT = (
     ".product-delivery/artifacts/prototype/default-desktop.png"
 )
+PROTOTYPE_DESIGN_DIMENSIONS = (
+    "global_shell",
+    "navigation",
+    "visual_language",
+    "information_density",
+    "component_system",
+    "responsive_behavior",
+)
+PROTOTYPE_STYLE_PROBES = {
+    "global_shell": "layout_structure",
+    "navigation": "entry_path",
+    "visual_language": "color_tokens",
+    "information_density": "density_scale",
+    "component_system": "component_variant",
+    "responsive_behavior": "breakpoint_behavior",
+}
+
+
+def _write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def prototype_contract(
@@ -75,6 +102,416 @@ def write_prototype_screenshot(
     path.write_bytes(image)
 
 
+def prototype_design_bundle_payload(
+    project_root: Path,
+    *,
+    prototype_path: str = "prototype/index.html",
+    contract: dict | None = None,
+    ui_change_type: str = "incremental_existing_surface",
+    include_review_companion: bool = True,
+    annotation_text: str = "Confirm the inherited product context.",
+) -> dict:
+    contract = deepcopy(contract or prototype_contract())
+    prototype = project_root / prototype_path
+    prototype.parent.mkdir(parents=True, exist_ok=True)
+    if not prototype.exists():
+        region_id = contract["surfaces"][0]["critical_regions"][0]["region_id"]
+        prototype.write_text(
+            f'<html><body><main id="{region_id}">Clean prototype</main></body></html>',
+            encoding="utf-8",
+        )
+
+    for screenshot_path in contract["prototype_screenshot_paths"]:
+        if not (project_root / screenshot_path).exists():
+            write_prototype_screenshot(project_root, screenshot_path)
+
+    semantic_snapshot_path = (
+        ".product-delivery/artifacts/prototype-design/semantic-snapshot.json"
+    )
+    semantic_snapshot = project_root / semantic_snapshot_path
+    semantic_states = []
+    runtime_checks = []
+    preflight_observations = []
+    for surface in contract["surfaces"]:
+        region_ids = [
+            region["region_id"] for region in surface["critical_regions"]
+        ]
+        for viewport in surface["required_viewports"]:
+            screenshot_path = (
+                ".product-delivery/artifacts/prototype-design/"
+                f"{surface['surface_id']}-{surface['state_id']}-{viewport}.png"
+            )
+            width, height = (390, 844) if viewport == "mobile" else (1280, 720)
+            write_prototype_screenshot(
+                project_root,
+                screenshot_path,
+                width=width,
+                height=height,
+            )
+            semantic_state = {
+                "surface_id": surface["surface_id"],
+                "state_id": surface["state_id"],
+                "viewport": viewport,
+                "regions": [
+                    {
+                        "region_id": region["region_id"],
+                        "semantic_role": region.get("semantic_role") or "region",
+                        "accessible_name": (
+                            region.get("accessible_name_match", {}).get("value")
+                            or region["region_id"]
+                        ),
+                        "visibility": "visible",
+                        "display_order": index,
+                        "bounds": {
+                            "x": 0,
+                            "y": (index - 1) * 40,
+                            "width": width,
+                            "height": max(40, height // len(region_ids)),
+                        },
+                        "controls": ["primary-action"],
+                        "interaction_state": surface["state_id"],
+                    }
+                    for index, region in enumerate(
+                        surface["critical_regions"], start=1
+                    )
+                ],
+            }
+            semantic_states.append(semantic_state)
+            runtime_checks.append(
+                {
+                    "surface_id": surface["surface_id"],
+                    "state_id": surface["state_id"],
+                    "viewport": viewport,
+                    "status": "passed",
+                    "clean_screenshot_path": screenshot_path,
+                    "observed_region_ids": region_ids,
+                    "annotation_nodes_present": False,
+                    "review_assets_loaded": False,
+                    "review_mode_available": False,
+                }
+            )
+
+    _write_json(
+        semantic_snapshot,
+        {
+            "schema_version": "prototype-semantic-snapshot-v1",
+            "states": semantic_states,
+        },
+    )
+    semantic_snapshot_sha256 = sha256_file(semantic_snapshot)
+    for semantic_state, runtime_check in zip(semantic_states, runtime_checks):
+        screenshot = project_root / runtime_check["clean_screenshot_path"]
+        preflight_observations.append(
+            {
+                "surface_id": semantic_state["surface_id"],
+                "state_id": semantic_state["state_id"],
+                "viewport": semantic_state["viewport"],
+                "semantic_state_sha256": stable_json_hash(semantic_state),
+                "clean_screenshot_path": runtime_check["clean_screenshot_path"],
+                "clean_screenshot_sha256": sha256_file(screenshot),
+                "observed_region_ids": [
+                    region["region_id"] for region in semantic_state["regions"]
+                ],
+                "document_ready": True,
+                "console_errors": [],
+                "network_errors": [],
+                "annotation_nodes_present": False,
+                "review_assets_loaded": False,
+                "review_mode_available": False,
+            }
+        )
+    browser_preflight_path = (
+        ".product-delivery/artifacts/prototype-design/browser-preflight.json"
+    )
+    _write_json(
+        project_root / browser_preflight_path,
+        {
+            "schema_version": "prototype-browser-preflight-v1",
+            "prototype_path": prototype_path,
+            "semantic_snapshot_sha256": semantic_snapshot_sha256,
+            "observations": preflight_observations,
+        },
+    )
+
+    coverage_rows = []
+    for surface in contract["surfaces"]:
+        covered_region_ids = [
+            region["region_id"] for region in surface["critical_regions"]
+        ]
+        for dimension in PROTOTYPE_DESIGN_DIMENSIONS:
+            context_mapping = {}
+            if ui_change_type == "incremental_existing_surface":
+                if dimension == "global_shell":
+                    context_mapping["baseline_shell_region_ids"] = covered_region_ids
+                elif dimension == "navigation":
+                    context_mapping.update(
+                        {
+                            "ordinary_entry_path": "product shell -> primary surface",
+                            "navigation_mapping": "Retains the existing primary navigation entry.",
+                        }
+                    )
+                elif dimension == "information_density":
+                    context_mapping["density_inheritance_mapping"] = (
+                        "Retains the existing compact surface density."
+                    )
+                elif dimension == "component_system":
+                    context_mapping["component_inheritance_mapping"] = (
+                        "Reuses the existing primary controls."
+                    )
+            elif ui_change_type == "new_surface_in_existing_product":
+                if dimension == "global_shell":
+                    context_mapping["existing_shell_region_ids"] = covered_region_ids
+                elif dimension == "navigation":
+                    context_mapping.update(
+                        {
+                            "ordinary_entry_path": "product shell -> new primary surface",
+                            "navigation_integration": "Adds the surface to existing navigation.",
+                        }
+                    )
+                elif dimension == "component_system":
+                    context_mapping["design_system_integration"] = (
+                        "Uses the existing product component contracts."
+                    )
+            elif ui_change_type == "greenfield_ui" and dimension == "component_system":
+                context_mapping["cross_page_state_consistency"] = [
+                    {
+                        "surface_id": surface["surface_id"],
+                        "state_id": surface["state_id"],
+                        "token_set_sha256": "a" * 64,
+                    },
+                    {
+                        "surface_id": f"{surface['surface_id']}-secondary",
+                        "state_id": "ready",
+                        "token_set_sha256": "a" * 64,
+                    },
+                ]
+            evidence_path = (
+                ".product-delivery/artifacts/prototype-design/evidence/"
+                f"{surface['surface_id']}-{surface['state_id']}-{dimension}.json"
+            )
+            _write_json(
+                project_root / evidence_path,
+                {
+                    "schema_version": "prototype-design-evidence-v1",
+                    "evidence_id": (
+                        f"{surface['surface_id']}-{surface['state_id']}-{dimension}"
+                    ),
+                    "ui_change_type": ui_change_type,
+                    "surface_id": surface["surface_id"],
+                    "state_id": surface["state_id"],
+                    "dimension": dimension,
+                    "region_ids": covered_region_ids,
+                    "claims": [f"Fixture {dimension} evidence is present."],
+                    "style_probes": [
+                        {
+                            "probe": PROTOTYPE_STYLE_PROBES[dimension],
+                            "expected": f"{dimension}-fixture-v1",
+                            "observed": f"{dimension}-fixture-v1",
+                        }
+                    ],
+                    "context_mapping": context_mapping,
+                },
+            )
+            coverage_rows.append(
+                {
+                    "surface_id": surface["surface_id"],
+                    "state_id": surface["state_id"],
+                    "dimension": dimension,
+                    "status": "passed",
+                    "evidence_refs": [
+                        {
+                            "artifact_path": evidence_path,
+                            "artifact_sha256": sha256_file(
+                                project_root / evidence_path
+                            ),
+                        }
+                    ],
+                    "covered_region_ids": covered_region_ids,
+                }
+            )
+    product_context_contract = {"coverage_rows": coverage_rows}
+    if ui_change_type == "greenfield_ui":
+        design_system_path = "docs/prototype-design-system.json"
+        design_system = project_root / design_system_path
+        design_system.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(
+            design_system,
+            {
+                "schema_version": "prototype-design-system-v1",
+                "name": "Fixture Design System",
+                "token_sets": ["color", "type", "spacing", "components"],
+            },
+        )
+        product_context_contract["design_system_artifact_path"] = design_system_path
+    else:
+        baseline_path = (
+            ".product-delivery/artifacts/prototype-design/baseline-surface.png"
+        )
+        write_prototype_screenshot(project_root, baseline_path)
+        product_context_contract["baseline_identity"] = {
+            "canonical_baseline_id": "fixture-baseline-v1",
+            "baseline_feature_slug": "fixture-existing-product",
+            "baseline_surface_paths": ["/customer/course-production"],
+            "baseline_snapshot_paths": [baseline_path],
+        }
+        if ui_change_type == "new_surface_in_existing_product":
+            design_system_path = "docs/prototype-design-system.json"
+            _write_json(
+                project_root / design_system_path,
+                {
+                    "schema_version": "prototype-design-system-v1",
+                    "name": "Fixture Design System",
+                    "token_sets": ["color", "type", "spacing", "components"],
+                },
+            )
+            product_context_contract.update(
+                {
+                    "design_system_artifact_path": design_system_path,
+                    "new_surface_justification": {
+                        "reason": "The workflow needs a distinct product surface.",
+                        "why_existing_surface_insufficient": (
+                            "The existing surface cannot represent the new lifecycle."
+                        ),
+                        "navigation_impact": (
+                            "Adds one destination to the existing product navigation."
+                        ),
+                    },
+                }
+            )
+
+    first_surface = contract["surfaces"][0]
+    first_region = first_surface["critical_regions"][0]
+    payload = {
+        "bundle_version": "v1",
+        "ui_change_type": ui_change_type,
+        "clean_surface": {
+            "prototype_path": prototype_path,
+            "prototype_contract": contract,
+            "semantic_snapshot_path": semantic_snapshot_path,
+            "browser_preflight_probe_path": browser_preflight_path,
+            "runtime_checks": runtime_checks,
+        },
+        "product_context_contract": product_context_contract,
+        "intended_product_ui_callouts": [
+            {
+                "callout_id": "fixture-primary-callout",
+                "requirement_ids": ["FR-001"],
+                "scenario_ids": ["SC-001"],
+                "actor_roles": ["teacher"],
+                "trigger": "the primary workflow enters its ready state",
+                "lifecycle": "visible while the ready state remains active",
+                "dismissal_or_persistence": "persists until the state changes",
+                "state_id": first_surface["state_id"],
+                "region_id": first_region["region_id"],
+            }
+        ],
+        "review_annotation_set": None,
+    }
+    if include_review_companion:
+        review_path = (
+            ".product-delivery/artifacts/review-only/prototype-review.html"
+        )
+        review_artifact = project_root / review_path
+        review_artifact.parent.mkdir(parents=True, exist_ok=True)
+        review_artifact.write_text(
+            (
+                '<html><body><a data-annotation-id="fixture-context-note" '
+                f'data-clean-region-id="{first_region["region_id"]}" '
+                f'data-clean-surface-reference="{prototype_path}" '
+                f'href="{prototype_path}#{first_region["region_id"]}">'
+                f"{annotation_text}</a></body></html>"
+            ),
+            encoding="utf-8",
+        )
+        payload["review_annotation_set"] = {
+            "artifact_path": review_path,
+            "clean_surface_reference": prototype_path,
+            "annotations": [
+                {
+                    "annotation_id": "fixture-context-note",
+                    "target_region_id": first_region["region_id"],
+                    "text": annotation_text,
+                }
+            ],
+        }
+    return payload
+
+
+def record_prototype_design_bundle(
+    workflow,
+    project_root: Path,
+    review_payload: dict | None = None,
+    **payload_options,
+) -> dict:
+    review_payload = review_payload if review_payload is not None else {}
+    payload = prototype_design_bundle_payload(
+        project_root,
+        prototype_path=review_payload.get("prototype_path", "prototype/index.html"),
+        contract=review_payload.get("prototype_contract") or prototype_contract(),
+        ui_change_type=review_payload.get(
+            "ui_change_type", "incremental_existing_surface"
+        ),
+        **payload_options,
+    )
+    state = workflow.record_ui_prototype_design_bundle(payload)
+    if review_payload is not None:
+        review_payload.update(bind_prototype_design_review(workflow, review_payload))
+    return state
+
+
+def bind_prototype_design_review(workflow, review: dict) -> dict:
+    bound = dict(review)
+    bundle = workflow.status()["prototype_design_bundle"]
+    bound["prototype_design_bundle_hash"] = bundle["bundle_sha256"]
+    bound["prototype_design_audit_hash"] = bundle["design_audit_sha256"]
+    bound.setdefault(
+        "reviewed_design_dimensions", list(PROTOTYPE_DESIGN_DIMENSIONS)
+    )
+    bound.setdefault("unmapped_design_dimensions", [])
+    bound.setdefault("global_visual_continuity_findings", [])
+    bound.setdefault("annotation_separation_findings", [])
+    bound.setdefault(
+        "global_visual_continuity",
+        {
+            "conclusion": "passed",
+            "summary": "All six product-context dimensions are positively covered.",
+            "evidence_refs": [
+                f"prototype-design-audit:{bundle['design_audit_sha256']}"
+            ],
+        },
+    )
+    bound.setdefault(
+        "annotation_separation",
+        {
+            "conclusion": "passed",
+            "summary": "The clean prototype is separated from review annotations.",
+            "evidence_refs": [
+                f"prototype-design-bundle:{bundle['bundle_sha256']}"
+            ],
+        },
+    )
+    return bound
+
+
+def record_bundled_ui_prototype_review(
+    workflow,
+    project_root: Path,
+    review: dict,
+) -> dict:
+    record_prototype_design_bundle(workflow, project_root, review)
+    return workflow.record_ui_prototype_review(
+        bind_prototype_design_review(workflow, review)
+    )
+
+
+def record_scenario_review(workflow, review: dict) -> dict:
+    state = workflow.status()
+    bundle = state.get("prototype_design_bundle") or {}
+    if state.get("project_type") == "ui" and bundle.get("status") == "ready":
+        review = bind_prototype_design_review(workflow, review)
+    return workflow.record_multi_agent_review("scenario", review)
+
+
 def confirm_product_baseline(workflow, review: dict, message: str = "确认产品基线"):
     review = dict(review)
     reviewers = list(review.get("reviewers") or [])
@@ -106,7 +543,8 @@ def confirm_product_baseline(workflow, review: dict, message: str = "确认产�
                     "parallel_surface_replacement": False,
                 },
             )
-    workflow.record_multi_agent_review("scenario", review)
+        review = bind_prototype_design_review(workflow, review)
+    record_scenario_review(workflow, review)
     state = workflow.prepare_product_baseline_confirmation()
     pending = state["pending_confirmations"]["product_baseline"]
     return workflow.confirm_product_baseline(message, pending["nonce"])
@@ -259,4 +697,7 @@ def ui_conformance_review_payload(state: dict) -> dict:
         "interaction_findings": [],
         "legacy_reuse_findings": [],
         "unmapped_regions": [],
+        "reviewed_design_dimensions": list(PROTOTYPE_DESIGN_DIMENSIONS),
+        "global_visual_continuity_findings": [],
+        "annotation_separation_findings": [],
     }

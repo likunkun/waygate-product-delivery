@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.22-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.23-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -32,6 +32,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | File-backed workflow state | `.product-delivery/state.json` and artifacts outlive chat context and compaction. |
 | Required skill gates | Product Delivery, Open Spec, planning files, UI/UX, browser testing, and closure skills are checked by stage. |
 | Layered product confirmation | Product scope and the UI prototype or non-UI behavior contract are confirmed before detailed test design. |
+| Prototype design integrity | Clean product surfaces must inherit the global product context, while review annotations remain on an external review-only surface. |
 | Prototype-to-production conformance | UI closure requires frozen prototype contracts, production PNG and semantic evidence, plus an independent UI conformance review. |
 | Non-UI behavior gate | API, CLI, service, and background-job projects use behavior contracts instead of HTML prototypes. |
 | Multi-agent review artifacts | Scenario and test coverage reviews must be visible artifacts, not vague chat claims. |
@@ -109,7 +110,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.22.tar.gz
+dist/waygate-product-delivery-1.0.23.tar.gz
 ```
 
 ## Use In Codex
@@ -126,8 +127,8 @@ dist/waygate-product-delivery-1.0.22.tar.gz
 Implementation must not begin until the current feature has:
 
 1. current-feature Open Spec, scenario matrix, and UI prototype or non-UI behavior-contract draft;
-2. passed multi-agent product/scenario review;
-3. user-confirmed `product_baseline` for scope and surface behavior;
+2. a current `prototype_design_integrity` bundle for UI work, followed by passed multi-agent product/scenario review;
+3. user-confirmed `product_baseline` for scope and the clean product surface;
 4. planned E2E obligations, coverage audit, and detailed test design created after that baseline;
 5. passed multi-agent test and test-coverage reviews;
 6. user-confirmed `test_coverage_plan`;
@@ -140,8 +141,9 @@ flowchart LR
     A[Start] --> B[Product brief]
     B --> C[Open Spec]
     C --> D[Scenario matrix and surface draft]
-    D --> E[Multi-agent product and scenario review]
-    E --> F[Confirm product_baseline]
+    D --> V[Prototype design integrity gate]
+    V --> E[Multi-agent product and scenario review]
+    E --> F[Confirm product_baseline from clean surface]
     F --> G[Planned E2E and coverage audit]
     G --> H[Multi-agent test and coverage review]
     H --> I[Confirm test_coverage_plan]
@@ -154,6 +156,14 @@ flowchart LR
 ```
 
 The key rule is simple: artifacts and state are authoritative; chat summaries are not.
+
+### Prototype Gate And Review
+
+For UI work, `record_ui_prototype_design_bundle()` runs before multi-agent product/scenario review. The deterministic gate rebuilds fixed-schema semantic snapshots and browser-preflight probe artifacts, verifies their snapshot/screenshot/region hashes for every required state and viewport, and ignores caller-reported pass flags. Each global shell, navigation, visual language, information density, component system, and responsive behavior row must bind a structured, hashed design-evidence artifact. The gate also enforces strict separation between the product-facing `clean_surface` and any external `review_annotation_set`.
+
+The gate verifies objective facts; multi-agent review judges design quality. Reviewers decide whether the baseline is representative, whether local polish remains coherent with the whole product, and whether an exception is justified. They cannot waive a failed gate, and empty findings are not a substitute for positive review coverage.
+
+Only the clean prototype and clean screenshots are shown for `product_baseline`. Annotation-only changes invalidate the bound internal scenario review, but not either user confirmation, the test plan, or launch authorization. Product-surface or product-context changes retain full downstream invalidation. Active v1.0.22 deliveries with an already confirmed baseline remain grandfathered until the prototype changes or the baseline is reopened. The workflow still has exactly two user confirmations: `product_baseline` and `test_coverage_plan`; closure remains schema `v0.11`.
 
 ## Architecture
 
@@ -175,6 +185,7 @@ Core runtime modules:
 | `workflow.py` | Product Delivery lifecycle API. |
 | `artifact_protocol.py` | Local state and artifact persistence. |
 | `startup_guard.py` | Planning files, Open Spec, and project-type gate checks. |
+| `prototype_design.py` | Clean-surface, product-context, annotation-separation, and design-bundle validation. |
 | `gatekeeper.py` | Fail-closed invariants for handoff, implementation, and closure. |
 | `delivery_goal.py` | Task queue, task cursor, and stop guard. |
 | `transition_journal.py` | Hash-linked critical transition journal. |

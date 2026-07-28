@@ -8,6 +8,7 @@ from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowErr
 from tests.conformance_fixtures import (
     confirm_product_baseline,
     prototype_contract,
+    record_bundled_ui_prototype_review,
     write_prototype_screenshot,
 )
 
@@ -347,7 +348,9 @@ class WorkflowPrototypeTests(unittest.TestCase):
             workflow.start(
                 multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
-            workflow.record_ui_prototype_review(ui_review_payload())
+            record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload()
+            )
             confirm_scope(workflow)
 
             status = workflow.prepare_audit_and_handoff_drafts()

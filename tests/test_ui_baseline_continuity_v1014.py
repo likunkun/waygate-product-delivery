@@ -12,7 +12,13 @@ from product_delivery_agent.review_gates import (
 )
 from product_delivery_agent.ui_prototype import validate_ui_prototype_review
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
-from tests.conformance_fixtures import prototype_contract, write_prototype_screenshot
+from tests.conformance_fixtures import (
+    PROTOTYPE_DESIGN_DIMENSIONS,
+    prototype_contract,
+    record_bundled_ui_prototype_review,
+    record_scenario_review,
+    write_prototype_screenshot,
+)
 
 
 def prototype_review_payload(**overrides):
@@ -41,6 +47,22 @@ def prototype_review_payload(**overrides):
         "browser_e2e_candidates": ["confirm teachability from content status drawer"],
         "negative_scope_guard_candidates": ["AI lesson generation remains absent"],
         "ui_change_type": "incremental_existing_surface",
+        "prototype_design_bundle_hash": "b" * 64,
+        "prototype_design_audit_hash": "a" * 64,
+        "reviewed_design_dimensions": list(PROTOTYPE_DESIGN_DIMENSIONS),
+        "unmapped_design_dimensions": [],
+        "global_visual_continuity_findings": [],
+        "annotation_separation_findings": [],
+        "global_visual_continuity": {
+            "conclusion": "passed",
+            "summary": "The prototype inherits the complete product context.",
+            "evidence_refs": ["fixture:product-context"],
+        },
+        "annotation_separation": {
+            "conclusion": "passed",
+            "summary": "Review annotations remain outside the clean prototype.",
+            "evidence_refs": ["fixture:annotation-separation"],
+        },
         "baseline_feature_slug": "v1.4.3-standard-course-construction",
         "baseline_surface_paths": [
             "apps/web/src/v10Surfaces.tsx:V143StandardCourseConstructionPage",
@@ -240,12 +262,12 @@ class UIBaselineContinuityV1014Tests(unittest.TestCase):
             workflow.start(
                 feature_slug="v1.4.4-standard-course-teachable-confirmation", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
-            workflow.record_ui_prototype_review(
-                prototype_review_payload(
-                    prototype_path="docs/prototypes/v144.html"
-                )
+            record_bundled_ui_prototype_review(
+                workflow,
+                project_root,
+                prototype_review_payload(prototype_path="docs/prototypes/v144.html"),
             )
-            workflow.record_multi_agent_review("scenario", scenario_review_payload())
+            record_scenario_review(workflow, scenario_review_payload())
 
             state = workflow.record_ui_prototype_feedback(
                 "不要另起工作台，必须沿用 V1.4.3 系列详情课程表和内容状态抽屉",

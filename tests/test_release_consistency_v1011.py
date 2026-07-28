@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.22"
+EXPECTED_VERSION = "1.0.23"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
@@ -38,15 +38,23 @@ class ReleaseConsistencyV1011Tests(unittest.TestCase):
     def test_readmes_reference_current_release_artifacts(self):
         for relative_path in ("README.md", "README.zh-CN.md"):
             text = (REPO_ROOT / relative_path).read_text("utf-8")
-            self.assertIn("version-1.0.22", text)
+            self.assertIn("version-1.0.23", text)
             self.assertIn(
-                "dist/waygate-product-delivery-1.0.22.tar.gz",
+                "dist/waygate-product-delivery-1.0.23.tar.gz",
                 text,
             )
 
     def test_changelog_records_simplified_post_1_0_10_roadmap(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text("utf-8")
-        self.assertIn("## 1.0.22", changelog)
+        self.assertIn("## 1.0.23", changelog)
+        self.assertIn("prototype_design_integrity", changelog)
+        self.assertIn("record_ui_prototype_design_bundle", changelog)
+        self.assertIn("product_domain_hash", changelog)
+        self.assertIn("review_domain_hash", changelog)
+        self.assertIn("clean_surface", changelog)
+        self.assertIn("review_annotation_set", changelog)
+        self.assertIn("门禁验证客观事实", changelog)
+        self.assertIn("多 Agent 判断设计质量", changelog)
         self.assertIn("retire_model_execution_policy", changelog)
         self.assertIn("模型选择完全由用户和 Codex 宿主管理", changelog)
         self.assertIn("product_baseline", changelog)

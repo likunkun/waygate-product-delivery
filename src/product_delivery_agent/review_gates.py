@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from product_delivery_agent.prototype_design import PRODUCT_CONTEXT_DIMENSIONS
+
 
 class ReviewGateError(RuntimeError):
     """Raised when a multi-agent review cannot be accepted."""
@@ -66,6 +68,7 @@ def validate_multi_agent_review(
     planned_obligations: list[dict[str, Any]] | None = None,
     executed_records: list[dict[str, Any]] | None = None,
     prototype_contract: dict[str, Any] | None = None,
+    prototype_design_bundle: dict[str, Any] | None = None,
 ) -> None:
     """Validate visible multi-agent review output."""
     if review_type not in VALID_REVIEW_TYPES:
@@ -104,7 +107,12 @@ def validate_multi_agent_review(
     if review.get("blocking_findings"):
         raise ReviewGateError("blocking review findings remain unresolved")
     if review_type == "scenario":
-        _validate_scenario_review(review, ui_change_type=ui_change_type)
+        _validate_scenario_review(
+            review,
+            ui_change_type=ui_change_type,
+            require_prototype_design=(prototype_design_bundle or {}).get("status")
+            == "ready",
+        )
     elif review_type == "test_coverage":
         _validate_test_coverage_review(
             review,
@@ -118,6 +126,8 @@ def validate_multi_agent_review(
         )
     elif review_type == "ui_conformance":
         _validate_ui_conformance_review(review, prototype_contract or {})
+
+
 def _validate_ui_conformance_review(
     review: dict[str, Any],
     prototype_contract: dict[str, Any],
@@ -141,6 +151,7 @@ def _validate_ui_conformance_review(
         raise ReviewGateError(
             "missing UI conformance review fields: " + ", ".join(missing)
         )
+    _validate_design_integrity_review(review, require_hashes=False)
     for field_name in (
         "structural_findings",
         "visual_findings",
@@ -242,6 +253,11 @@ def _scenario_review_evidence(review: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "baseline_inheritance_review",
         "ui_continuity_findings",
+        "prototype_design_bundle_hash",
+        "prototype_design_audit_hash",
+        "reviewed_design_dimensions",
+        "global_visual_continuity_findings",
+        "annotation_separation_findings",
     )
     return {key: review[key] for key in keys if key in review}
 
@@ -281,7 +297,10 @@ def _validate_scenario_review(
     review: dict[str, Any],
     *,
     ui_change_type: str | None = None,
+    require_prototype_design: bool = False,
 ) -> None:
+    if require_prototype_design:
+        _validate_design_integrity_review(review, require_hashes=True)
     continuity_fields_present = (
         "baseline_inheritance_review" in review
         or "ui_continuity_findings" in review
@@ -330,6 +349,51 @@ def _validate_scenario_review(
         if inheritance.get("parallel_surface_replacement") is True:
             raise ReviewGateError(
                 "baseline_inheritance_review rejects parallel surface replacement"
+            )
+
+
+def _validate_design_integrity_review(
+    review: dict[str, Any],
+    *,
+    require_hashes: bool,
+) -> None:
+    missing = []
+    if require_hashes:
+        for field_name in (
+            "prototype_design_bundle_hash",
+            "prototype_design_audit_hash",
+        ):
+            if not _non_empty_string(review.get(field_name)):
+                missing.append(field_name)
+    dimensions = review.get("reviewed_design_dimensions")
+    if not isinstance(dimensions, list):
+        missing.append("reviewed_design_dimensions")
+    for field_name in (
+        "global_visual_continuity_findings",
+        "annotation_separation_findings",
+    ):
+        if not isinstance(review.get(field_name), list):
+            missing.append(field_name)
+    if missing:
+        raise ReviewGateError(
+            "missing prototype design review fields: " + ", ".join(missing)
+        )
+
+    reviewed_dimensions = _string_set(dimensions)
+    missing_dimensions = sorted(set(PRODUCT_CONTEXT_DIMENSIONS) - reviewed_dimensions)
+    if missing_dimensions:
+        raise ReviewGateError(
+            "reviewed_design_dimensions missing required items: "
+            + ", ".join(missing_dimensions)
+        )
+    for field_name in (
+        "global_visual_continuity_findings",
+        "annotation_separation_findings",
+    ):
+        if review.get(field_name):
+            raise ReviewGateError(
+                f"unresolved {field_name} remain: "
+                + ", ".join(map(str, review[field_name]))
             )
 
 

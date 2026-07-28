@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -60,8 +61,10 @@ from product_delivery_agent.gatekeeper import (
     PLUGIN_VERSION,
     TERMINAL_STATUSES,
     GatekeeperError,
+    assert_current_prototype_design_integrity,
     assert_pre_closure_ready,
     assert_pre_handoff_ready,
+    assert_prototype_annotation_review_current,
     derive_blockers,
     product_baseline_hash,
     requirements_e2e_confirmation_hash,
@@ -79,6 +82,10 @@ from product_delivery_agent.handoff import (
 from product_delivery_agent.non_ui_behavior import (
     render_non_ui_behavior_contract,
     validate_non_ui_behavior_contract,
+)
+from product_delivery_agent.prototype_design import (
+    PrototypeDesignError,
+    build_prototype_design_bundle,
 )
 from product_delivery_agent.review_gates import (
     ReviewGateError,
@@ -266,6 +273,7 @@ class ProductDeliveryWorkflow:
             "confirmation_source": None,
         }
         state["prototype_contract"] = {"status": "missing"}
+        state["prototype_design_bundle"] = {"status": "missing"}
         state["prototype_production_conformance"] = {
             "status": "missing",
             "records": [],
@@ -435,13 +443,40 @@ class ProductDeliveryWorkflow:
         review: dict[str, Any],
     ) -> dict[str, Any]:
         state = self._require_started(allow_pending_authorization=True)
+        if review_type != "scenario":
+            self._require_current_prototype_progression(state)
+        current_prototype_design = None
         if review_type == "scenario":
-            if state.get("project_type") == "ui" and not state.get(
-                "ui_prototype", {}
-            ).get("generated"):
-                raise ReviewGateError(
-                    "UI prototype draft is required before scenario review"
-                )
+            if state.get("project_type") == "ui":
+                bundle = state.get("prototype_design_bundle") or {}
+                grandfathered = self._prototype_design_is_grandfathered(state)
+                if bundle.get("status") != "ready" and not grandfathered:
+                    raise ReviewGateError(
+                        "ready prototype design bundle is required before scenario review"
+                    )
+                if bundle.get("status") == "ready":
+                    try:
+                        current_prototype_design, _contract = (
+                            self._rebuild_current_prototype_design_bundle(state)
+                        )
+                    except WorkflowError as cause:
+                        raise ReviewGateError(str(cause)) from cause
+                    if review.get("prototype_design_bundle_hash") != bundle.get(
+                        "bundle_sha256"
+                    ):
+                        raise ReviewGateError(
+                            "prototype_design_bundle_hash must match the current bundle"
+                        )
+                    if review.get("prototype_design_audit_hash") != bundle.get(
+                        "design_audit_sha256"
+                    ):
+                        raise ReviewGateError(
+                            "prototype_design_audit_hash must match the current bundle"
+                        )
+                if not state.get("ui_prototype", {}).get("generated"):
+                    raise ReviewGateError(
+                        "UI prototype draft is required before scenario review"
+                    )
             if state.get("project_type") == "non_ui" and not state.get(
                 "non_ui_behavior_contract"
             ):
@@ -471,6 +506,11 @@ class ProductDeliveryWorkflow:
             prototype_contract=(
                 state.get("prototype_contract") or {}
                 if review_type == "ui_conformance"
+                else None
+            ),
+            prototype_design_bundle=(
+                state.get("prototype_design_bundle") or {}
+                if review_type == "scenario"
                 else None
             ),
         )
@@ -517,6 +557,23 @@ class ProductDeliveryWorkflow:
             "reviewer_spawn_source": review.get("reviewer_spawn_source"),
             "input_snapshot_hash": review_input_hash(state, review_type),
         }
+        if review_type == "scenario" and current_prototype_design is not None:
+            state["multi_agent_reviews"][review_type].update(
+                {
+                    "prototype_design_bundle_hash": review[
+                        "prototype_design_bundle_hash"
+                    ],
+                    "prototype_design_audit_hash": review[
+                        "prototype_design_audit_hash"
+                    ],
+                    "prototype_design_product_hash": current_prototype_design[
+                        "product_domain_sha256"
+                    ],
+                    "prototype_design_review_hash": current_prototype_design[
+                        "review_domain_sha256"
+                    ],
+                }
+            )
         self._remove_blockers(
             state,
             f"multi_agent_{review_type}_review",
@@ -563,6 +620,10 @@ class ProductDeliveryWorkflow:
             ) or {}
             if test_review.get("status") == "passed":
                 next_gate = "feature_closure_after_implementation"
+        if review_type == "scenario" and "annotation_review_resume_gate" in state:
+            resume_gate = state.pop("annotation_review_resume_gate")
+            if self._product_baseline_is_confirmed(state) and resume_gate:
+                next_gate = resume_gate
         state["next_gate"] = next_gate
         return write_state(self.project_root, state)
 
@@ -643,14 +704,21 @@ class ProductDeliveryWorkflow:
                 "current multi-agent scenario review is required before product baseline confirmation"
             )
         if project_type == "ui":
+            bundle, prototype_contract = self._rebuild_current_prototype_design_bundle(
+                state
+            )
             ui = state.get("ui_prototype") or {}
             if not ui.get("generated") or not ui.get("reviewed_by_agent"):
                 raise WorkflowError("current UI prototype draft is required")
-            artifact_path = str(ui.get("prototype_path") or "")
-            surface_artifact_hash = str(ui.get("artifact_hash") or "")
+            artifact_path = str(bundle["clean_surface"]["prototype_path"])
+            surface_artifact_hash = str(
+                bundle["artifact_metadata"]["clean_prototype"]["sha256"]
+            )
             prototype_revision = str(ui.get("prototype_revision") or "")
-            contract_hash = str(ui.get("prototype_contract_hash") or "")
-            screenshot_hash = str(ui.get("prototype_screenshot_set_hash") or "")
+            contract_hash = str(prototype_contract.get("contract_sha256") or "")
+            screenshot_hash = str(
+                prototype_contract.get("prototype_screenshot_set_sha256") or ""
+            )
         else:
             contract = state.get("non_ui_behavior_contract") or {}
             if not contract:
@@ -673,6 +741,10 @@ class ProductDeliveryWorkflow:
         )
         pending["surface_artifact_hash"] = surface_artifact_hash
         pending["surface_hash"] = surface_input_hash(state)
+        if project_type == "ui":
+            pending["prototype_design_product_hash"] = bundle[
+                "product_domain_sha256"
+            ]
         state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
         state["pending_confirmations"]["product_baseline"] = pending
         state.setdefault("confirmation_readiness", {})[
@@ -705,19 +777,26 @@ class ProductDeliveryWorkflow:
         )
         project_type = state.get("project_type")
         if project_type == "ui":
-            ui = state.get("ui_prototype") or {}
-            current_artifact_hash = self._artifact_hash(
-                str(ui.get("prototype_path") or ""), require_exists=True
+            bundle, current_contract = self._rebuild_current_prototype_design_bundle(
+                state,
+                error_type=ConfirmationError,
             )
+            current_prototype_path = bundle["clean_surface"]["prototype_path"]
+            if pending.get("artifact_path") != current_prototype_path:
+                raise ConfirmationError(
+                    "clean prototype path changed after confirmation preparation"
+                )
+            current_artifact_hash = bundle["artifact_metadata"]["clean_prototype"][
+                "sha256"
+            ]
             if current_artifact_hash != pending.get("surface_artifact_hash"):
                 raise ConfirmationError("prototype changed after confirmation preparation")
-            try:
-                current_contract = build_prototype_contract(
-                    self.project_root,
-                    state.get("prototype_contract") or {},
+            if bundle.get("product_domain_sha256") != pending.get(
+                "prototype_design_product_hash"
+            ):
+                raise ConfirmationError(
+                    "prototype product domain changed after confirmation preparation"
                 )
-            except UIPrototypeError as cause:
-                raise ConfirmationError(str(cause)) from cause
             if current_contract.get("contract_sha256") != pending.get(
                 "prototype_contract_hash"
             ):
@@ -752,6 +831,9 @@ class ProductDeliveryWorkflow:
                     ],
                     "prototype_screenshot_set_hash": pending[
                         "prototype_screenshot_set_hash"
+                    ],
+                    "prototype_design_product_hash": pending[
+                        "prototype_design_product_hash"
                     ],
                 }
             )
@@ -788,7 +870,7 @@ class ProductDeliveryWorkflow:
             ui_confirmation = {
                 **logical,
                 "target": "ui_prototype",
-                "artifact_path": state["ui_prototype"]["prototype_path"],
+                "artifact_path": pending["artifact_path"],
                 "artifact_hash": pending["surface_artifact_hash"],
             }
             confirmations["ui_prototype"] = ui_confirmation
@@ -1141,24 +1223,45 @@ class ProductDeliveryWorkflow:
                 "confirmed product surface requires user change authorization"
             )
 
+        bundle, prototype_contract = self._rebuild_current_prototype_design_bundle(
+            state
+        )
+        bundle_state = state["prototype_design_bundle"]
+        if review.get("prototype_design_bundle_hash") != bundle_state.get(
+            "bundle_sha256"
+        ):
+            raise WorkflowError(
+                "prototype_design_bundle_hash must match the current prototype design bundle"
+            )
+        if review.get("prototype_design_audit_hash") != bundle_state.get(
+            "design_audit_sha256"
+        ):
+            raise WorkflowError(
+                "prototype_design_audit_hash must match the current prototype design bundle"
+            )
+        clean_prototype_path = bundle["clean_surface"]["prototype_path"]
+        if review.get("prototype_path") != clean_prototype_path:
+            raise WorkflowError(
+                "UI prototype review must use the bundle clean prototype path"
+            )
+        if review.get("ui_change_type") != bundle.get("ui_change_type"):
+            raise WorkflowError(
+                "UI prototype review ui_change_type must match the prototype design bundle"
+            )
+        review = deepcopy(review)
+        review["prototype_path"] = clean_prototype_path
+        review["prototype_contract"] = prototype_contract
+
         missing = validate_ui_prototype_review(review)
         if missing:
             raise WorkflowError(
                 "missing UI prototype review fields: " + ", ".join(missing)
             )
-        try:
-            prototype_contract = build_prototype_contract(
-                self.project_root,
-                review.get("prototype_contract") or {},
-            )
-        except UIPrototypeError as cause:
-            raise WorkflowError(str(cause)) from cause
-
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         review_path = artifacts_dir / CORE_ARTIFACTS["ui_prototype_review"]
         review_path.write_text(render_ui_prototype_review(review), encoding="utf-8")
-        artifact_hash = self._artifact_hash(review["prototype_path"])
+        artifact_hash = bundle["artifact_metadata"]["clean_prototype"]["sha256"]
         revision_number = (
             int(state.get("ui_prototype", {}).get("revision_number") or 0) + 1
         )
@@ -1183,6 +1286,26 @@ class ProductDeliveryWorkflow:
             "new_surface_justification": review.get("new_surface_justification"),
             "review_artifact_path": f"artifacts/{CORE_ARTIFACTS['ui_prototype_review']}",
             "prototype_contract_hash": prototype_contract["contract_sha256"],
+            "prototype_design_bundle_hash": bundle["bundle_sha256"],
+            "prototype_design_product_hash": bundle["product_domain_sha256"],
+            "prototype_design_review_hash": bundle["review_domain_sha256"],
+            "prototype_design_audit_hash": bundle_state["design_audit_sha256"],
+            "reviewed_design_dimensions": list(
+                review["reviewed_design_dimensions"]
+            ),
+            "unmapped_design_dimensions": list(
+                review["unmapped_design_dimensions"]
+            ),
+            "global_visual_continuity_findings": list(
+                review.get("global_visual_continuity_findings") or []
+            ),
+            "annotation_separation_findings": list(
+                review.get("annotation_separation_findings") or []
+            ),
+            "global_visual_continuity": deepcopy(
+                review["global_visual_continuity"]
+            ),
+            "annotation_separation": deepcopy(review["annotation_separation"]),
         }
         contract_path = artifacts_dir / "ui-prototype-contract.json"
         contract_path.write_text(
@@ -1218,6 +1341,10 @@ class ProductDeliveryWorkflow:
             "baseline_feature_slug": review.get("baseline_feature_slug"),
             "baseline_surface_paths": list(review.get("baseline_surface_paths", [])),
             "baseline_user_journey": review.get("baseline_user_journey"),
+            "prototype_design_bundle_hash": bundle["bundle_sha256"],
+            "prototype_design_product_hash": bundle["product_domain_sha256"],
+            "prototype_design_review_hash": bundle["review_domain_sha256"],
+            "prototype_design_audit_hash": bundle_state["design_audit_sha256"],
             "confirmation_status": "draft_internal_review",
             "pending_confirmation_nonce": None,
             "confirmation_source": None,
@@ -1387,6 +1514,7 @@ class ProductDeliveryWorkflow:
             targets=["product_baseline"],
             user_message=user_message,
         )
+        self._reopen_legacy_prototype_design_bundle(state)
         state.setdefault("ui_prototype_feedback", [])
         state["ui_prototype_feedback"].append(
             {
@@ -1457,6 +1585,7 @@ class ProductDeliveryWorkflow:
             user_message=user_message,
         )
         if "product_baseline" in requested:
+            self._reopen_legacy_prototype_design_bundle(state)
             self._mark_reviews_stale(
                 state,
                 ("scenario", "test", "test_coverage"),
@@ -1492,6 +1621,131 @@ class ProductDeliveryWorkflow:
             )
             state["stage"] = "test_coverage_plan_revision"
             state["next_gate"] = "planned_e2e_obligations"
+        return write_state(self.project_root, state)
+
+    def record_ui_prototype_design_bundle(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        state = self._require_started()
+        if state.get("project_type") != "ui":
+            raise WorkflowError(
+                "prototype design bundle is only available for UI projects"
+            )
+        clean_surface = payload.get("clean_surface") if isinstance(payload, dict) else None
+        contract_payload = (
+            clean_surface.get("prototype_contract")
+            if isinstance(clean_surface, dict)
+            else None
+        )
+        try:
+            prototype_contract = build_prototype_contract(
+                self.project_root,
+                contract_payload or {},
+            )
+            bundle = build_prototype_design_bundle(
+                self.project_root,
+                payload,
+                prototype_contract=prototype_contract,
+            )
+        except (UIPrototypeError, PrototypeDesignError) as cause:
+            raise WorkflowError(str(cause)) from cause
+
+        old_bundle = state.get("prototype_design_bundle") or {}
+        old_product_hash = old_bundle.get("product_domain_sha256")
+        product_changed = old_product_hash != bundle["product_domain_sha256"]
+        if product_changed and (
+            self._product_baseline_is_confirmed(state)
+            or old_bundle.get("status") == "legacy_grandfathered"
+        ) and not self._has_user_change_authorization(state, "product_baseline"):
+            raise WorkflowError(
+                "confirmed product surface requires user change authorization"
+            )
+
+        design_audit_sha256 = stable_state_hash(bundle["design_audit"])
+        canonical_bundle = {
+            **bundle,
+            "prototype_contract": prototype_contract,
+            "design_audit_sha256": design_audit_sha256,
+        }
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        bundle_path = artifacts_dir / "prototype-design-bundle.json"
+        bundle_path.write_text(
+            json.dumps(canonical_bundle, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        contract_path = artifacts_dir / "ui-prototype-contract.json"
+        contract_path.write_text(
+            json.dumps(prototype_contract, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        state["prototype_design_bundle"] = {
+            "status": "ready",
+            "artifact_path": "artifacts/prototype-design-bundle.json",
+            "artifact_sha256": self._artifact_hash(str(bundle_path)),
+            "bundle_sha256": bundle["bundle_sha256"],
+            "product_domain_sha256": bundle["product_domain_sha256"],
+            "review_domain_sha256": bundle["review_domain_sha256"],
+            "design_audit_sha256": design_audit_sha256,
+            "clean_prototype_path": bundle["clean_surface"]["prototype_path"],
+            "clean_prototype_sha256": bundle["artifact_metadata"][
+                "clean_prototype"
+            ]["sha256"],
+            "prototype_contract_sha256": prototype_contract["contract_sha256"],
+        }
+        state["prototype_contract"] = {
+            **prototype_contract,
+            "artifact_path": "artifacts/ui-prototype-contract.json",
+            "artifact_sha256": self._artifact_hash(str(contract_path)),
+        }
+
+        if product_changed:
+            self._mark_reviews_stale(
+                state,
+                ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance"),
+                reason="prototype_design_product_domain_changed",
+            )
+            self._invalidate_prototype_production_conformance(
+                state,
+                reason="prototype_design_product_domain_changed",
+            )
+            self._invalidate_requirements_e2e_confirmation(
+                state,
+                reason="prototype_design_product_domain_changed",
+                invalidate_open_spec=True,
+                invalidate_planned_e2e=True,
+            )
+            self._invalidate_launch_authorization(
+                state,
+                reason="prototype_design_product_domain_changed",
+            )
+            state.setdefault("pending_confirmations", {}).pop(
+                "product_baseline", None
+            )
+            state["stage"] = "prototype_design_bundle_ready"
+            state["next_gate"] = "ui_prototype_review"
+        elif old_bundle.get("review_domain_sha256") != bundle[
+            "review_domain_sha256"
+        ]:
+            scenario_review = (state.get("multi_agent_reviews") or {}).get(
+                "scenario"
+            ) or {}
+            if scenario_review.get("status") in {"passed", "stale"}:
+                if (
+                    scenario_review.get("status") == "passed"
+                    and self._product_baseline_is_confirmed(state)
+                    and "annotation_review_resume_gate" not in state
+                ):
+                    state["annotation_review_resume_gate"] = state.get("next_gate")
+                self._mark_reviews_stale(
+                    state,
+                    ("scenario",),
+                    reason="prototype_design_review_domain_changed",
+                )
+                state["stage"] = "prototype_design_annotation_review_pending"
+                state["next_gate"] = "multi_agent_scenario_review"
         return write_state(self.project_root, state)
 
     def record_non_ui_behavior_contract(
@@ -1782,6 +2036,7 @@ class ProductDeliveryWorkflow:
         records: list[dict[str, Any]],
     ) -> dict[str, Any]:
         state = self._require_started()
+        self._require_current_prototype_progression(state)
         planned = state.get("planned_e2e_obligations", {})
         evidence = build_executed_browser_evidence(
             self.project_root,
@@ -1840,6 +2095,7 @@ class ProductDeliveryWorkflow:
     ) -> dict[str, Any]:
         """Record production UI conformance against the confirmed prototype."""
         state = self._require_started()
+        self._require_current_prototype_progression(state)
         if state.get("project_type") != "ui":
             raise WorkflowError("prototype production conformance is only available for UI projects")
         if not (state.get("ui_prototype") or {}).get("confirmed_by_user"):
@@ -2125,6 +2381,7 @@ class ProductDeliveryWorkflow:
         artifact: dict[str, Any],
     ) -> dict[str, Any]:
         state = self._require_started()
+        self._require_current_prototype_progression(state)
         try:
             next_state = record_delivery_task_completion(
                 state,
@@ -2415,6 +2672,7 @@ class ProductDeliveryWorkflow:
         source_artifact_sha256: str | None = None,
     ) -> dict[str, Any]:
         state = self._require_started()
+        self._require_current_prototype_progression(state)
         handoff = state.get("handoff", {})
         try:
             remaining_tasks = derive_goal_remaining_tasks(state)
@@ -2632,6 +2890,61 @@ class ProductDeliveryWorkflow:
             or policy.get("authorization_feature_slug") != state.get("feature_slug")
         ):
             raise WorkflowError("authorization is not bound to the current delivery")
+
+    @staticmethod
+    def _prototype_design_is_grandfathered(state: dict[str, Any]) -> bool:
+        bundle = state.get("prototype_design_bundle") or {}
+        ui = state.get("ui_prototype") or {}
+        confirmations = state.get("user_confirmations") or {}
+        return bool(
+            bundle.get("status") == "legacy_grandfathered"
+            and ui.get("confirmed_by_user")
+            and (
+                confirmations.get("ui_prototype")
+                or confirmations.get("product_baseline")
+                or (state.get("open_spec_freeze") or {}).get("approved_by_user")
+            )
+        )
+
+    @staticmethod
+    def _reopen_legacy_prototype_design_bundle(state: dict[str, Any]) -> None:
+        bundle = state.get("prototype_design_bundle") or {}
+        if bundle.get("status") != "legacy_grandfathered":
+            return
+        state["prototype_design_bundle"] = {
+            "status": "missing",
+            "enforcement": "required_for_prototype_revision",
+        }
+
+    def _rebuild_current_prototype_design_bundle(
+        self,
+        state: dict[str, Any],
+        *,
+        error_type: type[Exception] = WorkflowError,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        try:
+            current = assert_current_prototype_design_integrity(
+                state,
+                self.project_root,
+            )
+        except GatekeeperError as cause:
+            raise error_type(str(cause)) from cause
+        if current is None:
+            raise error_type("ready prototype design bundle is required")
+        return current
+
+    def _require_current_prototype_progression(
+        self,
+        state: dict[str, Any],
+    ) -> None:
+        try:
+            assert_current_prototype_design_integrity(
+                state,
+                self.project_root,
+            )
+            assert_prototype_annotation_review_current(state)
+        except GatekeeperError as cause:
+            raise WorkflowError(str(cause)) from cause
 
     @staticmethod
     def _validate_spawned_reviewer_agents(review: dict[str, Any]) -> None:

@@ -9,6 +9,7 @@ from product_delivery_agent.evidence_artifacts import (
     stable_json_hash,
     validate_png,
 )
+from product_delivery_agent.prototype_design import PRODUCT_CONTEXT_DIMENSIONS
 
 UI_PROTOTYPE_TAXONOMY = (
     "roles",
@@ -199,6 +200,8 @@ def validate_ui_prototype_review(review: dict[str, Any]) -> list[str]:
     missing: list[str] = []
     for field_name in (
         "prototype_path",
+        "prototype_design_bundle_hash",
+        "prototype_design_audit_hash",
         "pages",
         "states",
         "journeys",
@@ -220,6 +223,7 @@ def validate_ui_prototype_review(review: dict[str, Any]) -> list[str]:
     for taxonomy_field in UI_PROTOTYPE_TAXONOMY:
         if not _has_values(taxonomy.get(taxonomy_field)):
             missing.append(f"taxonomy:{taxonomy_field}")
+    _validate_positive_design_coverage(review, missing)
     _validate_continuity_fields(review, missing)
     return missing
 
@@ -234,6 +238,14 @@ def render_ui_prototype_review(review: dict[str, Any]) -> str:
         "",
         f"Prototype: {review['prototype_path']}",
         f"UI Change Type: {review.get('ui_change_type', '')}",
+        (
+            "Prototype Design Bundle Hash: "
+            f"{review.get('prototype_design_bundle_hash', '')}"
+        ),
+        (
+            "Prototype Design Audit Hash: "
+            f"{review.get('prototype_design_audit_hash', '')}"
+        ),
         "",
         "## Pages",
         *_bullets(review["pages"]),
@@ -274,6 +286,20 @@ def render_ui_prototype_review(review: dict[str, Any]) -> str:
             _render_new_surface_justification(review.get("new_surface_justification")),
             "- User Confirmation: bound to final product_baseline confirmation",
             "",
+            "## Prototype Design Integrity",
+            "",
+            "### Reviewed Design Dimensions",
+            *_bullets(review.get("reviewed_design_dimensions", [])),
+            "",
+            "### Unmapped Design Dimensions",
+            *_bullets(review.get("unmapped_design_dimensions", [])),
+            "",
+            "### Global Visual Continuity",
+            _render_design_conclusion(review.get("global_visual_continuity")),
+            "",
+            "### Annotation Separation",
+            _render_design_conclusion(review.get("annotation_separation")),
+            "",
             "## Prototype Limitations",
             *_bullets(review["limitations"]),
             "",
@@ -286,6 +312,70 @@ def render_ui_prototype_review(review: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _validate_positive_design_coverage(
+    review: dict[str, Any],
+    missing: list[str],
+) -> None:
+    dimensions = review.get("reviewed_design_dimensions")
+    if not isinstance(dimensions, list) or not dimensions:
+        missing.append("reviewed_design_dimensions")
+    else:
+        normalized = [
+            item.strip()
+            for item in dimensions
+            if isinstance(item, str) and item.strip()
+        ]
+        if len(normalized) != len(dimensions):
+            missing.append("reviewed_design_dimensions:invalid")
+        required = set(PRODUCT_CONTEXT_DIMENSIONS)
+        actual = set(normalized)
+        absent = sorted(required - actual)
+        unexpected = sorted(actual - required)
+        if absent:
+            missing.append(
+                "reviewed_design_dimensions:missing:" + ",".join(absent)
+            )
+        if unexpected:
+            missing.append(
+                "reviewed_design_dimensions:unexpected:" + ",".join(unexpected)
+            )
+        if len(normalized) != len(actual):
+            missing.append("reviewed_design_dimensions:duplicates")
+
+    unmapped = review.get("unmapped_design_dimensions")
+    if not isinstance(unmapped, list):
+        missing.append("unmapped_design_dimensions")
+    elif unmapped:
+        missing.append(
+            "unmapped_design_dimensions:" + ",".join(map(str, unmapped))
+        )
+
+    for field_name in (
+        "global_visual_continuity_findings",
+        "annotation_separation_findings",
+    ):
+        findings = review.get(field_name)
+        if findings is not None and not isinstance(findings, list):
+            missing.append(field_name)
+        elif findings:
+            missing.append(f"{field_name}:unresolved")
+
+    for field_name in (
+        "global_visual_continuity",
+        "annotation_separation",
+    ):
+        conclusion = review.get(field_name)
+        if not isinstance(conclusion, dict):
+            missing.append(field_name)
+            continue
+        if conclusion.get("conclusion") != "passed":
+            missing.append(f"{field_name}:conclusion")
+        if not _has_values(conclusion.get("summary")):
+            missing.append(f"{field_name}:summary")
+        if not _has_values(conclusion.get("evidence_refs")):
+            missing.append(f"{field_name}:evidence_refs")
 
 
 def _validate_continuity_fields(review: dict[str, Any], missing: list[str]) -> None:
@@ -383,6 +473,18 @@ def _render_new_surface_justification(value: Any) -> str:
     if isinstance(value, str) and value.strip():
         return f"- {value}"
     return "- None"
+
+
+def _render_design_conclusion(value: Any) -> str:
+    if not isinstance(value, dict):
+        return "- Missing"
+    lines = [
+        f"- Conclusion: {value.get('conclusion', '')}",
+        f"- Summary: {value.get('summary', '')}",
+        "- Evidence:",
+    ]
+    lines.extend(f"  - {item}" for item in value.get("evidence_refs", []))
+    return "\n".join(lines)
 
 
 def _has_values(value: Any) -> bool:

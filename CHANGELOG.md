@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.23
+
+- Adds the internal `prototype_design_integrity` gate and public `record_ui_prototype_design_bundle()` API before multi-Agent product/scenario review.
+- Separates the user-facing `clean_surface` from the external `review_annotation_set`, and rejects product prototypes that load review overlays, scripts, assets, or annotation modes.
+- Requires fixed-schema semantic snapshots, browser-preflight probe artifacts, screenshot/snapshot/region hash binding, and structured hashed evidence for every product-context dimension; caller-reported pass flags are not trusted.
+- Requires positive product-context coverage for global shell, navigation, visual language, information density, component system, and responsive behavior across required states and viewports.
+- Splits bundle identity into `product_domain_hash`, `review_domain_hash`, and the complete relation `bundle_hash`; annotation-only changes stale internal review without invalidating either user confirmation.
+- Clarifies the responsibility boundary: 门禁验证客观事实，多 Agent 判断设计质量；review cannot override a failed deterministic gate or use empty findings as positive coverage.
+- Presents only clean product prototypes and screenshots during `product_baseline`, while keeping exactly two user confirmations: `product_baseline` and `test_coverage_plan`.
+- Grandfathers active v1.0.22 deliveries with an already confirmed product baseline until the prototype changes or the baseline is reopened; unconfirmed UI deliveries fail closed until the bundle is recorded.
+- Keeps canonical closure schema `v0.11` unchanged.
+
 ## 1.0.22
 
 - Removes plugin-managed automatic/full-speed model selection, model profiles, and model identity gates; 模型选择完全由用户和 Codex 宿主管理。

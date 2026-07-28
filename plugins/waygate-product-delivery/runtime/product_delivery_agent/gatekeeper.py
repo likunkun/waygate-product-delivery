@@ -18,6 +18,10 @@ from product_delivery_agent.evidence_artifacts import (
     load_json_artifact,
     sha256_file,
 )
+from product_delivery_agent.prototype_design import (
+    PrototypeDesignError,
+    build_prototype_design_bundle,
+)
 from product_delivery_agent.ui_prototype import UIPrototypeError, build_prototype_contract
 from product_delivery_agent.transition_journal import (
     has_transition,
@@ -34,7 +38,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.22"
+PLUGIN_VERSION = "1.0.23"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -95,33 +99,39 @@ def surface_input_hash(state: dict[str, Any]) -> str:
         )
     ui = state.get("ui_prototype") or {}
     review = state.get("ui_prototype_review") or {}
-    return stable_state_hash(
-        {
-            "project_type": "ui",
-            "prototype_path": ui.get("prototype_path"),
-            "artifact_hash": ui.get("artifact_hash"),
-            "artifact_version": ui.get("artifact_version"),
-            "prototype_revision": ui.get("prototype_revision"),
-            "prototype_contract_hash": ui.get("prototype_contract_hash"),
-            "prototype_screenshot_set_hash": ui.get(
-                "prototype_screenshot_set_hash"
-            ),
-            "ui_change_type": review.get("ui_change_type") or ui.get("ui_change_type"),
-            "baseline_feature_slug": (
-                review.get("baseline_feature_slug") or ui.get("baseline_feature_slug")
-            ),
-            "baseline_surface_paths": (
-                review.get("baseline_surface_paths")
-                or ui.get("baseline_surface_paths")
-                or []
-            ),
-            "baseline_user_journey": (
-                review.get("baseline_user_journey") or ui.get("baseline_user_journey")
-            ),
-            "continuity_mapping": review.get("continuity_mapping") or [],
-            "prototype_delta_summary": review.get("prototype_delta_summary") or [],
-        }
+    surface_facts = {
+        "project_type": "ui",
+        "prototype_path": ui.get("prototype_path"),
+        "artifact_hash": ui.get("artifact_hash"),
+        "artifact_version": ui.get("artifact_version"),
+        "prototype_revision": ui.get("prototype_revision"),
+        "prototype_contract_hash": ui.get("prototype_contract_hash"),
+        "prototype_screenshot_set_hash": ui.get(
+            "prototype_screenshot_set_hash"
+        ),
+        "ui_change_type": review.get("ui_change_type") or ui.get("ui_change_type"),
+        "baseline_feature_slug": (
+            review.get("baseline_feature_slug") or ui.get("baseline_feature_slug")
+        ),
+        "baseline_surface_paths": (
+            review.get("baseline_surface_paths")
+            or ui.get("baseline_surface_paths")
+            or []
+        ),
+        "baseline_user_journey": (
+            review.get("baseline_user_journey") or ui.get("baseline_user_journey")
+        ),
+        "continuity_mapping": review.get("continuity_mapping") or [],
+        "prototype_delta_summary": review.get("prototype_delta_summary") or [],
+    }
+    product_domain_sha256 = (state.get("prototype_design_bundle") or {}).get(
+        "product_domain_sha256"
     )
+    if _non_empty_string(product_domain_sha256):
+        surface_facts["prototype_design_product_domain_sha256"] = (
+            product_domain_sha256
+        )
+    return stable_state_hash(surface_facts)
 
 
 def product_baseline_hash(state: dict[str, Any]) -> str:
@@ -257,7 +267,21 @@ def test_coverage_plan_hash(state: dict[str, Any]) -> str:
 def review_input_hash(state: dict[str, Any], review_type: str) -> str:
     """Hash the current input package a review type is supposed to judge."""
     if review_type == "scenario":
-        return scenario_input_hash(state)
+        scenario_hash = scenario_input_hash(state)
+        bundle = state.get("prototype_design_bundle") or {}
+        review_domain_sha256 = bundle.get("review_domain_sha256")
+        design_audit_sha256 = bundle.get("design_audit_sha256")
+        if _non_empty_string(review_domain_sha256) and _non_empty_string(
+            design_audit_sha256
+        ):
+            return stable_state_hash(
+                {
+                    "scenario": scenario_hash,
+                    "prototype_design_review_domain_sha256": review_domain_sha256,
+                    "prototype_design_audit_sha256": design_audit_sha256,
+                }
+            )
+        return scenario_hash
     if review_type in {"test", "test_coverage"}:
         return stable_state_hash(
             {
@@ -583,6 +607,107 @@ def _non_empty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def assert_current_prototype_design_integrity(
+    state: dict[str, Any],
+    project_root: str | Path | None,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Rebuild a ready UI prototype design bundle from current disk evidence."""
+    if state.get("project_type") != "ui":
+        return None
+    if "prototype_design_bundle" not in state:
+        return None
+    bundle = _as_dict(state.get("prototype_design_bundle"))
+    if bundle.get("status") == "legacy_grandfathered":
+        return None
+    if bundle.get("status") != "ready":
+        raise GatekeeperError("ready prototype design bundle is required")
+    if project_root is None:
+        raise GatekeeperError(
+            "project_root is required to validate prototype design integrity"
+        )
+
+    artifact_path = str(bundle.get("artifact_path") or "")
+    if artifact_path.startswith("artifacts/"):
+        artifact_path = f".product-delivery/{artifact_path}"
+    try:
+        canonical, artifact_metadata = load_json_artifact(
+            project_root,
+            artifact_path,
+        )
+    except EvidenceArtifactError as cause:
+        raise GatekeeperError(
+            f"prototype design bundle is stale: {cause}"
+        ) from cause
+
+    if bundle.get("artifact_sha256") != artifact_metadata.get("sha256"):
+        raise GatekeeperError(
+            "prototype design bundle artifact_sha256 changed on disk"
+        )
+
+    try:
+        prototype_contract = build_prototype_contract(
+            project_root,
+            canonical.get("prototype_contract") or {},
+        )
+        rebuilt = build_prototype_design_bundle(
+            project_root,
+            canonical.get("normalized_payload") or {},
+            prototype_contract=prototype_contract,
+        )
+    except (UIPrototypeError, PrototypeDesignError) as cause:
+        raise GatekeeperError(
+            f"prototype design bundle is stale: {cause}"
+        ) from cause
+
+    design_audit_sha256 = stable_state_hash(rebuilt["design_audit"])
+    comparisons = {
+        "bundle_sha256": rebuilt["bundle_sha256"],
+        "product_domain_sha256": rebuilt["product_domain_sha256"],
+        "review_domain_sha256": rebuilt["review_domain_sha256"],
+        "design_audit_sha256": design_audit_sha256,
+        "clean_prototype_path": rebuilt["clean_surface"]["prototype_path"],
+        "clean_prototype_sha256": rebuilt["artifact_metadata"][
+            "clean_prototype"
+        ]["sha256"],
+        "prototype_contract_sha256": prototype_contract["contract_sha256"],
+    }
+    for field_name, runtime_value in comparisons.items():
+        if bundle.get(field_name) != runtime_value:
+            raise GatekeeperError(
+                f"prototype design bundle {field_name} changed on disk"
+            )
+    for field_name in (
+        "bundle_sha256",
+        "product_domain_sha256",
+        "review_domain_sha256",
+    ):
+        if canonical.get(field_name) != rebuilt.get(field_name):
+            raise GatekeeperError(
+                f"prototype design bundle canonical {field_name} is stale"
+            )
+    if canonical.get("design_audit_sha256") != design_audit_sha256:
+        raise GatekeeperError(
+            "prototype design bundle canonical design audit is stale"
+        )
+    return rebuilt, prototype_contract
+
+
+def assert_prototype_annotation_review_current(state: dict[str, Any]) -> None:
+    """Block implementation progression while annotation-only review is stale."""
+    if state.get("project_type") != "ui":
+        return
+    scenario_review = _as_dict(
+        _as_dict(state.get("multi_agent_reviews")).get("scenario")
+    )
+    pending = _non_empty_string(state.get("annotation_review_resume_gate")) or (
+        scenario_review.get("status") == "stale"
+        and scenario_review.get("stale_reason")
+        == "prototype_design_review_domain_changed"
+    )
+    if pending:
+        raise GatekeeperError("prototype design annotation review is pending")
+
+
 def derive_blockers(
     state: dict[str, Any],
     project_root: str | Path | None = None,
@@ -637,6 +762,34 @@ def derive_blockers(
         blockers.append("project_type_decision")
     elif project_type == "ui":
         ui = normalized.get("ui_prototype", {})
+        bundle = normalized.get("prototype_design_bundle") or {}
+        bundle_status = bundle.get("status")
+        grandfathered = (
+            bundle_status == "legacy_grandfathered"
+            and ui.get("confirmed_by_user")
+            and bool(
+                normalized.get("user_confirmations", {}).get("ui_prototype")
+                or normalized.get("user_confirmations", {}).get("product_baseline")
+                or normalized.get("open_spec_freeze", {}).get("approved_by_user")
+            )
+        )
+        _append_if(
+            blockers,
+            bundle_status != "ready" and not grandfathered,
+            "prototype_design_integrity",
+        )
+        if bundle_status == "ready" and project_root is not None:
+            try:
+                assert_current_prototype_design_integrity(
+                    normalized,
+                    project_root,
+                )
+            except GatekeeperError:
+                _append_if(
+                    blockers,
+                    True,
+                    "stale_prototype_design_integrity",
+                )
         _append_if(
             blockers,
             not ui.get("generated") or not ui.get("reviewed_by_agent"),
@@ -874,6 +1027,8 @@ def assert_pre_closure_ready(
 ) -> None:
     """Require executed evidence and closure fields to match planned coverage."""
     validate_state_invariants(state)
+    assert_current_prototype_design_integrity(state, project_root)
+    assert_prototype_annotation_review_current(state)
     project_type = normalize_project_type(state.get("project_type"))[0]
     if project_type not in VALID_PROJECT_TYPES:
         raise GatekeeperError("project_type must be ui or non_ui before closure")

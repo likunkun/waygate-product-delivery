@@ -15,6 +15,7 @@ from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
+    record_bundled_ui_prototype_review,
     record_ui_conformance,
     write_prototype_screenshot,
 )
@@ -307,7 +308,9 @@ def ready_workflow(project_root):
     workflow.select_project_type("ui")
     workflow.confirm("product_brief")
     workflow.confirm("version_scope")
-    workflow.record_ui_prototype_review(ui_review_payload())
+    record_bundled_ui_prototype_review(
+        workflow, project_root, ui_review_payload()
+    )
     confirm_product_baseline(
         workflow,
         multi_agent_review("scenario"),

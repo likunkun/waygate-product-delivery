@@ -13,6 +13,8 @@ from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
+    record_bundled_ui_prototype_review,
+    record_scenario_review,
     write_prototype_screenshot,
 )
 from tests.test_non_ui_behavior_contract import complete_contract_payload
@@ -291,7 +293,9 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         )
         workflow.record_scenario_matrix([scenario_row()])
         workflow.select_project_type("ui")
-        workflow.record_ui_prototype_review(ui_review_payload(prototype_path))
+        record_bundled_ui_prototype_review(
+            workflow, project_root, ui_review_payload(prototype_path)
+        )
         return workflow
 
     def _ui_workflow_with_confirmed_baseline(self, project_root: Path):
@@ -390,9 +394,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = self._ui_workflow_with_draft(Path(tmp))
 
-            state = workflow.record_multi_agent_review(
-                "scenario", ui_scenario_review()
-            )
+            state = record_scenario_review(workflow, ui_scenario_review())
 
             self.assertEqual(
                 state["next_gate"], "product_baseline_confirmation_preparation"
@@ -548,7 +550,7 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = self._ui_workflow_with_draft(project_root)
-            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            record_scenario_review(workflow, ui_scenario_review())
             pending_state = workflow.prepare_product_baseline_confirmation()
             pending = pending_state["pending_confirmations"]["product_baseline"]
 
@@ -607,10 +609,10 @@ class DeliveryHardeningGateTests(unittest.TestCase):
             )
             workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
-            workflow.record_ui_prototype_review(
-                ui_review_payload(prototype_path)
+            record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload(prototype_path)
             )
-            workflow.record_multi_agent_review("scenario", ui_scenario_review())
+            record_scenario_review(workflow, ui_scenario_review())
             state = workflow.prepare_product_baseline_confirmation()
             pending = state["pending_confirmations"]["product_baseline"]
 

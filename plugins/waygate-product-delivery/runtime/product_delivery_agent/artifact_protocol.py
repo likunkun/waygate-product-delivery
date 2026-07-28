@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,10 @@ AUTHORIZED_REVIEW_TYPES = [
     "test_implementation",
     "ui_conformance",
 ]
+
+V1022_RUNTIME_VERSION = re.compile(
+    r"^1\.0\.22(?:\+codex\.[A-Za-z0-9][A-Za-z0-9._-]*)?$"
+)
 
 
 def initialize_workspace(
@@ -151,6 +156,9 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
             "confirmation_source": None,
         },
         "prototype_contract": {
+            "status": "missing",
+        },
+        "prototype_design_bundle": {
             "status": "missing",
         },
         "prototype_production_conformance": {
@@ -331,6 +339,14 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
         },
     )
     merged.setdefault("prototype_contract", {"status": "missing"})
+    if not is_terminal_history and "prototype_design_bundle" not in merged:
+        if _legacy_v1022_confirmed_ui_state(merged):
+            merged["prototype_design_bundle"] = {
+                "status": "legacy_grandfathered",
+                "enforcement": "on_next_prototype_revision",
+            }
+        else:
+            merged["prototype_design_bundle"] = {"status": "missing"}
     merged.setdefault(
         "prototype_production_conformance",
         {
@@ -455,6 +471,29 @@ def _migrate_layered_confirmation_state(state: dict[str, Any]) -> None:
         blockers.append("multi_agent_scenario_review")
     readiness["product_baseline"] = "blocked_on_scenario_review"
     state["next_gate"] = "multi_agent_scenario_review"
+
+
+def _legacy_v1022_confirmed_ui_state(state: dict[str, Any]) -> bool:
+    if not state.get("active") or state.get("project_type") != "ui":
+        return False
+    versions = [
+        value.strip()
+        for key in ("runtime_version", "plugin_version")
+        if isinstance((value := state.get(key)), str) and value.strip()
+    ]
+    if not versions or not all(
+        V1022_RUNTIME_VERSION.fullmatch(value) for value in versions
+    ):
+        return False
+    ui = state.get("ui_prototype") or {}
+    if not ui.get("confirmed_by_user"):
+        return False
+    confirmations = state.get("user_confirmations") or {}
+    return bool(
+        confirmations.get("ui_prototype")
+        or confirmations.get("product_baseline")
+        or (state.get("open_spec_freeze") or {}).get("approved_by_user")
+    )
 
 
 def _legacy_delivery_id(state: dict[str, Any]) -> str:

@@ -5,7 +5,11 @@ from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
-from tests.conformance_fixtures import write_prototype_screenshot
+from tests.conformance_fixtures import (
+    record_bundled_ui_prototype_review,
+    record_scenario_review,
+    write_prototype_screenshot,
+)
 from tests.test_feature_closure import (
     coverage_row,
     multi_agent_review,
@@ -56,12 +60,14 @@ def start_ui_workflow(project_root: Path) -> ProductDeliveryWorkflow:
     )
     workflow.select_project_type("ui")
     workflow.record_scenario_matrix([scenario_row()])
-    workflow.record_ui_prototype_review(ui_review_payload())
+    record_bundled_ui_prototype_review(
+        workflow, project_root, ui_review_payload()
+    )
     return workflow
 
 
 def confirm_product_baseline(workflow: ProductDeliveryWorkflow) -> dict:
-    workflow.record_multi_agent_review("scenario", scenario_review())
+    record_scenario_review(workflow, scenario_review())
     state = workflow.prepare_product_baseline_confirmation()
     pending = state["pending_confirmations"]["product_baseline"]
     return workflow.confirm_product_baseline(
@@ -119,7 +125,7 @@ class LayeredConfirmationV1021Tests(unittest.TestCase):
     def test_test_planning_is_blocked_until_product_baseline_is_confirmed(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = start_ui_workflow(Path(tmp))
-            workflow.record_multi_agent_review("scenario", scenario_review())
+            record_scenario_review(workflow, scenario_review())
 
             with self.assertRaises(WorkflowError) as caught:
                 workflow.record_planned_e2e_obligations([planned_obligation()])
@@ -170,7 +176,9 @@ class LayeredConfirmationV1021Tests(unittest.TestCase):
             )
             prototype.write_text("<html>user requested revision</html>", encoding="utf-8")
 
-            state = workflow.record_ui_prototype_review(ui_review_payload())
+            state = record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload()
+            )
 
             self.assertNotIn("product_baseline", state["user_confirmations"])
             self.assertNotIn("test_coverage_plan", state["user_confirmations"])
@@ -206,7 +214,7 @@ class LayeredConfirmationV1021Tests(unittest.TestCase):
     def test_legacy_separate_user_confirmation_is_rejected_for_modern_delivery(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = start_ui_workflow(Path(tmp))
-            workflow.record_multi_agent_review("scenario", scenario_review())
+            record_scenario_review(workflow, scenario_review())
 
             with self.assertRaises(WorkflowError) as caught:
                 workflow.record_user_confirmation(

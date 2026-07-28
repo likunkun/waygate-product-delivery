@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.22-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.23-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -32,6 +32,7 @@ Waygate Product Delivery 把这些失败模式变成明确的门禁。
 | 文件化状态 | `.product-delivery/state.json` 和 artifacts 可以跨上下文压缩恢复。 |
 | 强制技能门禁 | 按阶段检查 Product Delivery、Open Spec、planning files、UI/UX、浏览器测试和闭包技能。 |
 | 分层产品确认 | 先确认需求范围和 UI 原型或非 UI 行为契约，再生成详细测试设计。 |
+| 原型设计完整性 | 纯净产品表面必须继承全局产品上下文，评审标注只能放在独立评审页。 |
 | 非 UI 行为契约 | API、CLI、服务、后台任务用行为契约替代 HTML 原型。 |
 | 多 Agent 评审 artifact | 场景和测试覆盖评审必须留下可见 artifact，不能只在聊天里说做过。 |
 | Goal 驱动实现 | 实现阶段必须按 TASK 队列推进，不能无阻塞就中途停下。 |
@@ -108,7 +109,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.22.tar.gz
+dist/waygate-product-delivery-1.0.23.tar.gz
 ```
 
 ## Codex 使用方式
@@ -125,8 +126,8 @@ dist/waygate-product-delivery-1.0.22.tar.gz
 进入实现前必须完成：
 
 1. 当前 feature 的 Open Spec、场景矩阵以及 UI 原型或非 UI 行为契约草稿；
-2. 多 Agent 产品/场景评审通过；
-3. 用户确认 `product_baseline`，只确认需求范围和产品表面；
+2. UI 项目先通过当前 `prototype_design_integrity` bundle，再通过多 Agent 产品/场景评审；
+3. 用户确认 `product_baseline`，只确认需求范围和纯净产品表面；
 4. 基线确认后生成 planned E2E、coverage audit 和详细测试设计；
 5. 多 Agent test/test_coverage 评审通过；
 6. 用户确认 `test_coverage_plan`；
@@ -139,8 +140,9 @@ flowchart LR
     A[启动] --> B[产品蓝图]
     B --> C[Open Spec]
     C --> D[场景矩阵和产品表面草稿]
-    D --> E[多 Agent 产品和场景评审]
-    E --> F[确认 product_baseline]
+    D --> V[原型设计完整性门禁]
+    V --> E[多 Agent 产品和场景评审]
+    E --> F[基于纯净原型确认 product_baseline]
     F --> G[planned E2E 和覆盖审计]
     G --> H[多 Agent 测试和覆盖评审]
     H --> I[确认 test_coverage_plan]
@@ -153,6 +155,14 @@ flowchart LR
 ```
 
 核心规则：artifact 和 state 是事实源，聊天总结不是。
+
+### 原型门禁与评审分工
+
+UI 原型生成后，先调用 `record_ui_prototype_design_bundle()`，再进入多 Agent 产品/场景评审。确定性门禁会重建固定 schema 的 semantic snapshot 与 browser-preflight probe artifact，逐个关键 state/viewport 校验 snapshot、截图和 region identity hash，不接受调用方自报 pass flag。全局框架、导航、视觉语言、信息密度、组件体系和响应式行为六个维度都必须绑定结构化、带 hash 的设计证据 artifact；产品 `clean_surface` 与外部 `review_annotation_set` 必须严格分离。
+
+门禁验证客观事实，多 Agent 判断设计质量。评审负责判断基线是否有代表性、局部精美是否与全局产品协调、例外是否合理；不能覆盖门禁失败，也不能用空 findings 代替完整正向评审。
+
+`product_baseline` 只展示纯净原型和纯净截图。仅评审标注变化，只使绑定旧标注的内部 scenario review stale，不影响两次用户确认、测试计划或实现授权；产品页面或全局上下文变化仍触发完整下游失效。已确认基线的 v1.0.22 active delivery 暂时 grandfathered，直到再次修改原型或重开产品基线。用户确认仍严格只有两次：`product_baseline` 和 `test_coverage_plan`；closure schema 保持 `v0.11`。
 
 ## 架构
 
@@ -174,6 +184,7 @@ waygate-product-delivery
 | `workflow.py` | Product Delivery 生命周期 API。 |
 | `artifact_protocol.py` | 本地状态和 artifact 持久化。 |
 | `startup_guard.py` | planning files、Open Spec、项目类型门禁。 |
+| `prototype_design.py` | 纯净表面、产品上下文、标注分离和设计 bundle 校验。 |
 | `gatekeeper.py` | handoff、implementation、closure 的 fail-closed invariants。 |
 | `delivery_goal.py` | TASK 队列、任务游标、停止门禁。 |
 | `transition_journal.py` | hash-linked 关键状态迁移日志。 |

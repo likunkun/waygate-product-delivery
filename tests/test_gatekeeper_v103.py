@@ -20,6 +20,7 @@ from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
+    record_bundled_ui_prototype_review,
     write_prototype_screenshot,
 )
 
@@ -347,7 +348,9 @@ def workflow_with_open_spec_and_scenario(project_root):
                 feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.select_project_type("ui")
-    workflow.record_ui_prototype_review(ui_review_payload())
+    record_bundled_ui_prototype_review(
+        workflow, project_root, ui_review_payload()
+    )
     confirm_product_baseline(
         workflow,
         review("scenario"),
@@ -579,7 +582,9 @@ class GatekeeperV103Tests(unittest.TestCase):
             )
             workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
-            workflow.record_ui_prototype_review(ui_review_payload())
+            record_bundled_ui_prototype_review(
+                workflow, project_root, ui_review_payload()
+            )
             state = workflow.confirm("ui_prototype_review")
 
             self.assertFalse(state["ui_prototype"]["confirmed_by_user"])
