@@ -1,10 +1,14 @@
 import struct
 import json
+import os
 import zlib
 from copy import deepcopy
 from pathlib import Path
 
 from product_delivery_agent.evidence_artifacts import sha256_file, stable_json_hash
+
+
+os.environ.setdefault("CODEX_THREAD_ID", "test-host-goal-thread")
 
 
 DEFAULT_PROTOTYPE_SCREENSHOT = (
@@ -558,6 +562,106 @@ def confirm_test_coverage_plan(
     return workflow.confirm_test_coverage_plan(message, pending["nonce"])
 
 
+def host_goal_result(objective: str, status: str = "active") -> dict:
+    return {
+        "goal": {
+            "threadId": os.environ["CODEX_THREAD_ID"],
+            "objective": objective,
+            "status": status,
+        }
+    }
+
+
+def activate_host_goal(workflow) -> dict:
+    inspection = workflow.prepare_host_goal_activation()
+    workflow.record_host_goal_observation(
+        inspection["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": "get_goal",
+            "result": {"goal": None},
+        },
+    )
+    creation = workflow.prepare_host_goal_activation()
+    objective = creation["objective"]
+    workflow.record_host_goal_observation(
+        creation["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": "create_goal",
+            "result": host_goal_result(objective),
+        },
+    )
+    verification = workflow.prepare_host_goal_activation()
+    return workflow.record_host_goal_observation(
+        verification["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": "get_goal",
+            "result": host_goal_result(objective),
+        },
+    )
+
+
+def reconcile_host_goal(workflow, operation: str = "stage_transition") -> dict:
+    state = workflow.status()
+    checkpoint = workflow.prepare_host_goal_reconciliation(
+        operation,
+        target_gate=state["next_gate"],
+    )
+    return workflow.record_host_goal_observation(
+        checkpoint["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": checkpoint["required_tool"],
+            "result": host_goal_result(
+                state["host_goal_binding"]["objective"]
+            ),
+        },
+    )
+
+
+def complete_host_goal(workflow) -> dict:
+    state = workflow.status()
+    objective = state["host_goal_binding"]["objective"]
+    pre_complete = workflow.prepare_host_goal_reconciliation(
+        "pre_complete",
+        target_gate=state["next_gate"],
+    )
+    workflow.record_host_goal_observation(
+        pre_complete["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": "get_goal",
+            "result": host_goal_result(objective),
+        },
+    )
+    completion = workflow.prepare_host_goal_reconciliation(
+        "complete_goal",
+        target_gate=workflow.status()["next_gate"],
+    )
+    workflow.record_host_goal_observation(
+        completion["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": "update_goal",
+            "result": host_goal_result(objective, status="complete"),
+        },
+    )
+    verification = workflow.prepare_host_goal_reconciliation(
+        "verify_completion",
+        target_gate=workflow.status()["next_gate"],
+    )
+    return workflow.record_host_goal_observation(
+        verification["checkpoint_id"],
+        {
+            "observation_source": "codex_goal_tool",
+            "tool": "get_goal",
+            "result": host_goal_result(objective, status="complete"),
+        },
+    )
+
+
 def record_ui_conformance(workflow, project_root: Path) -> dict:
     state = workflow.status()
     executed = state["executed_browser_evidence"]["records"][0]
@@ -656,7 +760,9 @@ def record_ui_conformance(workflow, project_root: Path) -> dict:
             }
         ],
     }
+    reconcile_host_goal(workflow)
     state = workflow.record_prototype_production_conformance(payload)
+    reconcile_host_goal(workflow)
     workflow.record_multi_agent_review(
         "ui_conformance",
         ui_conformance_review_payload(state),

@@ -64,11 +64,33 @@ active mode 下每次准备 final summary、普通 stop guard 或交付总结前
 
 `wait_for_user` 只允许用于真实用户输入点：当前 `product_baseline` 确认、`test_coverage_plan` 确认、评审模式选择、必要需求澄清、用户主动暂停或停止。`blocked` 必须说明 blocker；如果 blocker 是 `canonical_closure_plugin_version`，下一步是使用当前 installed packaged `product_delivery_agent.finalization` 重新生成 canonical closure，或在启动新 feature 前显式清理/迁移旧状态。`complete` 只有在 canonical closure、feature closure 和 delivery goal 都满足当前插件规则时才成立。
 
+## Verified Codex Host Goal Continuation
+
+V1.0.24 起，内部 `delivery_goal` 只表示 TASK 计划，不得冒充 Codex Host Goal。第二次 `test_coverage_plan` 确认同时授权当前 delivery 创建和推进真实 Host Goal，runtime 使用独立 `host_goal_binding` 绑定 `delivery_id`、`feature_slug`、launch package、objective hash、binding generation 和宿主返回的稳定标识。
+
+handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。
+
+每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 `get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。同一 stage 内低层文件写入不需要重复查询，但任何 canonical gate 写入都必须消费一条新鲜、目标 gate 匹配的一次性 observation。
+
+`wait_for_user` 必须生成并复用稳定 `decision_id`、prompt hash 和 blocker fingerprint；同一问题只展示一次，自动 Goal turn 不得重复提问，也不得修改产品、测试、证据或 closure。用户回复必须匹配当前 `decision_id`，并通过 `user_resume` 再次观察 Host Goal active 后才能继续。只有三个不同 `host_turn_id` 连续观察到相同 blocker，才允许调用 `update_goal(status=blocked)`。
+
+canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。Goal 曾经 active 后若 missing 或提前 complete，禁止静默创建 replacement，必须调用 `authorize_host_goal_reactivation()` 取得新的用户授权。`停止交付` 需要 `stop_delivery` 对账，停止后 binding 标记为 `stopped_by_user`，不得自动恢复。
+
+V1.0.25 起，Goal 尚未 ever active 且 activation checkpoint 因后续合法 transition 过期时，必须调用 `recover_stale_host_goal_checkpoint(checkpoint_id)`。runtime 会验证 delivery、feature、authorization、generation、nonce、objective 和 journal hash chain，归档旧 checkpoint，追加 `host_goal_checkpoint_superseded` transition，并以相同 binding identity 重新签发 `inspect_before_activation` checkpoint。不得手改 state、重新 start delivery 或重放旧 checkpoint。
+
+V1.0.26 起，每个 delivery 在启动时把宿主 `CODEX_THREAD_ID` 冻结为 `host_goal_owner` 的 coordinator thread。Host Goal activation、observation、reconciliation、post-handoff canonical write 和 completion 必须同时匹配当前 `CODEX_THREAD_ID`、owner thread、binding owner 和宿主 Goal 的 `threadId`；缺失或不匹配全部 fail closed。spawned review subagent 只能产出结构化评审，不得激活、恢复、接管或完成 Host Goal。
+
+v1.0.25 及更早的非终态 state 缺少 owner metadata 时迁移为 `legacy_unverified`，不得从旧 binding 推断 coordinator。必须在没有 active/blocked Goal 的新用户可见顶层线程中使用固定授权语 `恢复交付主线程，接管当前 Host Goal`，依次调用 `prepare_host_goal_owner_claim()`、宿主 `get_goal`、`record_host_goal_owner_claim_observation()`。只有 `get_goal` 返回 missing 或 complete 才允许 transfer；旧 binding 和未消费 checkpoint 完整归档为 `orphaned_unreachable`，journal 追加 `host_goal_owner_transferred`，然后使用新 generation、nonce 和精确 objective 重新执行 `get_goal -> create_goal -> get_goal`。active/blocked foreign Goal 禁止覆盖。owner-claim checkpoint 若因合法 transition 过期，必须调用 `recover_stale_host_goal_owner_claim(checkpoint_id)` 归档旧 claim、追加 `host_goal_owner_claim_superseded` 并签发新 claim；不得手删 `pending_claim`。
+
+active Waygate delivery 只能使用当前安装的 `waygate-product-delivery` runtime。禁止调用旧 `product-delivery-agent@1.0.8` runtime 写入同一 delivery；旧 runtime 产生的历史 evidence 可以保留，但后续 canonical transition 必须由当前 Waygate runtime 完成。
+
+不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。插件 hook 只能读取状态并提供 guardrail；真正的跨 turn 续跑必须由 Codex Host Goal 调度。只有真实宿主 smoke 证明无需用户发送 `继续` 也会进入下一 turn，才可以宣称自动续跑。
+
 ## Goal-Driven Closure
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.23`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.26`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 

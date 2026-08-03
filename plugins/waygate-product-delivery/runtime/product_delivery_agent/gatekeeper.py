@@ -38,7 +38,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.23"
+PLUGIN_VERSION = "1.0.26"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -367,6 +367,26 @@ def normalize_state_protocol(state: dict[str, Any]) -> dict[str, Any]:
                 "implementation": False,
                 "pre_handoff": False,
             }
+        else:
+            # A pre-handoff launch authorization can be renewed after an earlier
+            # attempt failed.  These two diagnostics are derived solely from the
+            # authorization state, so retaining them after that state becomes
+            # valid would make the handoff gate permanently self-blocking.
+            stale_authorization_errors = {
+                "implementation_launch_authorization",
+                "stale_implementation_launch_authorization",
+            }
+            protocol_errors = normalized.get("protocol_errors")
+            if isinstance(protocol_errors, list):
+                remaining_errors = [
+                    error
+                    for error in protocol_errors
+                    if error not in stale_authorization_errors
+                ]
+                if remaining_errors:
+                    normalized["protocol_errors"] = remaining_errors
+                else:
+                    normalized.pop("protocol_errors", None)
     return normalized
 
 

@@ -79,6 +79,24 @@ from product_delivery_agent.handoff import (
     build_codex_goal_handoff,
     render_handoff_document,
 )
+from product_delivery_agent.host_goal import (
+    HostGoalError,
+    apply_host_goal_observation,
+    apply_owner_claim_observation,
+    assert_host_goal_owner,
+    build_host_goal_authorization,
+    consume_authorized_transition,
+    host_goal_required,
+    initialize_host_goal_owner,
+    initialize_host_goal_binding,
+    inspect_host_goal_owner,
+    prepare_activation_checkpoint,
+    prepare_owner_claim_checkpoint,
+    prepare_reconciliation_checkpoint,
+    recover_stale_activation_checkpoint,
+    recover_stale_owner_claim_checkpoint,
+    stable_hash as host_goal_stable_hash,
+)
 from product_delivery_agent.non_ui_behavior import (
     render_non_ui_behavior_contract,
     validate_non_ui_behavior_contract,
@@ -224,6 +242,7 @@ class ProductDeliveryWorkflow:
         state["stage"] = "product_blueprint"
         state["activation_source"] = "waygate-product-delivery"
         state["feature_slug"] = feature_slug
+        state["host_goal_owner"] = initialize_host_goal_owner(state)
         previous_delivery = self._archive_previous_delivery(
             raw_existing_state
             if raw_existing_state.get("status") in TERMINAL_STATUSES
@@ -391,7 +410,7 @@ class ProductDeliveryWorkflow:
 
 
     def record_scenario_matrix(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if self._product_baseline_is_confirmed(state) and not self._has_user_change_authorization(
             state, "product_baseline"
         ):
@@ -442,7 +461,10 @@ class ProductDeliveryWorkflow:
         review_type: str,
         review: dict[str, Any],
     ) -> dict[str, Any]:
-        state = self._require_started(allow_pending_authorization=True)
+        state = self._require_started(
+            allow_pending_authorization=True,
+            host_goal_transition=True,
+        )
         if review_type != "scenario":
             self._require_current_prototype_progression(state)
         current_prototype_design = None
@@ -622,6 +644,12 @@ class ProductDeliveryWorkflow:
                 next_gate = "feature_closure_after_implementation"
         if review_type == "scenario" and "annotation_review_resume_gate" in state:
             resume_gate = state.pop("annotation_review_resume_gate")
+            host_goal_binding = state.get("host_goal_binding") or {}
+            if (
+                resume_gate == "host_goal_activation"
+                and host_goal_binding.get("status") == "active"
+            ):
+                resume_gate = host_goal_binding.get("resume_gate") or resume_gate
             if self._product_baseline_is_confirmed(state) and resume_gate:
                 next_gate = resume_gate
         state["next_gate"] = next_gate
@@ -637,7 +665,7 @@ class ProductDeliveryWorkflow:
         user_message: str | None = None,
     ) -> dict[str, Any]:
         """Record runtime authorization to start implementation for this package."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
         package = self._build_launch_package(
             state,
@@ -692,7 +720,7 @@ class ProductDeliveryWorkflow:
 
     def prepare_product_baseline_confirmation(self) -> dict[str, Any]:
         """Create the single requirements-and-surface confirmation request."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         project_type = state.get("project_type")
         if project_type not in {"ui", "non_ui"}:
             raise WorkflowError("project type is required before product baseline")
@@ -762,7 +790,7 @@ class ProductDeliveryWorkflow:
         agent_explicitly_asked: bool = False,
     ) -> dict[str, Any]:
         """Confirm requirement scope and the final UI/non-UI surface together."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         pending = state.get("pending_confirmations", {}).get("product_baseline")
         if not pending:
             raise ConfirmationError("pending product baseline confirmation is required")
@@ -917,7 +945,7 @@ class ProductDeliveryWorkflow:
 
     def prepare_test_coverage_confirmation(self) -> dict[str, Any]:
         """Create the reviewed planned-E2E confirmation request."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_product_baseline_confirmed(state)
         planned = state.get("planned_e2e_obligations") or {}
         if not planned.get("accepted") or not planned.get("obligations"):
@@ -961,7 +989,7 @@ class ProductDeliveryWorkflow:
         agent_explicitly_asked: bool = False,
     ) -> dict[str, Any]:
         """Confirm planned E2E and coverage without re-confirming product scope."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_product_baseline_confirmed(state)
         pending = state.get("pending_confirmations", {}).get("test_coverage_plan")
         if not pending:
@@ -1023,6 +1051,13 @@ class ProductDeliveryWorkflow:
         state.setdefault("confirmation_readiness", {})[
             "test_coverage_plan"
         ] = "confirmed"
+        try:
+            state["host_goal_authorization"] = build_host_goal_authorization(
+                state,
+                logical,
+            )
+        except HostGoalError as error:
+            raise ConfirmationError(str(error)) from error
         self._close_user_change_authorizations(state, "test_coverage_plan")
         self._remove_blockers(
             state,
@@ -1041,7 +1076,7 @@ class ProductDeliveryWorkflow:
         agent_explicitly_asked: bool = False,
     ) -> dict[str, Any]:
         """Compatibility entry for the v1.0.21 test coverage confirmation."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         pending = state.get("pending_confirmations", {}).get("test_coverage_plan")
         if not pending:
             raise WorkflowError(
@@ -1057,26 +1092,77 @@ class ProductDeliveryWorkflow:
         state = self._state()
         if not state:
             state = initialize_workspace(self.project_root)
-        else:
+        elif (
+            self._load_raw_state().get("status") not in TERMINAL_STATUSES
+            and not host_goal_required(state)
+        ):
             state = write_state(self.project_root, state)
         return state
 
     def pause(self) -> dict[str, Any]:
-        state = self._require_started(allow_pending_authorization=True)
+        state = self._require_started(
+            allow_pending_authorization=True,
+            host_goal_transition=True,
+        )
         state["paused"] = True
         state["intervention_enabled"] = False
         return write_state(self.project_root, state)
 
     def resume(self) -> dict[str, Any]:
-        state = self._require_started(allow_pending_authorization=True)
+        state = self._require_started(
+            allow_pending_authorization=True,
+            host_goal_transition=True,
+        )
         state["paused"] = False
         state["intervention_enabled"] = True
         return write_state(self.project_root, state)
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, user_message: str | None = None) -> dict[str, Any]:
         state = self._state()
         if not state:
             state = initialize_workspace(self.project_root)
+        elif host_goal_required(state):
+            normalized_message = (user_message or "").strip()
+            if not any(
+                marker in normalized_message
+                for marker in ("停止交付", "终止交付")
+            ):
+                raise WorkflowError(
+                    "explicit user stop is required for an active Host Goal delivery"
+                )
+            binding_status = (state.get("host_goal_binding") or {}).get("status")
+            if binding_status == "active":
+                try:
+                    state = consume_authorized_transition(
+                        state,
+                        allowed_operations={"stop_delivery"},
+                    )
+                except HostGoalError as error:
+                    raise WorkflowError(str(error)) from error
+                transition = (
+                    (state.get("host_goal_binding") or {}).get(
+                        "last_consumed_transition"
+                    )
+                    or {}
+                )
+                if transition.get("operation") != "stop_delivery":
+                    raise WorkflowError(
+                        "fresh stop_delivery Host Goal reconciliation is required"
+                    )
+                stop_reconciliation_status = "observed_active"
+            else:
+                stop_reconciliation_status = f"binding_{binding_status or 'missing'}"
+            binding = state.setdefault("host_goal_binding", {})
+            binding["status"] = "stopped_by_user"
+            binding["stopped_at"] = self._timestamp_from_state(state)
+            binding["stop_reconciliation_status"] = stop_reconciliation_status
+            binding["stop_message_sha256"] = host_goal_stable_hash(
+                normalized_message
+            )
+            binding["authorized_transition"] = None
+            state["status"] = "stopped"
+            state["stage"] = "stopped_by_user"
+            state["next_gate"] = "stopped"
         elif state.get("delivery_goal") or state.get("handoff"):
             self.assert_goal_can_stop()
             state = self._state()
@@ -1149,7 +1235,7 @@ class ProductDeliveryWorkflow:
         if project_type not in {"ui", "non_ui"}:
             raise WorkflowError("project_type must be 'ui' or 'non_ui'")
 
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         state["project_type"] = project_type
         blocked_until = list(state.get("blocked_until", []))
         blocked_until = [
@@ -1184,7 +1270,7 @@ class ProductDeliveryWorkflow:
         if artifact_name not in CORE_ARTIFACTS:
             raise WorkflowError(f"unknown confirmation point: {artifact_name}")
 
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if artifact_name == "ui_prototype_review" and state.get("project_type") == "ui":
             state["stage"] = "ui_prototype_review_ready"
             state["next_gate"] = "ui_prototype_review_confirmation"
@@ -1199,7 +1285,7 @@ class ProductDeliveryWorkflow:
         *,
         file_paths: list[str | Path] | None = None,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         result = validate_skill_gate(stage, used_skills, file_paths=file_paths)
         if not result.passed:
             raise SkillGateError(
@@ -1213,7 +1299,7 @@ class ProductDeliveryWorkflow:
         return write_state(self.project_root, state)
 
     def record_ui_prototype_review(self, review: dict[str, Any]) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if state.get("project_type") != "ui":
             raise WorkflowError("UI prototype review is only available for UI projects")
         if state.get("ui_prototype", {}).get("confirmed_by_user") and not self._has_user_change_authorization(
@@ -1400,7 +1486,7 @@ class ProductDeliveryWorkflow:
         agent_explicitly_asked: bool = False,
         nonce: str | None = None,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if state.get("project_type") != "ui":
             raise WorkflowError("UI prototype confirmation is only available for UI projects")
         pending = state.get("pending_confirmations", {}).get("ui_prototype")
@@ -1504,7 +1590,7 @@ class ProductDeliveryWorkflow:
         user_message: str,
         prototype_path: str,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if state.get("project_type") != "ui":
             raise WorkflowError("UI prototype feedback is only available for UI projects")
         if not user_message.strip():
@@ -1570,7 +1656,7 @@ class ProductDeliveryWorkflow:
         user_message: str,
     ) -> dict[str, Any]:
         """Authorize revision of an already confirmed product or test baseline."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if not user_message.strip():
             raise WorkflowError("user-requested change message is required")
         allowed = {"product_baseline", "test_coverage_plan"}
@@ -1627,7 +1713,7 @@ class ProductDeliveryWorkflow:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if state.get("project_type") != "ui":
             raise WorkflowError(
                 "prototype design bundle is only available for UI projects"
@@ -1752,7 +1838,7 @@ class ProductDeliveryWorkflow:
         self,
         contract: dict[str, Any],
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         if state.get("project_type") != "non_ui":
             raise WorkflowError(
                 "Non-UI behavior contract is only available for non-UI projects"
@@ -1844,7 +1930,7 @@ class ProductDeliveryWorkflow:
         *,
         negative_guard_records: list[str] | None = None,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_product_baseline_confirmed(state)
         project_type = state.get("project_type")
         inherited_limitations = []
@@ -1923,7 +2009,7 @@ class ProductDeliveryWorkflow:
         *,
         exemptions: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_product_baseline_confirmed(state)
         existing_test_confirmation = dict(
             state.get("user_confirmations", {}).get("test_coverage_plan") or {}
@@ -2035,7 +2121,7 @@ class ProductDeliveryWorkflow:
         self,
         records: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
         planned = state.get("planned_e2e_obligations", {})
         evidence = build_executed_browser_evidence(
@@ -2094,7 +2180,7 @@ class ProductDeliveryWorkflow:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         """Record production UI conformance against the confirmed prototype."""
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
         if state.get("project_type") != "ui":
             raise WorkflowError("prototype production conformance is only available for UI projects")
@@ -2172,7 +2258,7 @@ class ProductDeliveryWorkflow:
         prohibited_work: list[str] | None = None,
         planned_tasks: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
         if not task_queue:
             assert_pre_handoff_ready(
@@ -2202,6 +2288,11 @@ class ProductDeliveryWorkflow:
                 "pre-handoff gate blocked: "
                 + ", ".join(sorted(auth_ignored_blockers))
             )
+        previous_goal = dict(state.get("delivery_goal") or {})
+        previous_hash = previous_goal.get("launch_package_hash")
+        replacing_package = bool(
+            previous_hash and previous_hash != package["launch_package_hash"]
+        )
         delivery_goal = build_delivery_goal(
             feature_slug=state.get("feature_slug"),
             scope=scope,
@@ -2221,19 +2312,27 @@ class ProductDeliveryWorkflow:
             package,
             scope=scope,
         )
-        previous_goal = dict(state.get("delivery_goal") or {})
-        previous_hash = previous_goal.get("launch_package_hash")
-        if previous_hash and previous_hash != package["launch_package_hash"]:
-            reusable_completions = self._matching_task_completions(
-                previous_goal,
-                delivery_goal,
-            )
+        reusable_completions = self._matching_task_completions(
+            previous_goal,
+            delivery_goal,
+        )
+        if replacing_package:
+            previous_binding = deepcopy(state.get("host_goal_binding") or {})
+            if previous_binding:
+                state.setdefault("host_goal_binding_history", []).append(
+                    {
+                        "binding": previous_binding,
+                        "archived_at": self._timestamp_from_state(state),
+                        "reason": "launch_package_superseded",
+                    }
+                )
             self._supersede_active_implementation_package(
                 state,
                 reason="launch_package_hash_changed",
                 replacement_launch_package_hash=package["launch_package_hash"],
                 reused_task_ids=sorted(reusable_completions),
             )
+        if reusable_completions:
             delivery_goal = self._apply_reused_task_completions(
                 delivery_goal,
                 reusable_completions,
@@ -2267,6 +2366,7 @@ class ProductDeliveryWorkflow:
         }
         state["delivery_goal"] = {
             **delivery_goal,
+            "goal_kind": "internal_delivery_plan",
             "feature_slug": state.get("feature_slug"),
             "launch_package_hash": package["launch_package_hash"],
             "implementation_goal_path": "artifacts/implementation-goal.md",
@@ -2293,6 +2393,18 @@ class ProductDeliveryWorkflow:
         state["next_gate"] = delivery_goal["current_task_cursor"]
         if delivery_goal["current_task_cursor"] is None:
             state["next_gate"] = delivery_goal["next_action"]
+        try:
+            state["host_goal_binding"] = initialize_host_goal_binding(state)
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        if state["host_goal_binding"].get("status") == "active":
+            resume_gate = (
+                delivery_goal["current_task_cursor"] or delivery_goal["next_action"]
+            )
+            state["host_goal_binding"]["resume_gate"] = resume_gate
+            state["next_gate"] = resume_gate
+        else:
+            state["next_gate"] = "host_goal_activation"
         state = append_transition(
             state,
             "handoff_generated",
@@ -2319,6 +2431,267 @@ class ProductDeliveryWorkflow:
             },
         )
         return write_state(self.project_root, state)
+
+    def prepare_host_goal_activation(self) -> dict[str, Any]:
+        """Prepare the next Codex get_goal/create_goal activation action."""
+        state = self._require_started(allow_host_goal_bootstrap=True)
+        try:
+            binding, response = prepare_activation_checkpoint(state)
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        state["host_goal_binding"] = binding
+        write_state(self.project_root, state)
+        return response
+
+    def inspect_host_goal_owner_context(self) -> dict[str, Any]:
+        """Inspect coordinator ownership without mutating delivery state."""
+        state = self._state()
+        if not state.get("active"):
+            raise WorkflowError("workflow is not active; run start first")
+        return inspect_host_goal_owner(state)
+
+    def prepare_host_goal_owner_claim(self, user_message: str) -> dict[str, Any]:
+        """Prepare a get_goal proof before coordinator ownership transfer."""
+        state = self._require_started(
+            allow_host_goal_bootstrap=True,
+            allow_host_goal_owner_claim=True,
+        )
+        try:
+            owner, response = prepare_owner_claim_checkpoint(state, user_message)
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        state["host_goal_owner"] = owner
+        write_state(self.project_root, state)
+        return response
+
+    def record_host_goal_owner_claim_observation(
+        self,
+        checkpoint_id: str,
+        observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record get_goal evidence and transfer ownership to this thread."""
+        state = self._require_started(
+            allow_host_goal_bootstrap=True,
+            allow_host_goal_owner_claim=True,
+        )
+        try:
+            next_state = apply_owner_claim_observation(
+                state,
+                checkpoint_id,
+                observation,
+                runtime_version=PLUGIN_VERSION,
+            )
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        return write_state(self.project_root, next_state)
+
+    def recover_stale_host_goal_owner_claim(
+        self,
+        checkpoint_id: str,
+    ) -> dict[str, Any]:
+        """Replace a stale owner-claim checkpoint without resetting delivery."""
+        state = self._require_started(
+            allow_host_goal_bootstrap=True,
+            allow_host_goal_owner_claim=True,
+        )
+        try:
+            next_state, response = recover_stale_owner_claim_checkpoint(
+                state,
+                checkpoint_id,
+                runtime_version=PLUGIN_VERSION,
+            )
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        write_state(self.project_root, next_state)
+        return response
+
+    def prepare_host_goal_reconciliation(
+        self,
+        operation: str,
+        target_gate: str | None = None,
+        *,
+        host_turn_id: str | None = None,
+        decision_id: str | None = None,
+        user_message: str | None = None,
+    ) -> dict[str, Any]:
+        """Prepare one fresh Host Goal observation for a canonical gate."""
+        state = self._require_started(allow_host_goal_bootstrap=True)
+        gate = target_gate or state.get("next_gate")
+        continuation_status = None
+        should_prompt = False
+        human_decision_id = None
+        if operation == "turn_start":
+            from product_delivery_agent.continuation import derive_continuation_status
+
+            continuation = derive_continuation_status(state)
+            continuation_status = continuation["status"]
+            if continuation_status == "wait_for_user":
+                state, human_decision_id, should_prompt = (
+                    self._prepare_host_goal_human_wait(
+                        state,
+                        continuation,
+                    )
+                )
+        elif operation == "user_resume":
+            wait = (state.get("host_goal_binding") or {}).get("human_wait") or {}
+            if not decision_id or decision_id != wait.get("decision_id"):
+                raise WorkflowError("current human decision_id is required")
+            if not isinstance(user_message, str) or not user_message.strip():
+                raise WorkflowError("user response is required for Host Goal resume")
+            human_decision_id = decision_id
+            gate = wait.get("resume_gate") or gate
+            wait["resolution_message_sha256"] = host_goal_stable_hash(user_message)
+            wait["resolution_received_at"] = self._timestamp_from_state(state)
+            state["host_goal_binding"]["human_wait"] = wait
+        elif operation == "block_goal":
+            from product_delivery_agent.continuation import derive_continuation_status
+
+            wait = (state.get("host_goal_binding") or {}).get("human_wait") or {}
+            continuation = derive_continuation_status(state)
+            if continuation.get("status") != "wait_for_user":
+                raise WorkflowError(
+                    "current blocker no longer requires a human decision"
+                )
+            prompt_material = {
+                "reason": continuation.get("reason"),
+                "blockers": sorted(
+                    str(item) for item in continuation.get("blockers") or []
+                ),
+                "next_action": continuation.get("next_action"),
+            }
+            if wait.get("blocker_fingerprint") != host_goal_stable_hash(
+                prompt_material
+            ) or wait.get("status") != "pending":
+                raise WorkflowError(
+                    "current blocker does not match the recorded human decision"
+                )
+            human_decision_id = wait.get("decision_id")
+        try:
+            binding, response = prepare_reconciliation_checkpoint(
+                state,
+                operation=operation,
+                target_gate=str(gate or ""),
+                host_turn_id=host_turn_id,
+                human_decision_id=human_decision_id,
+            )
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        state["host_goal_binding"] = binding
+        write_state(self.project_root, state)
+        if continuation_status:
+            response["continuation_status"] = continuation_status
+        if human_decision_id:
+            response["decision_id"] = human_decision_id
+            response["should_prompt"] = should_prompt
+        return response
+
+    def record_host_goal_observation(
+        self,
+        checkpoint_id: str,
+        observation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record and validate an actual Codex Goal tool result."""
+        state = self._require_started(allow_host_goal_bootstrap=True)
+        try:
+            next_state = apply_host_goal_observation(
+                state,
+                checkpoint_id,
+                observation,
+            )
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        next_state = append_transition(
+            next_state,
+            "host_goal_observed",
+            feature_slug=next_state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "checkpoint": host_goal_stable_hash(checkpoint_id),
+            },
+            output_artifact_hashes={
+                "host_goal_observation": str(
+                    (next_state.get("host_goal_binding") or {}).get(
+                        "last_observation_sha256"
+                    )
+                    or ""
+                ),
+            },
+            metadata={
+                "operation": str(observation.get("tool") or ""),
+                "status": str(
+                    (next_state.get("host_goal_binding") or {}).get(
+                        "last_observed_status"
+                    )
+                    or ""
+                ),
+            },
+        )
+        return write_state(self.project_root, next_state)
+
+    def recover_stale_host_goal_checkpoint(
+        self,
+        checkpoint_id: str,
+    ) -> dict[str, Any]:
+        """Replace a stale pre-active Host Goal activation checkpoint."""
+        state = self._require_started(allow_host_goal_bootstrap=True)
+        try:
+            next_state, response = recover_stale_activation_checkpoint(
+                state,
+                checkpoint_id,
+                runtime_version=PLUGIN_VERSION,
+            )
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        write_state(self.project_root, next_state)
+        return response
+
+    def recover_host_goal_binding(self, user_message: str) -> dict[str, Any]:
+        """Authorize and rebuild Host Goal binding for a legacy active delivery."""
+        state = self._require_started(allow_host_goal_bootstrap=True)
+        binding = state.get("host_goal_binding") or {}
+        if binding.get("status") not in {
+            "legacy_unverified",
+            "reactivation_required",
+            "unavailable",
+        }:
+            return state
+        normalized = user_message.strip().lower()
+        if not normalized or "goal" not in normalized or not any(
+            marker in normalized for marker in ("继续", "恢复", "启用", "授权")
+        ):
+            raise WorkflowError(
+                "explicit user authorization is required to recover Host Goal"
+            )
+        confirmation = (state.get("user_confirmations") or {}).get(
+            "test_coverage_plan"
+        ) or {}
+        try:
+            authorization = build_host_goal_authorization(state, confirmation)
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+        authorization.update(
+            {
+                "authorization_source": "explicit_host_goal_recovery",
+                "recovery_message_sha256": host_goal_stable_hash(user_message),
+            }
+        )
+        history = list(state.get("host_goal_binding_history") or [])
+        history.append(
+            {
+                "binding": deepcopy(binding),
+                "archived_at": self._timestamp_from_state(state),
+                "reason": "host_goal_recovery_authorized",
+            }
+        )
+        state["host_goal_binding_history"] = history
+        state["host_goal_authorization"] = authorization
+        state["host_goal_binding"] = initialize_host_goal_binding(state)
+        state["next_gate"] = "host_goal_activation"
+        return write_state(self.project_root, state)
+
+    def authorize_host_goal_reactivation(self, user_message: str) -> dict[str, Any]:
+        """Explicitly authorize a replacement after a bound Goal disappears."""
+        return self.recover_host_goal_binding(user_message)
 
     def recover_stale_launch_package(
         self,
@@ -2380,7 +2753,7 @@ class ProductDeliveryWorkflow:
         *,
         artifact: dict[str, Any],
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
         try:
             next_state = record_delivery_task_completion(
@@ -2416,7 +2789,7 @@ class ProductDeliveryWorkflow:
         return write_state(self.project_root, next_state)
 
     def assert_goal_can_stop(self) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         try:
@@ -2566,7 +2939,7 @@ class ProductDeliveryWorkflow:
         description: str,
         cr_id: str,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         authorization_target = None
         if change_type == "scope_change":
             authorization_target = "product_baseline"
@@ -2652,7 +3025,7 @@ class ProductDeliveryWorkflow:
         triggering_cr: str,
         reason: str,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         state.setdefault("superseded_closures", [])
         state["superseded_closures"].append(
             {
@@ -2671,7 +3044,7 @@ class ProductDeliveryWorkflow:
         source_artifact_path: str | None = None,
         source_artifact_sha256: str | None = None,
     ) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
         handoff = state.get("handoff", {})
         try:
@@ -2783,13 +3156,13 @@ class ProductDeliveryWorkflow:
                 "delivery_goal_status": state.get("delivery_goal", {}).get("status"),
             },
         )
-        state["status"] = "closed"
+        state["status"] = "closure_passed_host_goal_completion_pending"
         state["stage"] = "feature_closure_passed"
-        state["next_gate"] = "plugin_packaging"
+        state["next_gate"] = "complete_host_goal"
         return write_state(self.project_root, state)
 
     def prepare_audit_and_handoff_drafts(self) -> dict[str, Any]:
-        state = self._require_started()
+        state = self._require_started(host_goal_transition=True)
         missing = self._missing_required_confirmations(state)
         if missing:
             raise WorkflowError(
@@ -2856,6 +3229,9 @@ class ProductDeliveryWorkflow:
         self,
         *,
         allow_pending_authorization: bool = False,
+        allow_host_goal_bootstrap: bool = False,
+        allow_host_goal_owner_claim: bool = False,
+        host_goal_transition: bool = False,
     ) -> dict[str, Any]:
         state = self._state()
         if not state.get("active"):
@@ -2873,7 +3249,85 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "multi-Agent mode authorization is required before workflow progress"
             )
+        if host_goal_required(state):
+            if not allow_host_goal_owner_claim:
+                try:
+                    assert_host_goal_owner(state)
+                except HostGoalError as error:
+                    raise WorkflowError(str(error)) from error
+            if host_goal_transition:
+                if allow_host_goal_bootstrap:
+                    return state
+                try:
+                    state = consume_authorized_transition(state)
+                except HostGoalError as error:
+                    raise WorkflowError(str(error)) from error
+                state = write_state(self.project_root, state)
         return state
+
+    def _prepare_host_goal_human_wait(
+        self,
+        state: dict[str, Any],
+        continuation: dict[str, Any],
+    ) -> tuple[dict[str, Any], str, bool]:
+        binding = deepcopy(state.get("host_goal_binding") or {})
+        blockers = sorted(str(item) for item in continuation.get("blockers") or [])
+        prompt_material = {
+            "reason": continuation.get("reason"),
+            "blockers": blockers,
+            "next_action": continuation.get("next_action"),
+        }
+        blocker_fingerprint = host_goal_stable_hash(prompt_material)
+        existing = binding.get("human_wait") or {}
+        if (
+            existing.get("blocker_fingerprint") == blocker_fingerprint
+            and existing.get("status") == "pending"
+        ):
+            wait = deepcopy(existing)
+        else:
+            if existing:
+                history = list(binding.get("human_wait_history") or [])
+                history.append(deepcopy(existing))
+                binding["human_wait_history"] = history[-100:]
+            decision_sequence = int(binding.get("decision_sequence") or 0) + 1
+            binding["decision_sequence"] = decision_sequence
+            decision_material = {
+                "delivery_id": state.get("delivery_id"),
+                "feature_slug": state.get("feature_slug"),
+                "blocker_fingerprint": blocker_fingerprint,
+                "resume_gate": state.get("next_gate"),
+                "decision_sequence": decision_sequence,
+            }
+            blocked_until = {
+                str(item) for item in state.get("blocked_until") or []
+            }
+            resolvable_blockers = [
+                blocker
+                for blocker in blockers
+                if blocker in blocked_until and "clarification" in blocker.lower()
+            ]
+            wait = {
+                "decision_id": "decision-"
+                + host_goal_stable_hash(decision_material)[:20],
+                "status": "pending",
+                "blocker_fingerprint": blocker_fingerprint,
+                "prompt_sha256": host_goal_stable_hash(prompt_material),
+                "reason": continuation.get("reason"),
+                "blockers": blockers,
+                "resolvable_blockers": resolvable_blockers,
+                "resume_gate": state.get("next_gate"),
+                "prompt_emitted": False,
+                "consecutive_goal_turns": 0,
+                "observed_goal_turn_ids": [],
+                "created_at": self._timestamp_from_state(state),
+            }
+        should_prompt = not bool(wait.get("prompt_emitted"))
+        if should_prompt:
+            wait["prompt_emitted"] = True
+            wait["prompt_emitted_at"] = self._timestamp_from_state(state)
+        binding["human_wait"] = wait
+        state["host_goal_binding"] = binding
+        return state, str(wait["decision_id"]), should_prompt
 
     @staticmethod
     def _require_current_delivery_authorization(state: dict[str, Any]) -> None:

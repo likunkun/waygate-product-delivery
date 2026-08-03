@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.23-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.26-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -37,6 +37,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | Non-UI behavior gate | API, CLI, service, and background-job projects use behavior contracts instead of HTML prototypes. |
 | Multi-agent review artifacts | Scenario and test coverage reviews must be visible artifacts, not vague chat claims. |
 | Goal-driven implementation | Implementation must follow the planned task queue and cannot stop early without a blocker. |
+| Verified Host Goal continuation | Post-handoff turns and gates require fresh observations from Codex `get_goal`, `create_goal`, and `update_goal` tools. |
 | Canonical closure authority | Final completion depends on Product Delivery's validator, not on target-project shortcuts. |
 
 ## Quick Start
@@ -110,7 +111,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.23.tar.gz
+dist/waygate-product-delivery-1.0.26.tar.gz
 ```
 
 ## Use In Codex
@@ -165,6 +166,18 @@ The gate verifies objective facts; multi-agent review judges design quality. Rev
 
 Only the clean prototype and clean screenshots are shown for `product_baseline`. Annotation-only changes invalidate the bound internal scenario review, but not either user confirmation, the test plan, or launch authorization. Product-surface or product-context changes retain full downstream invalidation. Active v1.0.22 deliveries with an already confirmed baseline remain grandfathered until the prototype changes or the baseline is reopened. The workflow still has exactly two user confirmations: `product_baseline` and `test_coverage_plan`; closure remains schema `v0.11`.
 
+### Host Goal Checkpoint Recovery
+
+After handoff, Host Goal activation uses the exact `get_goal -> create_goal -> get_goal` protocol. If a legal canonical transition makes a pre-active activation checkpoint stale, call `recover_stale_host_goal_checkpoint(checkpoint_id)`. The runtime verifies the current delivery identity, authorization, binding generation and nonce, objective hash, and transition-journal hash chain before archiving the old checkpoint and issuing a fresh `inspect_before_activation` checkpoint.
+
+Recovery preserves the delivery, artifacts, reviews, task state, and prior journal events. Do not edit `.product-delivery/state.json`, restart the delivery, or replay the superseded checkpoint. An active Waygate delivery must use the installed `waygate-product-delivery` runtime; do not mix writes from the legacy `product-delivery-agent@1.0.8` runtime.
+
+### Coordinator-Owned Host Goal
+
+Each delivery captures its top-level Codex coordinator from `CODEX_THREAD_ID`. Host Goal activation, reconciliation, observation, completion, and every post-handoff canonical write require the current thread, stored owner, binding owner, and observed Goal `threadId` to match. Spawned review subagents may produce review artifacts, but they must never activate, recover, transfer, or complete the delivery Host Goal.
+
+Older active states without owner metadata migrate to `legacy_unverified`; the runtime does not infer ownership from an old Goal binding. Open a fresh user-visible top-level thread with no active or blocked Goal, then call `prepare_host_goal_owner_claim("恢复交付主线程，接管当前 Host Goal")`, run the requested `get_goal`, and record it with `record_host_goal_owner_claim_observation()`. A missing or completed Goal permits transfer; an active or blocked Goal fails closed. Successful transfer archives the old binding and pending checkpoint, appends `host_goal_owner_transferred`, and starts a fresh `get_goal -> create_goal -> get_goal` handshake without changing delivery evidence or prior journal events. If the owner-claim checkpoint becomes stale after a legal transition, call `recover_stale_host_goal_owner_claim(checkpoint_id)`; it archives the old claim and appends `host_goal_owner_claim_superseded` instead of leaving recovery permanently blocked.
+
 ## Architecture
 
 ```text
@@ -188,6 +201,7 @@ Core runtime modules:
 | `prototype_design.py` | Clean-surface, product-context, annotation-separation, and design-bundle validation. |
 | `gatekeeper.py` | Fail-closed invariants for handoff, implementation, and closure. |
 | `delivery_goal.py` | Task queue, task cursor, and stop guard. |
+| `host_goal.py` | Verified Codex Host Goal activation, reconciliation, human waits, and completion. |
 | `transition_journal.py` | Hash-linked critical transition journal. |
 | `finalization.py` | Canonical Product Delivery closure validator entry point. |
 | `plugin_packaging.py` | Codex plugin generation and distribution packaging. |

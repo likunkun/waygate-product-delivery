@@ -18,6 +18,7 @@ from product_delivery_agent.hooks import (
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
 
 from tests.test_feature_closure import ready_workflow, valid_closure_artifact
+from tests.conformance_fixtures import reconcile_host_goal
 
 
 def write_raw_state(project_root, state):
@@ -78,6 +79,7 @@ class CanonicalClosureAuthorityV107Tests(unittest.TestCase):
             self.assertIn("exit_code", str(caught.exception))
 
             artifact["required_commands"][0]["exit_code"] = 0
+            reconcile_host_goal(workflow)
             result = workflow.record_feature_closure(artifact)
 
             self.assertEqual(result["closure_validation"]["status"], "passed")

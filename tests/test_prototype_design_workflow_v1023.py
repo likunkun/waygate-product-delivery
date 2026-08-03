@@ -16,10 +16,12 @@ from product_delivery_agent.review_gates import ReviewGateError, validate_multi_
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.conformance_fixtures import (
     PROTOTYPE_DESIGN_DIMENSIONS,
+    activate_host_goal,
     bind_prototype_design_review,
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_design_bundle_payload,
+    reconcile_host_goal,
     record_prototype_design_bundle,
     ui_conformance_review_payload,
     write_prototype_screenshot,
@@ -534,6 +536,8 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = handoff_workflow(project_root)
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
             state = workflow.status()
             bundle_path = project_root / ".product-delivery/artifacts/prototype-design-bundle.json"
             bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
@@ -557,10 +561,13 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = handoff_workflow(project_root)
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
                 artifact=task_completion_artifact(workflow.status(), "TASK-001"),
             )
+            reconcile_host_goal(workflow)
             mutate_text_artifact(
                 project_root,
                 ".product-delivery/artifacts/prototype-design/baseline-surface.png",
@@ -579,11 +586,15 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = handoff_workflow(project_root)
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
                 artifact=task_completion_artifact(workflow.status(), "TASK-001"),
             )
+            reconcile_host_goal(workflow)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            reconcile_host_goal(workflow)
             mutate_text_artifact(
                 project_root,
                 ".product-delivery/artifacts/prototype-design/semantic-snapshot.json",
@@ -632,6 +643,8 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
                 annotation_text="Re-review the annotation-only continuity guidance.",
             )
 
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
             pending = workflow.record_ui_prototype_design_bundle(changed_payload)
 
             self.assertEqual(pending["next_gate"], "multi_agent_scenario_review")
@@ -643,21 +656,25 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
                 original_authorization,
             )
             self.assertEqual(pending["user_confirmations"], original_confirmations)
+            reconcile_host_goal(workflow)
             with self.assertRaisesRegex(WorkflowError, "annotation review is pending"):
                 workflow.record_task_completion(
                     "TASK-001",
                     artifact=task_completion_artifact(pending, "TASK-001"),
                 )
+            reconcile_host_goal(workflow)
             with self.assertRaisesRegex(WorkflowError, "annotation review is pending"):
                 workflow.record_executed_browser_evidence(
                     [browser_evidence(project_root)]
                 )
+            reconcile_host_goal(workflow)
             with self.assertRaisesRegex(WorkflowError, "annotation review is pending"):
                 workflow.record_multi_agent_review(
                     "test_implementation",
                     multi_agent_review("test_implementation"),
                 )
 
+            reconcile_host_goal(workflow)
             reviewed = workflow.record_multi_agent_review(
                 "scenario",
                 scenario_review(workflow, "incremental_existing_surface"),
@@ -665,6 +682,7 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
 
             self.assertEqual(reviewed["next_gate"], "TASK-001")
             self.assertNotIn("annotation_review_resume_gate", reviewed)
+            reconcile_host_goal(workflow)
             progressed = workflow.record_task_completion(
                 "TASK-001",
                 artifact=task_completion_artifact(reviewed, "TASK-001"),

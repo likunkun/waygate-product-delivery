@@ -15,6 +15,7 @@ from product_delivery_agent.gatekeeper import derive_blockers, render_closure_va
 from product_delivery_agent.plugin_packaging import package_codex_plugin
 from product_delivery_agent.transition_journal import transition_names
 
+from tests.conformance_fixtures import activate_host_goal, reconcile_host_goal
 from tests.test_feature_closure import ready_workflow, valid_closure_artifact
 from tests.test_goal_driven_closure_v104 import workflow_ready_for_handoff
 
@@ -313,6 +314,8 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
                 "handoff_generated",
             )
 
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
                 artifact={

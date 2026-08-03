@@ -13,6 +13,10 @@ from product_delivery_agent.gatekeeper import (
     derive_blockers,
     implementation_integrity_errors,
 )
+from product_delivery_agent.host_goal import (
+    canonical_closure_passed,
+    current_codex_thread_id,
+)
 
 
 EXTERNAL_BLOCKER_MARKERS = (
@@ -93,6 +97,12 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
             blockers=pending,
             next_action=state.get("next_gate"),
         )
+
+    host_goal_decision = _host_goal_owner_continuation_decision(
+        state
+    ) or _host_goal_continuation_decision(state)
+    if host_goal_decision:
+        return host_goal_decision
 
     blocker_names = _string_list(state.get("blocked_until"))
     derived_blockers = derive_blockers(state)
@@ -208,11 +218,112 @@ def _is_complete(state: dict[str, Any]) -> bool:
     closure_validation = state.get("closure_validation") or {}
     feature_closure = state.get("feature_closure") or {}
     delivery_goal = state.get("delivery_goal") or {}
-    return (
+    internal_complete = (
         closure_validation.get("status") == "passed"
         and feature_closure.get("status") == "passed"
         and delivery_goal.get("status") == "complete"
     )
+    if not internal_complete:
+        return False
+    binding = state.get("host_goal_binding") or {}
+    if binding.get("status") in {None, "not_required"}:
+        return True
+    return binding.get("status") == "complete"
+
+
+def _host_goal_continuation_decision(
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not (state.get("handoff") or state.get("delivery_goal")):
+        return None
+    binding = state.get("host_goal_binding") or {}
+    status = binding.get("status")
+    if status in {
+        "activation_pending",
+        "creation_ready",
+        "verification_pending",
+    }:
+        return _decision(
+            "must_continue",
+            can_stop=False,
+            reason="Codex Host Goal activation is required",
+            blockers=[f"host_goal:{status}"],
+            next_action="host_goal_activation",
+        )
+    if status in {"legacy_unverified", "reactivation_required"}:
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="Codex Host Goal requires explicit recovery authorization",
+            blockers=[f"host_goal:{status}"],
+            next_action="host_goal_reactivation_authorization",
+        )
+    if status == "blocked":
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="Codex Host Goal is blocked pending explicit user resume",
+            blockers=["host_goal:blocked"],
+            next_action="host_goal_resume_required",
+        )
+    if status == "unavailable":
+        return _decision(
+            "blocked",
+            can_stop=True,
+            reason="Codex Host Goal tools are unavailable",
+            blockers=["autonomous_continuation_unavailable"],
+            next_action="use_goal_capable_codex_host",
+        )
+    if canonical_closure_passed(state) and status != "complete":
+        return _decision(
+            "must_continue",
+            can_stop=False,
+            reason="canonical closure passed but Host Goal is not complete",
+            blockers=[f"host_goal:{status or 'missing'}"],
+            next_action="complete_host_goal",
+        )
+    return None
+
+
+def _host_goal_owner_continuation_decision(
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not (state.get("handoff") or state.get("delivery_goal")):
+        return None
+    owner = state.get("host_goal_owner") or {}
+    binding = state.get("host_goal_binding") or {}
+    owner_status = owner.get("status")
+    coordinator_thread_id = owner.get("coordinator_thread_id")
+    binding_owner_thread_id = binding.get("owner_thread_id")
+    observed_thread_id = (binding.get("host_identifiers") or {}).get("threadId")
+    current_thread_id = current_codex_thread_id()
+    if owner_status != "claimed":
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="Codex Host Goal coordinator ownership requires recovery",
+            blockers=[f"host_goal_owner:{owner_status or 'missing'}"],
+            next_action="host_goal_owner_recovery",
+        )
+    if binding_owner_thread_id != coordinator_thread_id or (
+        observed_thread_id and observed_thread_id != coordinator_thread_id
+    ):
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="Codex Host Goal binding belongs to a different thread",
+            blockers=["host_goal_owner:thread_mismatch"],
+            next_action="host_goal_owner_recovery",
+        )
+    if not current_thread_id or current_thread_id != coordinator_thread_id:
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="current Codex thread does not own the delivery Host Goal",
+            blockers=["host_goal_owner:current_thread_mismatch"],
+            next_action="host_goal_owner_recovery",
+        )
+    return None
 
 
 def _pending_confirmation_blockers(state: dict[str, Any]) -> list[str]:

@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.23")
+            self.assertEqual(manifest["version"], "1.0.26")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -83,6 +83,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "runtime/product_delivery_agent/finalization.py",
                 "runtime/product_delivery_agent/gatekeeper.py",
                 "runtime/product_delivery_agent/continuation.py",
+                "runtime/product_delivery_agent/host_goal.py",
                 "runtime/product_delivery_agent/transition_journal.py",
                 "runtime/product_delivery_agent/evidence_artifacts.py",
                 "runtime/product_delivery_agent/prototype_design.py",
@@ -117,6 +118,10 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("confirm_test_coverage_plan", skill_markdown)
             self.assertIn("record_prototype_production_conformance", skill_markdown)
             self.assertIn("ui_conformance", skill_markdown)
+            self.assertIn(
+                "recover_stale_host_goal_checkpoint", skill_markdown
+            )
+            self.assertIn("product-delivery-agent@1.0.8", skill_markdown)
             self.assertIn("semantic snapshot", skill_markdown)
             self.assertIn("record_ui_prototype_design_bundle", skill_markdown)
             self.assertIn("prototype_design_integrity", skill_markdown)
@@ -181,6 +186,26 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("verified_action_assertions", skill_markdown)
             self.assertIn("recover_stale_launch_package", skill_markdown)
             self.assertIn("implementation_package_superseded", skill_markdown)
+            self.assertIn("prepare_host_goal_activation", skill_markdown)
+            self.assertIn("prepare_host_goal_reconciliation", skill_markdown)
+            self.assertIn("record_host_goal_observation", skill_markdown)
+            self.assertIn("CODEX_THREAD_ID", skill_markdown)
+            self.assertIn("prepare_host_goal_owner_claim", skill_markdown)
+            self.assertIn(
+                "record_host_goal_owner_claim_observation", skill_markdown
+            )
+            self.assertIn(
+                "recover_stale_host_goal_owner_claim", skill_markdown
+            )
+            self.assertIn("host_goal_owner_transferred", skill_markdown)
+            self.assertIn("orphaned_unreachable", skill_markdown)
+            self.assertIn("get_goal", skill_markdown)
+            self.assertIn("create_goal", skill_markdown)
+            self.assertIn("update_goal", skill_markdown)
+            self.assertIn("host_turn_id", skill_markdown)
+            self.assertIn("decision_id", skill_markdown)
+            self.assertIn("Goal 工具不可用", skill_markdown)
+            self.assertIn("不得使用 20 秒 watchdog", skill_markdown)
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
@@ -206,6 +231,8 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("record_ui_prototype_design_bundle", startup_template)
             self.assertIn("clean_surface", startup_template)
             self.assertIn("review_annotation_set", startup_template)
+            self.assertIn("CODEX_THREAD_ID", startup_template)
+            self.assertIn("prepare_host_goal_owner_claim", startup_template)
             self.assertLess(
                 startup_template.index("product_baseline"),
                 startup_template.index("planned E2E"),
@@ -293,7 +320,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.23")
+            self.assertEqual(closure_template["plugin_version"], "1.0.26")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -314,6 +341,10 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("run_finalize_cli", validator_script)
             self.assertIn("product_delivery_agent.finalization", validator_script)
             self.assertNotIn("Import and call validate_feature_closure", validator_script)
+            hooks_readme = (root / "hooks" / "README.md").read_text("utf-8")
+            self.assertIn("does not provide a timed continuation hook", hooks_readme)
+            self.assertIn("Codex Host Goal", hooks_readme)
+            self.assertIn("CODEX_THREAD_ID", hooks_readme)
 
     def test_repo_marketplace_config_points_to_local_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,7 +376,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.23.tar.gz",
+                "waygate-product-delivery-1.0.26.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

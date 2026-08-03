@@ -757,6 +757,7 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             state = workflow.record_feature_closure(
                 valid_closure_artifact(workflow.status())
             )
+            state["status"] = "closed"
             state["closure_validation"]["canonical_schema_version"] = "v0.10"
             state["closure_validation"]["plugin_version"] = "1.0.15"
             state_path = root / ARTIFACT_ROOT / "state.json"

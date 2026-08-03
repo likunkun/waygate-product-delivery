@@ -57,12 +57,25 @@ def initialize_workspace(
 
     _ensure_templates(templates_dir)
 
+    state_path = workspace / "state.json"
+    terminal_history = False
+    if state_path.is_file():
+        try:
+            raw_state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw_state = {}
+        terminal_history = (
+            isinstance(raw_state, dict)
+            and raw_state.get("status") in TERMINAL_STATUSES
+        )
     existing_state = load_state(root)
     if existing_state:
         state = _merge_missing_protocol_fields(existing_state)
     else:
         state = _new_state(project_type)
 
+    if terminal_history:
+        return state
     write_state(root, state)
     return state
 
@@ -192,6 +205,21 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
         "user_change_requests": [],
         "pending_user_decisions": {},
         "delivery_goal": None,
+        "host_goal_authorization": {
+            "status": "not_authorized",
+        },
+        "host_goal_owner": {
+            "schema_version": "v1",
+            "status": "not_initialized",
+            "delivery_id": None,
+            "feature_slug": None,
+            "coordinator_thread_id": None,
+            "generation": 0,
+            "pending_claim": None,
+        },
+        "host_goal_binding": {
+            "status": "not_required",
+        },
         "confirmation_points": {
             artifact_name: {
                 "confirmed": False,
@@ -389,6 +417,71 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     merged.setdefault("user_change_requests", [])
     merged.setdefault("pending_user_decisions", {})
     merged.setdefault("delivery_goal", None)
+    if "host_goal_authorization" not in merged:
+        merged["host_goal_authorization"] = {
+            "status": (
+                "legacy_unverified"
+                if not is_terminal_history
+                and (merged.get("handoff") or merged.get("delivery_goal"))
+                else "not_authorized"
+            ),
+            "authorization_source": "legacy_state_migration",
+        }
+    if "host_goal_binding" not in merged:
+        if not is_terminal_history and (
+            merged.get("handoff") or merged.get("delivery_goal")
+        ):
+            merged["host_goal_binding"] = {
+                "schema_version": "v1",
+                "status": "legacy_unverified",
+                "delivery_id": merged.get("delivery_id"),
+                "feature_slug": merged.get("feature_slug"),
+                "launch_package_hash": (
+                    (merged.get("delivery_goal") or {}).get(
+                        "launch_package_hash"
+                    )
+                ),
+                "resume_gate": merged.get("next_gate"),
+                "migration_source": "pre_v1024_active_state",
+            }
+            merged["next_gate"] = "host_goal_recovery"
+        else:
+            merged["host_goal_binding"] = {"status": "not_required"}
+    if "host_goal_owner" not in merged:
+        if is_terminal_history:
+            merged["host_goal_owner"] = {
+                "schema_version": "v1",
+                "status": "not_required",
+                "delivery_id": merged.get("delivery_id"),
+                "feature_slug": merged.get("feature_slug"),
+                "coordinator_thread_id": None,
+                "generation": 0,
+                "pending_claim": None,
+            }
+        elif merged.get("active"):
+            merged["host_goal_owner"] = {
+                "schema_version": "v1",
+                "status": "legacy_unverified",
+                "delivery_id": merged.get("delivery_id"),
+                "feature_slug": merged.get("feature_slug"),
+                "coordinator_thread_id": None,
+                "generation": 0,
+                "resume_gate": merged.get("next_gate"),
+                "migration_source": "pre_v1026_active_state",
+                "pending_claim": None,
+            }
+            if merged.get("handoff") or merged.get("delivery_goal"):
+                merged["next_gate"] = "host_goal_owner_recovery"
+        else:
+            merged["host_goal_owner"] = {
+                "schema_version": "v1",
+                "status": "not_required",
+                "delivery_id": merged.get("delivery_id"),
+                "feature_slug": merged.get("feature_slug"),
+                "coordinator_thread_id": None,
+                "generation": 0,
+                "pending_claim": None,
+            }
     merged.setdefault("confirmation_points", {})
     merged.setdefault("artifact_paths", {})
     merged.setdefault("freeze", {"frozen": False, "scope_version": None})

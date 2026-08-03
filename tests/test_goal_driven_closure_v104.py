@@ -14,12 +14,15 @@ from product_delivery_agent.gatekeeper import (
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.conformance_fixtures import (
+    activate_host_goal,
+    complete_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
     record_scenario_review,
     record_ui_conformance,
+    reconcile_host_goal,
     write_prototype_screenshot,
 )
 
@@ -494,6 +497,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 verification_commands=["pytest"],
                 planned_tasks=planned_tasks(),
             )
+            activate_host_goal(workflow)
 
             goal = state["delivery_goal"]
             self.assertEqual(goal["status"], "active")
@@ -530,12 +534,15 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 verification_commands=["pytest"],
                 planned_tasks=planned_tasks(),
             )
+            activate_host_goal(workflow)
             for task_id in ("TASK-001", "TASK-002", "TASK-003"):
+                reconcile_host_goal(workflow)
                 workflow.record_task_completion(
                     task_id,
                     artifact=task_completion_artifact(workflow._state(), task_id),
                 )
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(WorkflowError) as caught:
                 workflow.assert_goal_can_stop()
 
@@ -552,16 +559,20 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 verification_commands=["pytest"],
                 planned_tasks=planned_tasks(),
             )
+            activate_host_goal(workflow)
             for task in planned_tasks():
+                reconcile_host_goal(workflow)
                 workflow.record_task_completion(
                     task["task_id"],
                     artifact=task_completion_artifact(workflow._state(), task["task_id"]),
                 )
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(WorkflowError) as caught:
                 workflow.assert_goal_can_stop()
             self.assertIn("closure", str(caught.exception))
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(Exception):
                 workflow.record_feature_closure({"status": "closed"})
             failed = load_state(project_root)
@@ -571,15 +582,19 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 "fix_closure_evidence",
             )
 
+            reconcile_host_goal(workflow)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            reconcile_host_goal(workflow)
             workflow.record_multi_agent_review(
                 "test_implementation",
                 multi_agent_review("test_implementation"),
             )
             record_ui_conformance(workflow, project_root)
+            reconcile_host_goal(workflow)
             state = workflow.record_feature_closure(
                 closure_artifact(workflow.status())
             )
+            complete_host_goal(workflow)
             allowed = workflow.assert_goal_can_stop()
 
             self.assertEqual(state["delivery_goal"]["status"], "complete")
@@ -596,7 +611,10 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 verification_commands=["pytest"],
                 planned_tasks=planned_tasks(),
             )
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            reconcile_host_goal(workflow)
             workflow.record_multi_agent_review(
                 "test_implementation",
                 multi_agent_review("test_implementation"),
@@ -604,6 +622,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
 
             updated_evidence = browser_evidence(project_root)
             updated_evidence["semantic_assertions"] = ["updated semantic assertion"]
+            reconcile_host_goal(workflow)
             state = workflow.record_executed_browser_evidence([updated_evidence])
 
             self.assertEqual(

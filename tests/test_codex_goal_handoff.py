@@ -2,15 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
+from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
 from product_delivery_agent.gatekeeper import GatekeeperError
 from product_delivery_agent.handoff import HandoffError
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
 from tests.conformance_fixtures import (
+    activate_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
+    reconcile_host_goal,
     write_prototype_screenshot,
 )
 
@@ -263,6 +265,33 @@ def authorize_launch(
 
 
 class CodexGoalHandoffTests(unittest.TestCase):
+    def test_authorized_pre_handoff_recovers_stale_authorization_protocol_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            workflow = ready_workflow(project_root)
+            authorize_launch(
+                workflow,
+                scope="Implement classroom dashboard",
+                verification_commands=["pytest"],
+            )
+
+            stale_state = load_state(project_root)
+            stale_state["protocol_errors"] = [
+                "implementation_launch_authorization"
+            ]
+            write_state(project_root, stale_state)
+
+            result = workflow.generate_codex_goal_handoff(
+                scope="Implement classroom dashboard",
+                verification_commands=["pytest"],
+            )
+
+            self.assertEqual(result["stage"], "codex_goal_handoff_ready")
+            self.assertNotIn(
+                "implementation_launch_authorization",
+                result.get("protocol_errors", []),
+            )
+
     def test_generates_handoff_document_and_codex_goal_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -348,11 +377,14 @@ class CodexGoalHandoffTests(unittest.TestCase):
                 scope="Implement classroom dashboard",
                 verification_commands=["pytest"],
             )
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
 
             workflow.record_user_requested_change(
                 targets=["product_baseline"],
                 user_message="增加 billing dashboard 到当前版本范围",
             )
+            reconcile_host_goal(workflow)
             state = workflow.record_post_freeze_change(
                 change_type="scope_change",
                 description="Add billing dashboard",
@@ -372,11 +404,14 @@ class CodexGoalHandoffTests(unittest.TestCase):
                 scope="Implement classroom dashboard",
                 verification_commands=["pytest"],
             )
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
 
             workflow.record_user_requested_change(
                 targets=["product_baseline"],
                 user_message="修改空状态文案",
             )
+            reconcile_host_goal(workflow)
             feedback_state = workflow.record_post_freeze_change(
                 change_type="acceptance_feedback",
                 description="Empty state copy must change",
@@ -406,6 +441,8 @@ class CodexGoalHandoffTests(unittest.TestCase):
                 scope="Implement classroom dashboard",
                 verification_commands=["pytest"],
             )
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
 
             state = workflow.record_superseded_closure(
                 closure_id="closure-v1",

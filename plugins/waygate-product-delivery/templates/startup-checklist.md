@@ -18,3 +18,10 @@
 - Present only the clean product prototype and clean screenshots during `product_baseline`; never show the review-only annotation page as the product surface.
 - Do not generate detailed test cases, planned E2E, or coverage audit before `product_baseline` is confirmed.
 - After the baseline is confirmed, create planned E2E and coverage evidence, run test/test-coverage reviews, then call `prepare_test_coverage_confirmation()` and `confirm_test_coverage_plan()`.
+- The `test_coverage_plan` confirmation also authorizes the current delivery's Codex Host Goal lifecycle through implementation, evidence, review, and closure.
+- The delivery coordinator is the top-level Codex thread captured from `CODEX_THREAD_ID`; spawned subagents must never activate, reconcile, recover, or complete the Host Goal.
+- After handoff, call `prepare_host_goal_activation()` and perform the required `get_goal`, `create_goal`, `get_goal` handshake before any TASK write.
+- If activation reports a stale checkpoint before the Goal was ever active, call `recover_stale_host_goal_checkpoint(checkpoint_id)`; never edit state or restart the delivery.
+- If an older active delivery has unverified or mismatched ownership, open a fresh top-level thread, call `prepare_host_goal_owner_claim('恢复交付主线程，接管当前 Host Goal')`, record that thread's `get_goal`, and continue activation only after the transfer succeeds.
+- If an owner-claim checkpoint becomes stale after a legal transition, call `recover_stale_host_goal_owner_claim(checkpoint_id)` before recording the new `get_goal`; never delete `pending_claim` manually.
+- At every post-handoff turn start and stage/review transition, call `prepare_host_goal_reconciliation()` and record the actual Goal tool result with `record_host_goal_observation()`.

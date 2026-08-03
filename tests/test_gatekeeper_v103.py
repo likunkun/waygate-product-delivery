@@ -17,10 +17,12 @@ from product_delivery_agent.gatekeeper import (
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
 from tests.conformance_fixtures import (
+    activate_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
+    reconcile_host_goal,
     write_prototype_screenshot,
 )
 
@@ -377,6 +379,8 @@ def ready_for_handoff(project_root):
         scope="Implement owner operations",
         verification_commands=["pytest"],
     )
+    activate_host_goal(workflow)
+    reconcile_host_goal(workflow)
     return workflow
 
 
@@ -638,6 +642,7 @@ class GatekeeperV103Tests(unittest.TestCase):
             evidence_path.parent.mkdir(parents=True, exist_ok=True)
             evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(GatekeeperError) as caught:
                 workflow.record_feature_closure(closure_artifact())
 
@@ -651,7 +656,9 @@ class GatekeeperV103Tests(unittest.TestCase):
                 "TASK-001",
                 artifact=task_completion_artifact(workflow._state(), "TASK-001"),
             )
+            reconcile_host_goal(workflow)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            reconcile_host_goal(workflow)
             workflow.record_multi_agent_review(
                 "test_implementation",
                 review("test_implementation"),
@@ -660,6 +667,7 @@ class GatekeeperV103Tests(unittest.TestCase):
             state["delivery_goal"] = None
             write_state(project_root, state)
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(GatekeeperError) as caught:
                 workflow.record_feature_closure(closure_artifact())
 
@@ -670,6 +678,7 @@ class GatekeeperV103Tests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = ready_for_handoff(project_root)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+            reconcile_host_goal(workflow)
             workflow.record_multi_agent_review(
                 "test_implementation",
                 review("test_implementation"),
@@ -677,6 +686,7 @@ class GatekeeperV103Tests(unittest.TestCase):
             bad_artifact = closure_artifact()
             bad_artifact["status"] = "closed"
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(Exception):
                 workflow.record_feature_closure(bad_artifact)
 

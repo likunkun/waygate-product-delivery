@@ -1,9 +1,11 @@
 import json
 import contextlib
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.finalization import run_finalize_cli
@@ -97,9 +99,33 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
                 self.assertIn("closure_validation.status=passed", " ".join(result.missing_items))
 
     def test_goal_stop_guard_blocks_missing_goal_after_handoff_or_terminal_state(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {"CODEX_THREAD_ID": "thread-v105-stop-guard"},
+        ):
             project_root = Path(tmp)
             state = poisoned_v26_state()
+            state["delivery_id"] = "delivery-v105-stop-guard"
+            state["host_goal_owner"] = {
+                "schema_version": "v1",
+                "status": "claimed",
+                "delivery_id": state["delivery_id"],
+                "feature_slug": state["feature_slug"],
+                "coordinator_thread_id": "thread-v105-stop-guard",
+                "generation": 1,
+                "pending_claim": None,
+            }
+            state["host_goal_binding"] = {
+                "status": "active",
+                "owner_thread_id": "thread-v105-stop-guard",
+                "host_identifiers": {
+                    "threadId": "thread-v105-stop-guard",
+                },
+                "authorized_transition": {
+                    "operation": "stage_transition",
+                    "target_gate": state.get("next_gate"),
+                },
+            }
             state["multi_agent_policy"] = {
                 "mode": "spawned_subagents_required",
                 "evidence_requirement": "spawned_subagents",
@@ -115,6 +141,12 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
                 ],
             }
             write_raw_state(project_root, state)
+            prepared = load_state(project_root)
+            prepared["host_goal_binding"]["authorized_transition"] = {
+                "operation": "stage_transition",
+                "target_gate": prepared.get("next_gate"),
+            }
+            write_raw_state(project_root, prepared)
             workflow = ProductDeliveryWorkflow(project_root)
 
             with self.assertRaises(WorkflowError) as caught:

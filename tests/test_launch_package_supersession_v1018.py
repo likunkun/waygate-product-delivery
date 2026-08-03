@@ -6,6 +6,7 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.transition_journal import has_transition
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+from tests.conformance_fixtures import activate_host_goal, reconcile_host_goal
 from tests.test_canonical_launch_v106 import planned_tasks, workflow_ready_for_launch
 
 
@@ -50,15 +51,19 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
             verification_commands=["pytest"],
             planned_tasks=planned_tasks(),
         )
+        activate_host_goal(workflow)
+        reconcile_host_goal(workflow)
         workflow.record_task_completion(
             "TASK-001",
             artifact=task_completion_artifact(workflow._state(), "TASK-001"),
         )
+        reconcile_host_goal(workflow)
         workflow.record_implementation_launch_authorization(
             scope="Implement the revised frozen package",
             verification_commands=["pytest"],
             planned_tasks=replacement_tasks,
         )
+        reconcile_host_goal(workflow)
         return workflow
 
     def test_recovery_supersedes_old_package_and_records_transition(self):
@@ -83,6 +88,13 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
             )
             self.assertIn("task_completion_artifacts", archived["delivery_goal"])
             self.assertTrue(has_transition(state, "implementation_package_superseded"))
+            self.assertEqual(
+                state["host_goal_binding_history"][-1]["reason"],
+                "launch_package_superseded",
+            )
+            self.assertEqual(
+                state["host_goal_binding"]["status"], "activation_pending"
+            )
             self.assertNotIn(
                 "stale_implementation_launch_authorization",
                 state.get("blocked_until", []),

@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.23"
+EXPECTED_VERSION = "1.0.26"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
@@ -38,15 +38,25 @@ class ReleaseConsistencyV1011Tests(unittest.TestCase):
     def test_readmes_reference_current_release_artifacts(self):
         for relative_path in ("README.md", "README.zh-CN.md"):
             text = (REPO_ROOT / relative_path).read_text("utf-8")
-            self.assertIn("version-1.0.23", text)
+            self.assertIn("version-1.0.26", text)
             self.assertIn(
-                "dist/waygate-product-delivery-1.0.23.tar.gz",
+                "dist/waygate-product-delivery-1.0.26.tar.gz",
                 text,
             )
 
     def test_changelog_records_simplified_post_1_0_10_roadmap(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text("utf-8")
-        self.assertIn("## 1.0.23", changelog)
+        self.assertIn("## 1.0.26", changelog)
+        self.assertIn("recover_stale_host_goal_checkpoint", changelog)
+        self.assertIn("host_goal_checkpoint_superseded", changelog)
+        self.assertIn("host_goal_owner_transferred", changelog)
+        self.assertIn("host_goal_owner_claim_superseded", changelog)
+        self.assertIn("CODEX_THREAD_ID", changelog)
+        self.assertIn("host_goal_binding", changelog)
+        self.assertIn("prepare_host_goal_reconciliation", changelog)
+        self.assertIn("create_goal", changelog)
+        self.assertIn("get_goal", changelog)
+        self.assertIn("update_goal", changelog)
         self.assertIn("prototype_design_integrity", changelog)
         self.assertIn("record_ui_prototype_design_bundle", changelog)
         self.assertIn("product_domain_hash", changelog)

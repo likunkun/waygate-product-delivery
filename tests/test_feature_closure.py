@@ -12,11 +12,13 @@ from product_delivery_agent.gatekeeper import (
     prototype_conformance_closure_binding,
 )
 from tests.conformance_fixtures import (
+    activate_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
     record_ui_conformance,
+    reconcile_host_goal,
     write_prototype_screenshot,
 )
 
@@ -334,6 +336,8 @@ def ready_workflow(project_root):
         verification_commands=["PYTHONPATH=src python3 -m unittest discover -s tests"],
         prohibited_work=["Do not mutate Waygate state"],
     )
+    activate_host_goal(workflow)
+    reconcile_host_goal(workflow)
     workflow.record_task_completion(
         "TASK-001",
         artifact=task_completion_artifact(
@@ -341,12 +345,15 @@ def ready_workflow(project_root):
             "TASK-001",
         ),
     )
+    reconcile_host_goal(workflow)
     workflow.record_executed_browser_evidence([browser_evidence(project_root)])
+    reconcile_host_goal(workflow)
     workflow.record_multi_agent_review(
         "test_implementation",
         multi_agent_review("test_implementation"),
     )
     record_ui_conformance(workflow, project_root)
+    reconcile_host_goal(workflow)
     return workflow
 
 
@@ -473,6 +480,7 @@ class FeatureClosureGateTests(unittest.TestCase):
                 "ui-browser-e2e-required": "failed",
             }
 
+            reconcile_host_goal(workflow)
             with self.assertRaises(ClosureGateError) as failed:
                 workflow.record_feature_closure(failed_artifact)
 

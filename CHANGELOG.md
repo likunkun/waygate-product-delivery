@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.0.26
+
+- Captures the top-level delivery coordinator from `CODEX_THREAD_ID` and binds Host Goal checkpoints, observations, and canonical post-handoff writes to that owner.
+- Requires the observed Codex Goal `threadId`, the stored coordinator, the binding owner, and the current runtime thread to match; missing or foreign thread identity now fails closed.
+- Adds `inspect_host_goal_owner_context()`, `prepare_host_goal_owner_claim()`, and `record_host_goal_owner_claim_observation()` for explicit recovery in a fresh user-visible top-level thread.
+- Adds `recover_stale_host_goal_owner_claim()` and the hash-linked `host_goal_owner_claim_superseded` transition so a legal intervening transition cannot permanently wedge an owner transfer checkpoint.
+- Migrates nonterminal pre-v1.0.26 states to `host_goal_owner.status=legacy_unverified` without inferring that an old binding thread was the delivery coordinator.
+- Archives an old binding and its pending checkpoint as `orphaned_unreachable`, appends `host_goal_owner_transferred`, and creates a fresh generation, nonce, and exact objective only after the candidate thread reports a missing or completed Goal.
+- Rejects owner transfer when the candidate thread already has an active or blocked Goal, and explicitly prohibits spawned review subagents from owning or recovering the delivery Host Goal.
+- Makes `status()` read-only for existing state, requires reconciliation for post-handoff pause/resume, and treats blocked Goals as explicit user-resume gates.
+- Keeps canonical closure schema `v0.11` unchanged.
+
+## 1.0.25
+
+- Adds `recover_stale_host_goal_checkpoint()` for a pre-active Host Goal activation checkpoint invalidated by later legal state transitions.
+- Archives the complete superseded checkpoint, stored/current projections, intervening transition range, and runtime versions without resetting the delivery or rewriting prior journal events.
+- Records a hash-linked `host_goal_checkpoint_superseded` transition, preserves binding generation, nonce, authorization, and objective, then restarts the exact `get_goal` -> `create_goal` -> `get_goal` handshake.
+- Fixes Host Goal projection binding to use the real transition event sequence and `last_event_hash` instead of the transition-journal object's fixed key count.
+- Rejects replay, identity mismatch, damaged journals, and recovery after the binding was ever active while keeping legacy v1.0.24 checkpoint metadata recoverable.
+- Explicitly prohibits mixing the legacy `product-delivery-agent@1.0.8` runtime into an active Waygate delivery.
+- Keeps canonical closure schema `v0.11` unchanged.
+
+## 1.0.24
+
+- Separates the internal `delivery_goal` task plan from a verified Codex `host_goal_binding` tied to the current delivery, launch package, authorization, and objective hash.
+- Adds `prepare_host_goal_activation()`, `prepare_host_goal_reconciliation()`, `record_host_goal_observation()`, `recover_host_goal_binding()`, and `authorize_host_goal_reactivation()`.
+- Requires the initial `get_goal` -> `create_goal` -> `get_goal` handshake and fresh one-time reconciliation checkpoints before post-handoff canonical transitions.
+- Rejects Goal observations that lack a stable host `threadId`, `goalId`, or `id`, and enforces identifier continuity after creation.
+- Covers legacy and draft-producing post-handoff write paths with the same reconciliation gate; replaying the current handoff no longer resets an active Goal binding.
+- Records Goal-tool unavailability as a fail-closed blocker, and requires explicit reauthorization after a once-active Goal becomes missing or prematurely complete.
+- Gives human decisions stable `decision_id`, prompt hash, and blocker identity; repeated automatic turns do not repeat the prompt or mutate delivery evidence.
+- Resolves explicit clarification blockers only after an observed active Goal and resets consecutive wait evidence whenever an intervening Goal turn no longer observes the blocker.
+- Allows `update_goal(status=blocked)` only after three distinct Goal turns observe the same unresolved decision, and allows `update_goal(status=complete)` only after canonical closure passes.
+- Requires verified Goal completion before the formal final summary, while keeping canonical closure schema `v0.11` unchanged.
+- Explicitly rejects a 20-second watchdog or synthetic `继续`; automatic continuation may only be claimed after a real Codex Host Goal auto-reentry smoke passes.
+
 ## 1.0.23
 
 - Adds the internal `prototype_design_integrity` gate and public `record_ui_prototype_design_bundle()` API before multi-Agent product/scenario review.
