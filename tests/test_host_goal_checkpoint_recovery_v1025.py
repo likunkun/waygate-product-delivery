@@ -131,7 +131,7 @@ class HostGoalCheckpointRecoveryV1025Tests(unittest.TestCase):
                 archive["stored_projection_sha256"],
                 archive["current_projection_sha256"],
             )
-            self.assertEqual(archive["intervening_transition_start"], 2)
+            self.assertEqual(archive["intervening_transition_start"], 3)
             self.assertEqual(
                 archive["intervening_transition_end"], len(original_events)
             )
@@ -239,7 +239,7 @@ class HostGoalCheckpointRecoveryV1025Tests(unittest.TestCase):
             self.assertEqual(archive["stored_projection_sha256"], "c" * 64)
             self.assertEqual(
                 archive["intervening_transition_start"],
-                2,
+                3,
             )
             self.assertEqual(
                 archive["intervening_transition_range_basis"],

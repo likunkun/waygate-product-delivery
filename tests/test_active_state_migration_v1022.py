@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
+from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
 from product_delivery_agent.gatekeeper import derive_blockers
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 
@@ -101,63 +101,40 @@ def classroom_active_state() -> dict:
 
 
 class ActiveStateMigrationV1022Tests(unittest.TestCase):
-    def test_classroom_model_policy_is_retired_without_restarting_delivery(self):
+    def test_legacy_model_policy_requires_archive_and_fresh_delivery(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             original = classroom_active_state()
             write_raw_state(project_root, original)
+            workflow = ProductDeliveryWorkflow(project_root)
 
-            state = ProductDeliveryWorkflow(
-                project_root
-            ).retire_model_execution_policy()
+            self.assertEqual(workflow.status()["runtime_status"], "legacy_unverified")
+            with self.assertRaisesRegex(WorkflowError, "recover_legacy_active_delivery"):
+                workflow.retire_model_execution_policy()
+            state = workflow.recover_legacy_active_delivery()
 
-            self.assertEqual(state["delivery_id"], DELIVERY_ID)
+            self.assertNotEqual(state["delivery_id"], DELIVERY_ID)
             self.assertEqual(state["feature_slug"], FEATURE_SLUG)
             self.assertTrue(state["active"])
-            self.assertEqual(state["next_gate"], "multi_agent_scenario_review")
-            self.assertEqual(state["artifact_marker"], {"preserve": True})
-            self.assertEqual(
-                state["multi_agent_policy"], original["multi_agent_policy"]
-            )
+            self.assertEqual(state["next_gate"], "multi_agent_mode_selection")
             self.assertNotIn("execution_model_policy", state)
-            self.assertNotIn("execution_mode", state["pending_user_decisions"])
-            self.assertNotIn("main_thread_model", state["pending_user_decisions"])
-            self.assertIn(
-                "requirements_clarification", state["pending_user_decisions"]
-            )
+            snapshot = project_root / state["previous_delivery"]["state_snapshot_path"]
             self.assertEqual(
-                state["ui_prototype"]["confirmation_status"],
-                "superseded_by_product_baseline",
+                json.loads(snapshot.read_text(encoding="utf-8")), original
             )
-            self.assertNotIn(
-                "pending_confirmation_nonce", state["ui_prototype"]
-            )
-            for obsolete in (
-                "planned_e2e_user_confirmation",
-                "user_confirmed_freeze",
-                "ui_prototype_user_confirmation",
-                "host_model_control_unavailable",
-                "pending_stage_agent_spawn",
-            ):
-                self.assertNotIn(obsolete, state["blocked_until"])
-                self.assertNotIn(obsolete, state["blocking_gates"])
-            self.assertEqual(
-                state["retired_model_execution_policies"][0]["policy"],
-                original["execution_model_policy"],
-            )
-            self.assertNotEqual(
-                state["retired_model_execution_policies"][0]["retired_at"],
-                original["updated_at"],
-            )
-            blockers = derive_blockers(state, project_root)
-            self.assertNotIn("ui_prototype_user_confirmation", blockers)
-            self.assertFalse(any("model" in blocker for blocker in blockers))
 
     def test_model_policy_retirement_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            write_raw_state(project_root, classroom_active_state())
             workflow = ProductDeliveryWorkflow(project_root)
+            state = workflow.start(
+                feature_slug=FEATURE_SLUG,
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            state["execution_model_policy"] = classroom_active_state()[
+                "execution_model_policy"
+            ]
+            write_state(project_root, state)
 
             first = workflow.retire_model_execution_policy()
             second = workflow.retire_model_execution_policy()
@@ -171,17 +148,21 @@ class ActiveStateMigrationV1022Tests(unittest.TestCase):
             )
             self.assertEqual(second["updated_at"], first["updated_at"])
 
-    def test_empty_legacy_model_policy_is_removed_and_persisted(self):
+    def test_empty_current_runtime_model_policy_is_removed_and_persisted(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            state = classroom_active_state()
+            workflow = ProductDeliveryWorkflow(project_root)
+            state = workflow.start(
+                feature_slug=FEATURE_SLUG,
+                multi_agent_mode="spawned_subagents_authorized",
+            )
             state["execution_model_policy"] = {}
             state["pending_user_decisions"] = {}
             state["blocked_until"] = ["multi_agent_scenario_review"]
             state["blocking_gates"] = {}
-            write_raw_state(project_root, state)
+            write_state(project_root, state)
 
-            ProductDeliveryWorkflow(project_root).retire_model_execution_policy()
+            workflow.retire_model_execution_policy()
             persisted = json.loads(
                 (project_root / ARTIFACT_ROOT / "state.json").read_text("utf-8")
             )

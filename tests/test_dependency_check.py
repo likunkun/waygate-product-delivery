@@ -24,6 +24,92 @@ def write_skill(root: Path, relative: str) -> None:
 
 
 class DependencyCheckTests(unittest.TestCase):
+    def test_plugin_selection_detects_legacy_config_cache_and_registry(self):
+        module = load_dependency_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            codex_home = Path(tmp) / "codex"
+            codex_home.mkdir()
+            (codex_home / "config.toml").write_text(
+                "[plugins.\"product-delivery-agent@repo-local\"]\n"
+                "enabled = true\n\n"
+                "[plugins.\"waygate-product-delivery@repo-local\"]\n"
+                "enabled = true\n",
+                encoding="utf-8",
+            )
+            legacy_cache = (
+                codex_home
+                / "plugins"
+                / "cache"
+                / "repo-local"
+                / "product-delivery-agent"
+                / "1.0.8+codex.legacy"
+            )
+            legacy_cache.mkdir(parents=True)
+            registry = {
+                "installed": [
+                    {
+                        "pluginId": "product-delivery-agent@repo-local",
+                        "name": "product-delivery-agent",
+                        "installed": True,
+                        "enabled": True,
+                    },
+                    {
+                        "pluginId": "waygate-product-delivery@repo-local",
+                        "name": "waygate-product-delivery",
+                        "installed": True,
+                        "enabled": True,
+                    },
+                ]
+            }
+
+            selection = module.check_plugin_selection(
+                codex_home=codex_home,
+                installed_plugins=registry,
+            )
+
+            self.assertFalse(selection["passed"])
+            self.assertEqual(
+                selection["legacy_enabled_plugin_ids"],
+                ["product-delivery-agent@repo-local"],
+            )
+            self.assertEqual(
+                selection["legacy_registry_plugin_ids"],
+                ["product-delivery-agent@repo-local"],
+            )
+            self.assertEqual(len(selection["legacy_cache_paths"]), 1)
+
+    def test_plugin_selection_accepts_only_enabled_waygate_repo_local(self):
+        module = load_dependency_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            codex_home = Path(tmp) / "codex"
+            codex_home.mkdir()
+            (codex_home / "config.toml").write_text(
+                "[plugins.\"waygate-product-delivery@repo-local\"]\n"
+                "enabled = true\n",
+                encoding="utf-8",
+            )
+            registry = {
+                "installed": [
+                    {
+                        "pluginId": "waygate-product-delivery@repo-local",
+                        "name": "waygate-product-delivery",
+                        "installed": True,
+                        "enabled": True,
+                    }
+                ]
+            }
+
+            selection = module.check_plugin_selection(
+                codex_home=codex_home,
+                installed_plugins=registry,
+            )
+
+            self.assertTrue(selection["passed"])
+            self.assertEqual(
+                selection["enabled_plugin_ids"],
+                ["waygate-product-delivery@repo-local"],
+            )
+
     def test_check_passes_with_required_skills_and_warns_optional_file_skills(self):
         module = load_dependency_module()
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,6 +201,20 @@ class DependencyCheckTests(unittest.TestCase):
         package_index = install_script.index("package_waygate_product_delivery.py")
 
         self.assertLess(dependency_index, package_index)
+
+    def test_install_script_replaces_legacy_plugin_then_asserts_selection(self):
+        install_script = (REPO_ROOT / "scripts" / "install_waygate_product_delivery.sh").read_text(
+            encoding="utf-8"
+        )
+
+        remove_index = install_script.index(
+            "codex plugin remove product-delivery-agent@repo-local"
+        )
+        add_index = install_script.index("codex plugin add waygate-product-delivery@repo-local")
+        assertion_index = install_script.index("--assert-plugin-selection")
+
+        self.assertLess(remove_index, add_index)
+        self.assertLess(add_index, assertion_index)
 
 
 if __name__ == "__main__":

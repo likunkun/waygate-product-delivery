@@ -15,9 +15,11 @@ from product_delivery_agent.artifact_protocol import (
     AUTHORIZED_REVIEW_TYPES,
     ARTIFACT_ROOT,
     CORE_ARTIFACTS,
+    current_runtime_provenance,
     initialize_workspace,
     load_state,
     new_delivery_state,
+    runtime_status,
     write_state,
 )
 from product_delivery_agent.closure import (
@@ -160,7 +162,14 @@ class ProductDeliveryWorkflow:
                 raw_state.get("status") in TERMINAL_STATUSES
             )
             same_feature = feature_slug is None or feature_slug == current_feature
-            if state.get("active") and not terminal and same_feature:
+            current_runtime_status = runtime_status(state, raw_state)
+            if (
+                state.get("active")
+                and not terminal
+                and current_runtime_status != "verified_waygate"
+            ):
+                action = "legacy_recovery_required"
+            elif state.get("active") and not terminal and same_feature:
                 action = "resume_current_delivery"
             elif state.get("active") and not terminal and not same_feature:
                 action = "blocked_by_active_delivery"
@@ -227,6 +236,11 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "a different active delivery already exists; close or stop it before starting another feature"
             )
+        if startup["action"] == "legacy_recovery_required":
+            raise WorkflowError(
+                "active delivery is legacy_unverified or invalid_runtime; "
+                "call recover_legacy_active_delivery before starting"
+            )
         if startup["action"] == "resume_current_delivery":
             if multi_agent_mode is not None or allow_review_degradation:
                 raise WorkflowError(
@@ -234,6 +248,66 @@ class ProductDeliveryWorkflow:
                 )
             return write_state(self.project_root, existing_state)
 
+        return self._start_fresh_delivery(
+            feature_slug=feature_slug,
+            multi_agent_mode=multi_agent_mode,
+            previous_state=raw_existing_state or existing_state,
+        )
+
+    def recover_legacy_active_delivery(
+        self,
+        *,
+        feature_slug: str | None = None,
+        allow_review_degradation: bool = False,
+        multi_agent_mode: str | None = None,
+    ) -> dict[str, Any]:
+        """Archive an unverifiable active state and create a fresh delivery.
+
+        Recovery deliberately creates a new delivery identity; legacy gates and
+        confirmations remain evidence only in the archived state snapshot.
+        """
+        if allow_review_degradation:
+            if multi_agent_mode not in {None, "role_simulation_allowed"}:
+                raise WorkflowError(
+                    "allow_review_degradation conflicts with multi_agent_mode"
+                )
+            multi_agent_mode = "role_simulation_allowed"
+        if multi_agent_mode not in {
+            None,
+            "spawned_subagents_authorized",
+            "role_simulation_allowed",
+        }:
+            raise WorkflowError("unsupported multi_agent_mode")
+
+        raw_state = self._load_raw_state()
+        state = self._state()
+        status = runtime_status(state, raw_state)
+        if not state.get("active") or status not in {
+            "legacy_unverified",
+            "invalid_runtime",
+        }:
+            raise WorkflowError(
+                "legacy recovery requires an active legacy_unverified or invalid_runtime delivery"
+            )
+        legacy_feature_slug = state.get("feature_slug")
+        if feature_slug is not None and feature_slug != legacy_feature_slug:
+            raise WorkflowError(
+                "legacy recovery feature_slug must match the active legacy delivery"
+            )
+        return self._start_fresh_delivery(
+            feature_slug=legacy_feature_slug,
+            multi_agent_mode=multi_agent_mode,
+            previous_state=raw_state,
+        )
+
+    def _start_fresh_delivery(
+        self,
+        *,
+        feature_slug: str | None,
+        multi_agent_mode: str | None,
+        previous_state: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        previous_delivery = self._archive_previous_delivery(previous_state)
         initialize_workspace(self.project_root)
         state = new_delivery_state()
         state["active"] = True
@@ -243,11 +317,6 @@ class ProductDeliveryWorkflow:
         state["activation_source"] = "waygate-product-delivery"
         state["feature_slug"] = feature_slug
         state["host_goal_owner"] = initialize_host_goal_owner(state)
-        previous_delivery = self._archive_previous_delivery(
-            raw_existing_state
-            if raw_existing_state.get("status") in TERMINAL_STATUSES
-            else existing_state
-        )
         if previous_delivery:
             state["previous_delivery"] = previous_delivery
         state["open_spec_draft_ready"] = False
@@ -342,6 +411,14 @@ class ProductDeliveryWorkflow:
         state["required_artifacts"] = []
         if feature_slug:
             state["required_artifacts"].append(f"docs/open-spec/{feature_slug}/")
+        state["runtime_provenance"] = current_runtime_provenance()
+        state = append_transition(
+            state,
+            "delivery_activated",
+            feature_slug=feature_slug,
+            runtime_version=PLUGIN_VERSION,
+            metadata=state["runtime_provenance"],
+        )
         return write_state(self.project_root, state)
 
 
@@ -1090,13 +1167,18 @@ class ProductDeliveryWorkflow:
 
     def status(self) -> dict[str, Any]:
         state = self._state()
+        raw_state = self._load_raw_state()
+        current_runtime_status = runtime_status(state, raw_state)
         if not state:
             state = initialize_workspace(self.project_root)
         elif (
-            self._load_raw_state().get("status") not in TERMINAL_STATUSES
+            raw_state.get("status") not in TERMINAL_STATUSES
             and not host_goal_required(state)
+            and current_runtime_status == "verified_waygate"
         ):
             state = write_state(self.project_root, state)
+        state = dict(state)
+        state["runtime_status"] = current_runtime_status
         return state
 
     def pause(self) -> dict[str, Any]:
@@ -3236,7 +3318,14 @@ class ProductDeliveryWorkflow:
         state = self._state()
         if not state.get("active"):
             raise WorkflowError("workflow is not active; run start first")
-        if self._load_raw_state().get("status") not in TERMINAL_STATUSES:
+        raw_state = self._load_raw_state()
+        if raw_state.get("status") not in TERMINAL_STATUSES:
+            current_runtime_status = runtime_status(state, raw_state)
+            if current_runtime_status != "verified_waygate":
+                raise WorkflowError(
+                    "active delivery runtime is "
+                    f"{current_runtime_status}; call recover_legacy_active_delivery"
+                )
             self._require_current_delivery_authorization(state)
         execution_authorization = (state.get("multi_agent_policy") or {}).get(
             "execution_authorization"

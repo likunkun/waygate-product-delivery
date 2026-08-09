@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.27
+
+- Adds a `runtime_provenance` receipt to every newly activated delivery: external Waygate plugin name, release version, package-root digest, nonempty delivery ID, owner metadata, and a hash-linked `delivery_activated` journal event.
+- Makes `status()` expose `verified_waygate`, `legacy_unverified`, or `invalid_runtime`; active state lacking a complete current receipt cannot progress through any delivery gate.
+- Adds `recover_legacy_active_delivery()` as the only recovery path for an unverifiable or foreign runtime state. It archives the exact legacy state before creating a new Waygate delivery, so no legacy confirmation, review, or implementation authorization can be reused.
+- Replaces legacy `product-delivery-agent@repo-local` during installation after checking config, Codex cache, and installed-plugin registry, then asserts that the enabled product-delivery selection is only `waygate-product-delivery@repo-local`.
+- Bumps the package release to invalidate prior runtime provenance and refreshes generated plugin artifacts.
+
 ## 1.0.26
 
 - Captures the top-level delivery coordinator from `CODEX_THREAD_ID` and binds Host Goal checkpoints, observations, and canonical post-handoff writes to that owner.

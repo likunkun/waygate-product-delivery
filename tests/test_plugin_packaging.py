@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.26")
+            self.assertEqual(manifest["version"], "1.0.27")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -44,6 +44,20 @@ class PluginPackagingTests(unittest.TestCase):
                 ],
             )
             self.assertIn("启动交付", manifest_text)
+
+    def test_packaging_removes_legacy_plugin_package(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            legacy_root = repo_root / "plugins" / "product-delivery-agent"
+            manifest = legacy_root / ".codex-plugin" / "plugin.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                json.dumps({"name": "product-delivery-agent"}), encoding="utf-8"
+            )
+
+            package_codex_plugin(repo_root)
+
+            self.assertFalse(legacy_root.exists())
 
     def test_package_includes_runtime_assets_and_v0_11_closure_assets(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -122,6 +136,10 @@ class PluginPackagingTests(unittest.TestCase):
                 "recover_stale_host_goal_checkpoint", skill_markdown
             )
             self.assertIn("product-delivery-agent@1.0.8", skill_markdown)
+            self.assertIn("runtime_provenance", skill_markdown)
+            self.assertIn("delivery_activated", skill_markdown)
+            self.assertIn("legacy_unverified", skill_markdown)
+            self.assertIn("recover_legacy_active_delivery", skill_markdown)
             self.assertIn("semantic snapshot", skill_markdown)
             self.assertIn("record_ui_prototype_design_bundle", skill_markdown)
             self.assertIn("prototype_design_integrity", skill_markdown)
@@ -320,7 +338,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.26")
+            self.assertEqual(closure_template["plugin_version"], "1.0.27")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -376,7 +394,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.26.tar.gz",
+                "waygate-product-delivery-1.0.27.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

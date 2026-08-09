@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
+from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 
 
@@ -23,6 +24,22 @@ class DeliveryIsolationV1022Tests(unittest.TestCase):
             self.assertEqual(policy["authorization_feature_slug"], "feature-a")
             self.assertNotIn("execution_mode", state["pending_user_decisions"])
             self.assertNotIn("execution_model_policy", state)
+
+    def test_start_records_verifiable_waygate_activation_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(Path(tmp))
+
+            state = workflow.start(feature_slug="feature-a")
+
+            receipt = state["runtime_provenance"]
+            self.assertEqual(receipt["plugin_name"], "waygate-product-delivery")
+            self.assertEqual(receipt["plugin_version"], PLUGIN_VERSION)
+            self.assertTrue(receipt["package_root_sha256"])
+            self.assertEqual(
+                state["transition_journal"]["events"][-1]["transition_name"],
+                "delivery_activated",
+            )
+            self.assertEqual(workflow.status()["runtime_status"], "verified_waygate")
 
     def test_same_active_feature_resumes_and_different_feature_is_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -117,6 +134,106 @@ class DeliveryIsolationV1022Tests(unittest.TestCase):
                 first["multi_agent_policy"]["authorization_feature_slug"],
                 "feature-a",
             )
+
+    def test_legacy_active_state_cannot_advance_without_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_path = root / ARTIFACT_ROOT / "state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "active": True,
+                        "status": "active",
+                        "feature_slug": "feature-a",
+                        "stage": "product_blueprint",
+                        "multi_agent_policy": {
+                            "mode": "spawned_subagents_required",
+                            "execution_authorization": "authorized",
+                            "authorization_scope": "current_delivery",
+                            "authorization_source": "startup_command",
+                            "authorized_review_types": ["scenario"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            workflow = ProductDeliveryWorkflow(root)
+
+            self.assertEqual(workflow.status()["runtime_status"], "legacy_unverified")
+            with self.assertRaisesRegex(WorkflowError, "legacy_unverified"):
+                workflow.select_project_type("ui")
+            with self.assertRaisesRegex(WorkflowError, "recover_legacy_active_delivery"):
+                workflow.start(feature_slug="feature-a")
+
+    def test_status_does_not_rewrite_legacy_state_before_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_path = root / ARTIFACT_ROOT / "state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "active": True,
+                        "status": "active",
+                        "feature_slug": "feature-a",
+                        "stage": "product_blueprint",
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            original_bytes = state_path.read_bytes()
+
+            state = ProductDeliveryWorkflow(root).status()
+
+            self.assertEqual(state["runtime_status"], "legacy_unverified")
+            self.assertEqual(state_path.read_bytes(), original_bytes)
+
+    def test_state_activated_by_another_runtime_cannot_advance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(root)
+            state = workflow.start(
+                feature_slug="feature-a",
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            state["runtime_provenance"]["plugin_version"] = "1.0.8"
+            (root / ARTIFACT_ROOT / "state.json").write_text(
+                json.dumps(state), encoding="utf-8"
+            )
+
+            self.assertEqual(workflow.status()["runtime_status"], "invalid_runtime")
+            with self.assertRaisesRegex(WorkflowError, "invalid_runtime"):
+                workflow.select_project_type("ui")
+
+    def test_recover_legacy_active_delivery_archives_then_starts_fresh_waygate_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = {
+                "active": True,
+                "status": "active",
+                "feature_slug": "feature-a",
+                "stage": "product_blueprint",
+                "multi_agent_policy": {"execution_authorization": "authorized"},
+            }
+            state_path = root / ARTIFACT_ROOT / "state.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps(legacy), encoding="utf-8")
+            workflow = ProductDeliveryWorkflow(root)
+
+            recovered = workflow.recover_legacy_active_delivery(
+                feature_slug="feature-a"
+            )
+
+            self.assertNotEqual(
+                recovered["delivery_id"], recovered["previous_delivery"]["delivery_id"]
+            )
+            self.assertEqual(recovered["runtime_provenance"]["plugin_name"], "waygate-product-delivery")
+            self.assertEqual(recovered["next_gate"], "multi_agent_mode_selection")
+            snapshot = root / recovered["previous_delivery"]["state_snapshot_path"]
+            self.assertEqual(json.loads(snapshot.read_text(encoding="utf-8")), legacy)
 
 
 if __name__ == "__main__":

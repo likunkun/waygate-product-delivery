@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.26"
+EXPECTED_VERSION = "1.0.27"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
@@ -38,15 +38,18 @@ class ReleaseConsistencyV1011Tests(unittest.TestCase):
     def test_readmes_reference_current_release_artifacts(self):
         for relative_path in ("README.md", "README.zh-CN.md"):
             text = (REPO_ROOT / relative_path).read_text("utf-8")
-            self.assertIn("version-1.0.26", text)
+            self.assertIn("version-1.0.27", text)
             self.assertIn(
-                "dist/waygate-product-delivery-1.0.26.tar.gz",
+                "dist/waygate-product-delivery-1.0.27.tar.gz",
                 text,
             )
 
     def test_changelog_records_simplified_post_1_0_10_roadmap(self):
         changelog = (REPO_ROOT / "CHANGELOG.md").read_text("utf-8")
-        self.assertIn("## 1.0.26", changelog)
+        self.assertIn("## 1.0.27", changelog)
+        self.assertIn("runtime_provenance", changelog)
+        self.assertIn("recover_legacy_active_delivery", changelog)
+        self.assertIn("legacy_unverified", changelog)
         self.assertIn("recover_stale_host_goal_checkpoint", changelog)
         self.assertIn("host_goal_checkpoint_superseded", changelog)
         self.assertIn("host_goal_owner_transferred", changelog)

@@ -771,7 +771,7 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
             self.assertEqual(confirmation["artifact_path"], "prototype/index.html")
             self.assertNotIn("review-only", confirmation["artifact_path"])
 
-    def test_legacy_confirmed_ui_is_grandfathered_until_product_reopen(self):
+    def test_legacy_confirmed_ui_is_display_only_until_fresh_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             legacy = {
@@ -820,13 +820,13 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
                 "prototype_design_integrity", derive_blockers(state, project_root)
             )
 
-            state = ProductDeliveryWorkflow(project_root).record_user_requested_change(
-                targets=["product_baseline"],
-                user_message="Revise the confirmed product surface",
-            )
-            self.assertEqual(
-                state["prototype_design_bundle"]["status"], "missing"
-            )
+            workflow = ProductDeliveryWorkflow(project_root)
+            self.assertEqual(workflow.status()["runtime_status"], "legacy_unverified")
+            with self.assertRaisesRegex(WorkflowError, "recover_legacy_active_delivery"):
+                workflow.record_user_requested_change(
+                    targets=["product_baseline"],
+                    user_message="Revise the confirmed product surface",
+                )
 
     def test_only_v1022_confirmed_active_ui_is_grandfathered(self):
         for provenance in (None, "1.0.21", "1.0.23"):

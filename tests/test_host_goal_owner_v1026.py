@@ -317,24 +317,11 @@ class HostGoalOwnerV1026Tests(unittest.TestCase):
                 ):
                     workflow = ProductDeliveryWorkflow(project_root)
                     before = copy.deepcopy(workflow.status())
-                    claim = workflow.prepare_host_goal_owner_claim(
-                        OWNER_CLAIM_MESSAGE
-                    )
-
                     with self.assertRaisesRegex(
-                        WorkflowError, f"{status} Host Goal"
+                        WorkflowError, "recover_legacy_active_delivery"
                     ):
-                        workflow.record_host_goal_owner_claim_observation(
-                            claim["checkpoint_id"],
-                            {
-                                "observation_source": "codex_goal_tool",
-                                "tool": "get_goal",
-                                "result": goal_result(
-                                    f"{status} goal in the candidate thread",
-                                    status=status,
-                                    thread_id=COORDINATOR_THREAD_ID,
-                                ),
-                            },
+                        workflow.prepare_host_goal_owner_claim(
+                            OWNER_CLAIM_MESSAGE
                         )
 
                     after = workflow.status()
@@ -345,116 +332,27 @@ class HostGoalOwnerV1026Tests(unittest.TestCase):
                         after["transition_journal"], before["transition_journal"]
                     )
 
-    def test_owner_claim_rejects_stale_projection_and_replay(self):
+    def test_legacy_owner_claim_recovery_is_rejected_before_checkpoint_creation(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             classroom_v1025_state(project_root)
             with patch.dict(os.environ, {"CODEX_THREAD_ID": FRESH_THREAD_ID}):
                 workflow = ProductDeliveryWorkflow(project_root)
-                stale_claim = workflow.prepare_host_goal_owner_claim(
-                    OWNER_CLAIM_MESSAGE
-                )
-                state = workflow.status()
-                state = append_transition(
-                    state,
-                    "classroom_v146_fixture_transition",
-                    feature_slug=state["feature_slug"],
-                    runtime_version=PLUGIN_VERSION,
-                    metadata={"fixture": "stale-owner-claim"},
-                )
-                write_state(project_root, state)
+                with self.assertRaisesRegex(
+                    WorkflowError, "recover_legacy_active_delivery"
+                ):
+                    workflow.prepare_host_goal_owner_claim(OWNER_CLAIM_MESSAGE)
 
-                with self.assertRaisesRegex(WorkflowError, "projection is stale"):
-                    workflow.record_host_goal_owner_claim_observation(
-                        stale_claim["checkpoint_id"],
-                        {
-                            "observation_source": "codex_goal_tool",
-                            "tool": "get_goal",
-                            "result": {"goal": None},
-                        },
-                    )
-
-                recovered = workflow.recover_stale_host_goal_owner_claim(
-                    stale_claim["checkpoint_id"]
-                )
-                self.assertNotEqual(
-                    recovered["checkpoint_id"], stale_claim["checkpoint_id"]
-                )
-                transferred = workflow.record_host_goal_owner_claim_observation(
-                    recovered["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "get_goal",
-                        "result": {"goal": None},
-                    },
-                )
-                self.assertEqual(
-                    transferred["host_goal_owner"]["status"], "claimed"
-                )
-                self.assertEqual(
-                    transferred["host_goal_owner_history"][-1]["owner"][
-                        "claim_checkpoint_history"
-                    ][-1]["checkpoint"]["checkpoint_id"],
-                    stale_claim["checkpoint_id"],
-                )
-
+    def test_completed_goal_in_fresh_thread_does_not_recover_legacy_delivery(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             classroom_v1025_state(project_root)
             with patch.dict(os.environ, {"CODEX_THREAD_ID": FRESH_THREAD_ID}):
                 workflow = ProductDeliveryWorkflow(project_root)
-                claim = workflow.prepare_host_goal_owner_claim(
-                    OWNER_CLAIM_MESSAGE
-                )
-                workflow.record_host_goal_owner_claim_observation(
-                    claim["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "get_goal",
-                        "result": {"goal": None},
-                    },
-                )
-
-                with self.assertRaisesRegex(WorkflowError, "current.*checkpoint"):
-                    workflow.record_host_goal_owner_claim_observation(
-                        claim["checkpoint_id"],
-                        {
-                            "observation_source": "codex_goal_tool",
-                            "tool": "get_goal",
-                            "result": {"goal": None},
-                        },
-                    )
-
-    def test_completed_goal_in_fresh_thread_is_replaceable(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            classroom_v1025_state(project_root)
-            with patch.dict(os.environ, {"CODEX_THREAD_ID": FRESH_THREAD_ID}):
-                workflow = ProductDeliveryWorkflow(project_root)
-                claim = workflow.prepare_host_goal_owner_claim(
-                    OWNER_CLAIM_MESSAGE
-                )
-                transferred = workflow.record_host_goal_owner_claim_observation(
-                    claim["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "get_goal",
-                        "result": goal_result(
-                            "Completed prior goal",
-                            status="complete",
-                            thread_id=FRESH_THREAD_ID,
-                        ),
-                    },
-                )
-
-                self.assertEqual(
-                    transferred["host_goal_owner"]["coordinator_thread_id"],
-                    FRESH_THREAD_ID,
-                )
-                self.assertEqual(
-                    transferred["host_goal_binding"]["status"],
-                    "activation_pending",
-                )
+                with self.assertRaisesRegex(
+                    WorkflowError, "recover_legacy_active_delivery"
+                ):
+                    workflow.prepare_host_goal_owner_claim(OWNER_CLAIM_MESSAGE)
 
     def test_foreign_runtime_thread_is_reported_as_owner_recovery(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
@@ -496,130 +394,28 @@ class HostGoalOwnerV1026Tests(unittest.TestCase):
 
             migrated = load_state(project_root)
             self.assertEqual(migrated["next_gate"], "host_goal_owner_recovery")
-            claim = ProductDeliveryWorkflow(
-                project_root
-            ).prepare_host_goal_owner_claim(OWNER_CLAIM_MESSAGE)
-            transferred = ProductDeliveryWorkflow(
-                project_root
-            ).record_host_goal_owner_claim_observation(
-                claim["checkpoint_id"],
-                {
-                    "observation_source": "codex_goal_tool",
-                    "tool": "get_goal",
-                    "result": {"goal": None},
-                },
-            )
+            with self.assertRaisesRegex(
+                WorkflowError, "recover_legacy_active_delivery"
+            ):
+                ProductDeliveryWorkflow(project_root).prepare_host_goal_owner_claim(
+                    OWNER_CLAIM_MESSAGE
+                )
 
-            self.assertEqual(
-                transferred["host_goal_binding"]["resume_gate"], "TASK-001"
-            )
-
-    def test_fresh_thread_transfers_owner_and_preserves_classroom_evidence(self):
+    def test_fresh_recovery_archives_legacy_owner_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             classroom_v1025_state(project_root)
             migrated = load_state(project_root)
-            original_events = copy.deepcopy(
-                migrated["transition_journal"]["events"]
-            )
-            original_binding = copy.deepcopy(migrated["host_goal_binding"])
             original_marker = copy.deepcopy(migrated["classroom_recovery_fixture"])
 
             with patch.dict(os.environ, {"CODEX_THREAD_ID": FRESH_THREAD_ID}):
                 workflow = ProductDeliveryWorkflow(project_root)
-                claim = workflow.prepare_host_goal_owner_claim(
-                    OWNER_CLAIM_MESSAGE
-                )
-                transferred = workflow.record_host_goal_owner_claim_observation(
-                    claim["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "get_goal",
-                        "result": {"goal": None},
-                    },
-                )
-
+                recovered = workflow.recover_legacy_active_delivery()
+                self.assertNotEqual(recovered["delivery_id"], migrated["delivery_id"])
+                snapshot = project_root / recovered["previous_delivery"]["state_snapshot_path"]
                 self.assertEqual(
-                    transferred["host_goal_owner"]["status"], "claimed"
-                )
-                self.assertEqual(
-                    transferred["host_goal_owner"]["coordinator_thread_id"],
-                    FRESH_THREAD_ID,
-                )
-                self.assertEqual(
-                    transferred["host_goal_binding"]["owner_thread_id"],
-                    FRESH_THREAD_ID,
-                )
-                self.assertEqual(
-                    transferred["host_goal_binding"]["generation"],
-                    original_binding["generation"] + 1,
-                )
-                self.assertNotEqual(
-                    transferred["host_goal_binding"]["binding_nonce"],
-                    original_binding["binding_nonce"],
-                )
-                self.assertEqual(
-                    transferred["host_goal_binding"]["resume_gate"],
-                    "feature_closure_after_implementation",
-                )
-                self.assertEqual(
-                    transferred["classroom_recovery_fixture"], original_marker
-                )
-
-                history = transferred["host_goal_binding_history"][-1]
-                self.assertEqual(history["binding"], original_binding)
-                self.assertEqual(
-                    history["disposition"], "orphaned_unreachable"
-                )
-                self.assertEqual(
-                    history["binding"]["pending_checkpoint"]["operation"],
-                    "stage_transition",
-                )
-
-                events = transferred["transition_journal"]["events"]
-                self.assertEqual(events[:-1], original_events)
-                self.assertEqual(
-                    events[-1]["transition_name"], "host_goal_owner_transferred"
-                )
-                self.assertEqual(
-                    transferred["next_gate"], "host_goal_activation"
-                )
-
-                inspection = workflow.prepare_host_goal_activation()
-                workflow.record_host_goal_observation(
-                    inspection["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "get_goal",
-                        "result": {"goal": None},
-                    },
-                )
-                creation = workflow.prepare_host_goal_activation()
-                workflow.record_host_goal_observation(
-                    creation["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "create_goal",
-                        "result": goal_result(
-                            creation["objective"], thread_id=FRESH_THREAD_ID
-                        ),
-                    },
-                )
-                verification = workflow.prepare_host_goal_activation()
-                active = workflow.record_host_goal_observation(
-                    verification["checkpoint_id"],
-                    {
-                        "observation_source": "codex_goal_tool",
-                        "tool": "get_goal",
-                        "result": goal_result(
-                            creation["objective"], thread_id=FRESH_THREAD_ID
-                        ),
-                    },
-                )
-
-                self.assertEqual(active["host_goal_binding"]["status"], "active")
-                self.assertEqual(
-                    active["next_gate"], "feature_closure_after_implementation"
+                    json.loads(snapshot.read_text(encoding="utf-8"))["classroom_recovery_fixture"],
+                    original_marker,
                 )
 
     def test_terminal_history_does_not_require_owner_migration(self):

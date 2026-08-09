@@ -12,12 +12,14 @@ from pathlib import Path
 from typing import Any
 
 from product_delivery_agent.gatekeeper import (
+    PLUGIN_VERSION,
     TERMINAL_STATUSES,
     normalize_state_protocol,
     review_input_hash,
 )
 
 ARTIFACT_ROOT = ".product-delivery"
+WAYGATE_PLUGIN_NAME = "waygate-product-delivery"
 
 CORE_ARTIFACTS = {
     "product_brief": "product-brief.md",
@@ -39,6 +41,47 @@ AUTHORIZED_REVIEW_TYPES = [
 V1022_RUNTIME_VERSION = re.compile(
     r"^1\.0\.22(?:\+codex\.[A-Za-z0-9][A-Za-z0-9._-]*)?$"
 )
+
+
+def current_runtime_provenance() -> dict[str, str]:
+    """Return the identity of the runtime allowed to activate a delivery."""
+    package_root = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for source_path in sorted(package_root.glob("*.py")):
+        digest.update(source_path.name.encode("utf-8"))
+        digest.update(source_path.read_bytes())
+    return {
+        "plugin_name": WAYGATE_PLUGIN_NAME,
+        "plugin_version": PLUGIN_VERSION,
+        "package_root_sha256": digest.hexdigest(),
+    }
+
+
+def runtime_status(state: dict[str, Any], raw_state: dict[str, Any]) -> str:
+    """Classify whether an active delivery was activated by this runtime."""
+    if not state.get("active"):
+        return "inactive"
+    receipt = raw_state.get("runtime_provenance")
+    if not isinstance(receipt, dict):
+        return "legacy_unverified"
+    expected = current_runtime_provenance()
+    if receipt != expected:
+        return "invalid_runtime"
+    if not isinstance(raw_state.get("delivery_id"), str) or not raw_state["delivery_id"]:
+        return "legacy_unverified"
+    if not isinstance(raw_state.get("multi_agent_policy"), dict):
+        return "legacy_unverified"
+    if not isinstance(raw_state.get("host_goal_owner"), dict):
+        return "legacy_unverified"
+    journal = raw_state.get("transition_journal") or {}
+    events = journal.get("events") if isinstance(journal, dict) else None
+    if not isinstance(events, list) or not any(
+        event.get("transition_name") == "delivery_activated"
+        for event in events
+        if isinstance(event, dict)
+    ):
+        return "legacy_unverified"
+    return "verified_waygate"
 
 
 def initialize_workspace(

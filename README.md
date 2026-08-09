@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.26-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.27-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -93,6 +93,8 @@ Automated install:
 bash scripts/install_waygate_product_delivery.sh
 ```
 
+The installer detects legacy `product-delivery-agent` config, cache, and registry entries, removes the legacy plugin through Codex, and fails unless the enabled product-delivery selection is only `waygate-product-delivery@repo-local`.
+
 Manual install:
 
 ```bash
@@ -111,7 +113,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.26.tar.gz
+dist/waygate-product-delivery-1.0.27.tar.gz
 ```
 
 ## Use In Codex

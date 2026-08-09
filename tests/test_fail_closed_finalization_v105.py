@@ -98,7 +98,7 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
                 self.assertFalse(result.passed)
                 self.assertIn("closure_validation.status=passed", " ".join(result.missing_items))
 
-    def test_goal_stop_guard_blocks_missing_goal_after_handoff_or_terminal_state(self):
+    def test_stop_guard_rejects_unverified_active_state_before_goal_checks(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(
             os.environ,
             {"CODEX_THREAD_ID": "thread-v105-stop-guard"},
@@ -152,7 +152,7 @@ class FailClosedFinalizationV105Tests(unittest.TestCase):
             with self.assertRaises(WorkflowError) as caught:
                 workflow.assert_goal_can_stop()
 
-            self.assertIn("active delivery goal is required", str(caught.exception))
+            self.assertIn("legacy_unverified", str(caught.exception))
 
     def test_pre_handoff_state_may_have_no_delivery_goal(self):
         with tempfile.TemporaryDirectory() as tmp:

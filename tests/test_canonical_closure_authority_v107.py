@@ -164,17 +164,18 @@ class CanonicalClosureAuthorityV107Tests(unittest.TestCase):
     def test_project_type_normalization_is_persisted_by_workflow_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
+            workflow = ProductDeliveryWorkflow(project_root)
+            state = workflow.start(
+                feature_slug="v1.0.7-normalize-project-type",
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            state["project_type"] = "web_system"
             write_raw_state(
                 project_root,
-                {
-                    "active": True,
-                    "feature_slug": "v1.0.7-normalize-project-type",
-                    "project_type": "web_system",
-                    "stage": "planning",
-                },
+                state,
             )
 
-            state = ProductDeliveryWorkflow(project_root).status()
+            state = workflow.status()
             raw = json.loads(
                 (project_root / ARTIFACT_ROOT / "state.json").read_text(
                     encoding="utf-8"

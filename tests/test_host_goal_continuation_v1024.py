@@ -475,7 +475,7 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                     cr_id="CR-HOST-GOAL-001",
                 )
 
-    def test_v1023_active_handoff_migrates_without_losing_delivery_evidence(self):
+    def test_v1023_active_handoff_requires_fresh_waygate_recovery(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = handed_off_workflow(project_root)
@@ -509,21 +509,20 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
             )
 
             legacy_workflow = ProductDeliveryWorkflow(project_root)
-            claim = legacy_workflow.prepare_host_goal_owner_claim(
-                "恢复交付主线程，接管当前 Host Goal"
-            )
-            recovered = legacy_workflow.record_host_goal_owner_claim_observation(
-                claim["checkpoint_id"],
-                {
-                    "observation_source": "codex_goal_tool",
-                    "tool": "get_goal",
-                    "result": {"goal": None},
-                },
-            )
             self.assertEqual(
-                recovered["host_goal_binding"]["status"], "activation_pending"
+                legacy_workflow.status()["runtime_status"], "legacy_unverified"
             )
-            self.assertEqual(recovered["classroom_evidence_marker"], legacy_marker)
+            with self.assertRaisesRegex(WorkflowError, "recover_legacy_active_delivery"):
+                legacy_workflow.prepare_host_goal_owner_claim(
+                    "恢复交付主线程，接管当前 Host Goal"
+                )
+            recovered = legacy_workflow.recover_legacy_active_delivery()
+            self.assertNotEqual(recovered["delivery_id"], current["delivery_id"])
+            snapshot = project_root / recovered["previous_delivery"]["state_snapshot_path"]
+            self.assertEqual(
+                json.loads(snapshot.read_text(encoding="utf-8"))["classroom_evidence_marker"],
+                legacy_marker,
+            )
 
     def test_missing_or_prematurely_complete_goal_requires_new_authorization(self):
         for observed_status, observed_result in (
