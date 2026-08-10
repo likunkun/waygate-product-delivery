@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from product_delivery_agent.gatekeeper import state_requires_delivery_goal
@@ -14,6 +15,8 @@ class DeliveryGoalError(RuntimeError):
 
 
 REQUIRED_TASK_FIELDS = ("task_id", "title", "description", "verification")
+_STANDARD_TASK_ID = re.compile(r"^TASK-(\d{3})$")
+_STANDARD_TASK_RANGE = re.compile(r"^TASK-(\d{3})\.\.TASK-(\d{3})$")
 
 
 def normalize_planned_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -61,11 +64,23 @@ def normalize_planned_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]
 def planned_tasks_from_coverage(state: dict[str, Any]) -> list[dict[str, Any]]:
     """Derive a conservative TASK queue from the coverage audit rows."""
     rows = state.get("test_coverage_audit", {}).get("rows", [])
-    task_ids = []
+    standard_task_numbers: set[int] = set()
+    custom_task_ids: list[str] = []
     for row in rows:
         task_id = row.get("task")
-        if _has_value(task_id) and task_id not in task_ids:
-            task_ids.append(task_id)
+        if not _has_value(task_id):
+            continue
+        parsed_task_ids = _parse_coverage_task_reference(str(task_id))
+        if parsed_task_ids is None:
+            custom_task_id = str(task_id)
+            if custom_task_id not in custom_task_ids:
+                custom_task_ids.append(custom_task_id)
+            continue
+        standard_task_numbers.update(parsed_task_ids)
+    task_ids = [
+        f"TASK-{task_number:03d}"
+        for task_number in sorted(standard_task_numbers)
+    ] + custom_task_ids
     if not task_ids:
         return []
     return [
@@ -77,6 +92,28 @@ def planned_tasks_from_coverage(state: dict[str, Any]) -> list[dict[str, Any]]:
         }
         for task_id in task_ids
     ]
+
+
+def _parse_coverage_task_reference(reference: str) -> list[int] | None:
+    """Expand only fully standard TASK references; preserve custom IDs intact."""
+    parts = [part.strip() for part in reference.split(",")]
+    if not parts or any(not part for part in parts):
+        return None
+    task_numbers: list[int] = []
+    for part in parts:
+        task_match = _STANDARD_TASK_ID.fullmatch(part)
+        if task_match:
+            task_numbers.append(int(task_match.group(1)))
+            continue
+        range_match = _STANDARD_TASK_RANGE.fullmatch(part)
+        if not range_match:
+            return None
+        range_start = int(range_match.group(1))
+        range_end = int(range_match.group(2))
+        if range_start > range_end:
+            return None
+        task_numbers.extend(range(range_start, range_end + 1))
+    return task_numbers
 
 
 def build_delivery_goal(
