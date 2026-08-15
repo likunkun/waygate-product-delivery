@@ -23,6 +23,9 @@
 - Task 4 RED verified: the domain builder/API were missing and functionally passing UI tasks completed without prototype-conformance evidence.
 - Task 4 GREEN: implemented RGB/RGBA PNG decoding with filters 0–4, semantic/route/interaction/style/geometry/pixel comparison, canonical passed/failed/inconclusive evidence, completion blocking, transition journaling, and next-task prompt regeneration.
 - Task 4 regression is green: 55 tests passed across V1.0.28 closure, final production conformance, goal-driven closure, and canonical launch suites.
+- Task 5 RED verified: the launch package omitted the baseline hash, completion reuse ignored task conformance identity, product-domain changes left baseline evidence ready, and reopened grandfathered UI stayed outside the new policy.
+- Task 5 GREEN: launch authorization now binds the implementation baseline, task completion artifacts bind conformance evidence, reuse requires matching baseline/task/conformance identities, product or visual-policy changes stale implementation evidence, annotation-only changes preserve it, and reopened grandfathered UI upgrades to the required policy.
+- Task 5 regression is green: 55 tests passed across V1.0.28 closure, launch supersession, prototype-design lifecycle, and canonical launch suites.
 
 ## Session: 2026-06-21
 

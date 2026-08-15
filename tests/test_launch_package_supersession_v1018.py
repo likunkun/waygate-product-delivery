@@ -6,7 +6,11 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.transition_journal import has_transition
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
-from tests.conformance_fixtures import activate_host_goal, reconcile_host_goal
+from tests.conformance_fixtures import (
+    activate_host_goal,
+    record_passing_task_prototype_conformance,
+    reconcile_host_goal,
+)
 from tests.test_canonical_launch_v106 import planned_tasks, workflow_ready_for_launch
 
 
@@ -27,18 +31,29 @@ def task_completion_artifact(state, task_id):
 
 
 def changed_task_queue():
+    binding = {
+        "surface_id": "primary-surface",
+        "state_id": "ready",
+        "viewport_classes": ["desktop"],
+        "region_ids": ["primary-region"],
+        "interaction_ids": ["primary-action"],
+    }
     return [
         {
             "task_id": "TASK-001",
             "title": "Implement revised provider governance",
             "description": "Deliver the revised frozen provider governance slice.",
             "verification": "pytest -k task_001_revised",
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [dict(binding)],
         },
         {
             "task_id": "TASK-002",
             "title": "Verify revised provider governance",
             "description": "Verify the revised provider governance slice.",
             "verification": "pytest -k task_002",
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [dict(binding)],
         },
     ]
 
@@ -52,6 +67,11 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
             planned_tasks=planned_tasks(),
         )
         activate_host_goal(workflow)
+        record_passing_task_prototype_conformance(
+            workflow,
+            project_root,
+            "TASK-001",
+        )
         reconcile_host_goal(workflow)
         workflow.record_task_completion(
             "TASK-001",

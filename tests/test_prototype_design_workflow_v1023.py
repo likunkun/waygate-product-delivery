@@ -21,6 +21,7 @@ from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_design_bundle_payload,
+    record_passing_task_prototype_conformance,
     reconcile_host_goal,
     record_prototype_design_bundle,
     ui_conformance_review_payload,
@@ -562,6 +563,11 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = handoff_workflow(project_root)
             activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow,
+                project_root,
+                "TASK-001",
+            )
             reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
@@ -587,6 +593,11 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = handoff_workflow(project_root)
             activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow,
+                project_root,
+                "TASK-001",
+            )
             reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
@@ -636,14 +647,18 @@ class PrototypeDesignWorkflowV1023Tests(unittest.TestCase):
             original_confirmations = copy.deepcopy(
                 original_state["user_confirmations"]
             )
+            activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow,
+                project_root,
+                "TASK-001",
+            )
             changed_payload = prototype_design_bundle_payload(
                 project_root,
                 prototype_path=original_state["ui_prototype"]["prototype_path"],
                 contract=original_state["prototype_contract"],
                 annotation_text="Re-review the annotation-only continuity guidance.",
             )
-
-            activate_host_goal(workflow)
             reconcile_host_goal(workflow)
             pending = workflow.record_ui_prototype_design_bundle(changed_payload)
 

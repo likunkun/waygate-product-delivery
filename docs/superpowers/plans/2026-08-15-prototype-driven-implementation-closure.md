@@ -154,17 +154,17 @@ Expected: all selected tests pass.
 - Modify: `src/product_delivery_agent/gatekeeper.py`
 - Test: `tests/test_prototype_implementation_closure_v1028.py`
 
-- [ ] **Step 1: Write failing staleness tests**
+- [x] **Step 1: Write failing staleness tests**
 
 Prove that baseline hash and task binding changes alter the launch hash, old task conformance cannot complete a changed task, product-domain changes stale all implementation evidence, annotation-only changes preserve it, and a reopened grandfathered UI delivery upgrades to required policy.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
-- [ ] **Step 3: Implement launch-package binding and compatibility helpers**
+- [x] **Step 3: Implement launch-package binding and compatibility helpers**
 
 Include `implementation_baseline_sha256` in `_build_launch_package`. Extend invalidation and reusable-completion logic to honor baseline/task-conformance identities. Keep non-UI and untouched grandfathered UI paths byte-compatible with current task behavior.
 
-- [ ] **Step 4: Run launch, invalidation, and compatibility suites**
+- [x] **Step 4: Run launch, invalidation, and compatibility suites**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_prototype_implementation_closure_v1028.py tests/test_launch_package_supersession_v1018.py tests/test_prototype_design_workflow_v1023.py tests/test_canonical_launch_v106.py -v`
 

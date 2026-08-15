@@ -23,6 +23,7 @@ from tests.conformance_fixtures import (
     prototype_contract,
     prototype_design_bundle_payload,
     record_bundled_ui_prototype_review,
+    record_passing_task_prototype_conformance,
 )
 from tests.test_goal_driven_closure_v104 import (
     activate_host_goal,
@@ -935,6 +936,235 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
                     for event in completed["transition_journal"]["events"]
                 )
             )
+
+
+class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
+    @staticmethod
+    def launch_args(task):
+        return {
+            "scope": "Implement the confirmed UI",
+            "verification_commands": ["pytest"],
+            "prohibited_work": [],
+            "planned_tasks": [task],
+        }
+
+    def handoff_with_task_conformance(self, root: Path):
+        workflow = workflow_ready_for_handoff(root)
+        task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
+        workflow.record_implementation_launch_authorization(
+            scope="Implement the confirmed UI",
+            verification_commands=["pytest"],
+            planned_tasks=[task],
+        )
+        workflow.generate_codex_goal_handoff(
+            scope="Implement the confirmed UI",
+            verification_commands=["pytest"],
+            planned_tasks=[task],
+        )
+        activate_host_goal(workflow)
+        record_passing_task_prototype_conformance(
+            workflow,
+            root,
+            "TASK-001",
+        )
+        return workflow
+
+    def test_launch_package_hash_binds_baseline_and_task_bindings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = workflow_ready_for_handoff(Path(tmp))
+            state = workflow.status()
+            task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(state)
+
+            first = workflow._build_launch_package(
+                state,
+                **self.launch_args(task),
+            )
+
+            self.assertEqual(
+                first["implementation_baseline_sha256"],
+                state["implementation_baseline"]["baseline_sha256"],
+            )
+            changed_baseline_state = deepcopy(state)
+            changed_baseline_state["implementation_baseline"][
+                "baseline_sha256"
+            ] = "d" * 64
+            changed_baseline = workflow._build_launch_package(
+                changed_baseline_state,
+                **self.launch_args(task),
+            )
+            self.assertNotEqual(
+                first["launch_package_hash"],
+                changed_baseline["launch_package_hash"],
+            )
+
+            changed_binding_state = deepcopy(state)
+            unit = changed_binding_state["implementation_baseline"]["units"][0]
+            unit["region_ids"].append("secondary-region")
+            changed_task = deepcopy(task)
+            changed_task["prototype_bindings"][0]["region_ids"] = [
+                "secondary-region"
+            ]
+            changed_binding = workflow._build_launch_package(
+                changed_binding_state,
+                **self.launch_args(changed_task),
+            )
+            self.assertNotEqual(
+                first["launch_package_hash"],
+                changed_binding["launch_package_hash"],
+            )
+
+    def test_completion_reuse_requires_current_baseline_and_task_conformance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = workflow_ready_for_handoff(Path(tmp))
+            state = workflow.status()
+            task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(state)
+            package = workflow._build_launch_package(
+                state,
+                **self.launch_args(task),
+            )
+            normalized = package["task_queue"][0]
+            baseline_hash = state["implementation_baseline"]["baseline_sha256"]
+            evidence_hash = "e" * 64
+            previous_goal = {
+                "planned_tasks": [normalized],
+                "completed_tasks": ["TASK-001"],
+                "task_completion_artifacts": {
+                    "TASK-001": {
+                        "planned_task_hash": normalized["planned_task_hash"],
+                        "implementation_baseline_sha256": baseline_hash,
+                        "task_prototype_conformance_sha256": evidence_hash,
+                    }
+                },
+            }
+            next_goal = {"planned_tasks": [normalized]}
+            old_conformance = {
+                "records": {
+                    "TASK-001": {
+                        "status": "passed",
+                        "planned_task_hash": normalized["planned_task_hash"],
+                        "implementation_baseline_sha256": baseline_hash,
+                        "evidence_sha256": evidence_hash,
+                    }
+                }
+            }
+            changed_baseline = deepcopy(state["implementation_baseline"])
+            changed_baseline["baseline_sha256"] = "f" * 64
+
+            matches = workflow._matching_task_completions(
+                previous_goal,
+                next_goal,
+                implementation_baseline=changed_baseline,
+                task_prototype_conformance=old_conformance,
+            )
+
+            self.assertEqual(matches, {})
+
+    def test_product_domain_change_stales_baseline_task_evidence_and_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = self.handoff_with_task_conformance(root)
+            state = workflow.status()
+            prototype_path = state["implementation_baseline"]["prototype_path"]
+
+            reconcile_host_goal(workflow)
+            workflow.record_user_requested_change(
+                targets=["product_baseline"],
+                user_message="Change the confirmed primary surface.",
+            )
+            prototype = root / prototype_path
+            prototype.write_text(
+                prototype.read_text(encoding="utf-8") + "\n<!-- product change -->\n",
+                encoding="utf-8",
+            )
+            changed_payload = prototype_design_bundle_payload(
+                root,
+                prototype_path=prototype_path,
+                contract=prototype_contract(),
+                annotation_text="Review the changed product surface.",
+            )
+            reconcile_host_goal(workflow)
+            changed = workflow.record_ui_prototype_design_bundle(changed_payload)
+
+            self.assertEqual(changed["implementation_baseline"]["status"], "stale")
+            self.assertEqual(changed["task_prototype_conformance"]["status"], "stale")
+            self.assertEqual(
+                changed["task_prototype_conformance"]["records"]["TASK-001"][
+                    "status"
+                ],
+                "stale",
+            )
+            self.assertEqual(
+                changed["implementation_launch_authorization"]["status"],
+                "stale",
+            )
+
+    def test_annotation_only_change_preserves_implementation_baseline_and_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = self.handoff_with_task_conformance(root)
+            original = workflow.status()
+            original_baseline = deepcopy(original["implementation_baseline"])
+            original_conformance = deepcopy(original["task_prototype_conformance"])
+            original_authorization = deepcopy(
+                original["implementation_launch_authorization"]
+            )
+            annotation_payload = prototype_design_bundle_payload(
+                root,
+                prototype_path=original_baseline["prototype_path"],
+                contract=prototype_contract(),
+                annotation_text="Review annotation revision only.",
+            )
+
+            reconcile_host_goal(workflow)
+            changed = workflow.record_ui_prototype_design_bundle(annotation_payload)
+
+            self.assertEqual(changed["implementation_baseline"], original_baseline)
+            self.assertEqual(
+                changed["task_prototype_conformance"],
+                original_conformance,
+            )
+            self.assertEqual(
+                changed["implementation_launch_authorization"],
+                original_authorization,
+            )
+
+    def test_reopened_visual_threshold_change_stales_implementation_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = self.handoff_with_task_conformance(root)
+
+            reconcile_host_goal(workflow)
+            workflow.record_user_requested_change(
+                targets=["product_baseline"],
+                user_message="Use a stricter visual threshold.",
+            )
+            reconcile_host_goal(workflow)
+            changed = workflow.record_implementation_visual_policy(
+                {"full_surface_max_diff_ratio": 0.03}
+            )
+
+            self.assertEqual(changed["implementation_baseline"]["status"], "stale")
+            self.assertEqual(changed["task_prototype_conformance"]["status"], "stale")
+            self.assertEqual(
+                changed["implementation_launch_authorization"]["status"],
+                "stale",
+            )
+
+    def test_reopened_grandfathered_ui_upgrades_to_required_policy(self):
+        state = {
+            "project_type": "ui",
+            "prototype_design_bundle": {"status": "legacy_grandfathered"},
+            "ui_prototype": {"confirmed_by_user": True},
+            "user_confirmations": {
+                "product_baseline": {"decision": "approved"}
+            },
+        }
+
+        ProductDeliveryWorkflow._reopen_legacy_prototype_design_bundle(state)
+
+        self.assertTrue(implementation_baseline_required(state))
+        self.assertEqual(state["implementation_baseline"]["status"], "missing")
+        self.assertEqual(state["task_prototype_conformance"]["status"], "missing")
 
 
 if __name__ == "__main__":
