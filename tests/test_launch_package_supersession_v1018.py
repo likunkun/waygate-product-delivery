@@ -167,6 +167,30 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
                 "TASK-001", state["delivery_goal"]["task_completion_artifacts"]
             )
             self.assertEqual(state["delivery_goal"]["current_task_cursor"], "TASK-002")
+            self.assertIn("Task: TASK-002", state["current_task_prompt"])
+            self.assertNotIn("Task: TASK-001", state["current_task_prompt"])
+            self.assertIn(
+                "Current task cursor: TASK-002",
+                state["codex_goal_prompt"],
+            )
+
+    def test_all_reused_tasks_render_completed_current_task_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            replacement = planned_tasks()
+            workflow = self._stale_launch_workflow(Path(tmp), replacement)
+
+            state = workflow.recover_stale_launch_package(
+                scope="Implement the revised frozen package",
+                verification_commands=["pytest"],
+                planned_tasks=replacement,
+            )
+
+            self.assertIsNone(state["delivery_goal"]["current_task_cursor"])
+            self.assertIn(
+                "All planned TASKs are complete",
+                state["current_task_prompt"],
+            )
+            self.assertIn("Current task cursor: None", state["codex_goal_prompt"])
 
     def test_matching_launch_package_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:

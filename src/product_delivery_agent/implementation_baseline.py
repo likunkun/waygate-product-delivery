@@ -23,6 +23,14 @@ class ImplementationBaselineError(RuntimeError):
     """Raised when implementation baseline evidence is invalid."""
 
 
+class _PNGDimensionsMismatch(ImplementationBaselineError):
+    """Raised before decoding a production PNG with unexpected dimensions."""
+
+
+class _PNGResourceLimitError(ImplementationBaselineError):
+    """Raised when PNG evidence exceeds bounded decoder resources."""
+
+
 BASELINE_VERSION = "v1"
 VISUAL_POLICY_VERSION = "v1"
 TASK_CONFORMANCE_VERSION = "v1"
@@ -50,6 +58,9 @@ _MASK_FIELDS = {
     "viewport_class",
     "region_ids",
 }
+_MAX_PNG_FILE_BYTES = 16 * 1024 * 1024
+_MAX_PNG_PIXELS = 16_000_000
+_MAX_PNG_DECODED_BYTES = 64 * 1024 * 1024
 
 
 def implementation_baseline_required(state: dict[str, Any]) -> bool:
@@ -60,6 +71,66 @@ def implementation_baseline_required(state: dict[str, Any]) -> bool:
         and policy.get("policy_version") == BASELINE_VERSION
         and policy.get("status") == "required"
     )
+
+
+def validate_implementation_baseline(value: dict[str, Any]) -> dict[str, Any]:
+    """Validate and return a canonical persisted implementation baseline."""
+    if not isinstance(value, dict) or value.get("status") != "ready":
+        raise ImplementationBaselineError(
+            "canonical implementation baseline must have status ready"
+        )
+    body = {
+        key: deepcopy(item)
+        for key, item in value.items()
+        if key not in {"status", "baseline_sha256"}
+    }
+    if value.get("baseline_sha256") != stable_json_hash(body):
+        raise ImplementationBaselineError(
+            "canonical implementation baseline hash is invalid"
+        )
+    if value.get("baseline_version") != BASELINE_VERSION:
+        raise ImplementationBaselineError(
+            f"canonical implementation baseline version must be {BASELINE_VERSION}"
+        )
+    if not isinstance(value.get("units"), list) or not value["units"]:
+        raise ImplementationBaselineError(
+            "canonical implementation baseline units are required"
+        )
+    return deepcopy(value)
+
+
+def validate_task_prototype_conformance(value: dict[str, Any]) -> dict[str, Any]:
+    """Validate and return a canonical persisted task conformance artifact."""
+    if not isinstance(value, dict) or value.get("status") not in {
+        "passed",
+        "failed",
+        "inconclusive",
+    }:
+        raise ImplementationBaselineError(
+            "canonical task prototype conformance status is invalid"
+        )
+    body = {
+        key: deepcopy(item)
+        for key, item in value.items()
+        if key not in {"status", "evidence_sha256"}
+    }
+    if value.get("evidence_sha256") != stable_json_hash(body):
+        raise ImplementationBaselineError(
+            "canonical task prototype conformance evidence hash is invalid"
+        )
+    if value.get("conformance_version") != TASK_CONFORMANCE_VERSION:
+        raise ImplementationBaselineError(
+            "canonical task prototype conformance version is invalid"
+        )
+    if value.get("status") == "passed" and (
+        value.get("environment_status") != "stable"
+        or value.get("failures")
+        or value.get("failure_codes")
+    ):
+        raise ImplementationBaselineError(
+            "canonical task prototype conformance passed status is inconsistent"
+        )
+    return deepcopy(value)
 
 
 def normalize_visual_policy(
@@ -467,6 +538,22 @@ def _validate_task_unit(
             project_root,
             str(record.get("production_screenshot_path") or ""),
             reuse_pixels_from=prototype_image,
+            expected_width=prototype_image["width"],
+            expected_height=prototype_image["height"],
+        )
+    except _PNGDimensionsMismatch as cause:
+        _record_failure(
+            local_failures,
+            "screenshot_dimensions_mismatch",
+            str(cause),
+            unit_key=key,
+        )
+    except _PNGResourceLimitError as cause:
+        _record_failure(
+            local_failures,
+            "png_resource_limit",
+            str(cause),
+            unit_key=key,
         )
     except (EvidenceArtifactError, ImplementationBaselineError, OSError) as cause:
         _record_failure(
@@ -912,9 +999,26 @@ def _decode_png(
     artifact_path: str,
     *,
     reuse_pixels_from: dict[str, Any] | None = None,
+    expected_width: int | None = None,
+    expected_height: int | None = None,
 ) -> dict[str, Any]:
-    metadata = validate_png(project_root, artifact_path)
     path = resolve_project_path(project_root, artifact_path, artifact_only=True)
+    if path.stat().st_size > _MAX_PNG_FILE_BYTES:
+        raise _PNGResourceLimitError("PNG file exceeds the decoder size limit")
+    metadata = validate_png(project_root, artifact_path)
+    if (
+        expected_width is not None
+        and expected_height is not None
+        and (
+            metadata["width"] != expected_width
+            or metadata["height"] != expected_height
+        )
+    ):
+        raise _PNGDimensionsMismatch(
+            "production screenshot dimensions must match the prototype"
+        )
+    if metadata["width"] * metadata["height"] > _MAX_PNG_PIXELS:
+        raise _PNGResourceLimitError("PNG pixel count exceeds the decoder limit")
     if (
         reuse_pixels_from is not None
         and metadata["sha256"] == reuse_pixels_from.get("sha256")
@@ -950,11 +1054,26 @@ def _decode_png(
         )
     channels = 3 if color_type == 2 else 4
     stride = width * channels
+    expected_decoded_bytes = height * (stride + 1)
+    if expected_decoded_bytes > _MAX_PNG_DECODED_BYTES:
+        raise _PNGResourceLimitError(
+            "PNG decoded data exceeds the decoder size limit"
+        )
     try:
-        decoded = zlib.decompress(bytes(compressed))
+        decoder = zlib.decompressobj()
+        decoded = decoder.decompress(
+            bytes(compressed),
+            expected_decoded_bytes + 1,
+        )
     except zlib.error as cause:
         raise ImplementationBaselineError("PNG IDAT stream is invalid") from cause
-    if len(decoded) != height * (stride + 1):
+    if len(decoded) > expected_decoded_bytes or decoder.unconsumed_tail:
+        raise _PNGResourceLimitError(
+            "PNG decompressed data exceeds its declared dimensions"
+        )
+    if not decoder.eof or decoder.unused_data:
+        raise ImplementationBaselineError("PNG IDAT stream is invalid")
+    if len(decoded) != expected_decoded_bytes:
         raise ImplementationBaselineError("PNG decoded data length is invalid")
 
     previous = bytearray(stride)

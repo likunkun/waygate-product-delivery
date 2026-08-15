@@ -7,6 +7,9 @@ from typing import Any
 from product_delivery_agent.confirmation_policy import USER_CONFIRMATION_TARGETS
 
 
+_CURRENT_TASK_UNSET = object()
+
+
 class HandoffError(RuntimeError):
     """Raised when Codex Goal handoff cannot be generated."""
 
@@ -19,6 +22,7 @@ def build_codex_goal_handoff(
     verification_commands: list[str] | None = None,
     prohibited_work: list[str] | None = None,
     planned_tasks: list[dict[str, Any]] | None = None,
+    current_task_cursor: str | None | object = _CURRENT_TASK_UNSET,
 ) -> dict[str, Any]:
     """Build closure-ready handoff data from validated workflow state."""
     if not scope.strip():
@@ -63,7 +67,13 @@ def build_codex_goal_handoff(
         "prohibited_work": list(prohibited_work or []),
         "planned_tasks": list(planned_tasks or []),
         "current_task_cursor": (
-            planned_tasks[0]["task_id"] if planned_tasks else None
+            planned_tasks[0]["task_id"]
+            if current_task_cursor is _CURRENT_TASK_UNSET and planned_tasks
+            else (
+                None
+                if current_task_cursor is _CURRENT_TASK_UNSET
+                else current_task_cursor
+            )
         ),
         "implementation_baseline": baseline_summary,
         "current_task_prompt_path": (

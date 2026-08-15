@@ -6,6 +6,7 @@ import zlib
 from copy import deepcopy
 from pathlib import Path
 
+from product_delivery_agent.artifact_protocol import write_state
 from product_delivery_agent.evidence_artifacts import sha256_file
 from product_delivery_agent.implementation_baseline import (
     DEFAULT_VISUAL_POLICY,
@@ -96,6 +97,27 @@ def _write_rgba_png(path: Path, rows, *, filter_types=None):
 def _write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_crafted_rgba_png(path: Path, *, width: int, height: int, decoded: bytes):
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def chunk(kind, data):
+        body = kind + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    image = b"\x89PNG\r\n\x1a\n"
+    image += chunk(
+        b"IHDR",
+        struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0),
+    )
+    image += chunk(b"IDAT", zlib.compress(decoded))
+    image += chunk(b"IEND", b"")
+    path.write_bytes(image)
 
 
 class PrototypeImplementationBaselineV1028Tests(unittest.TestCase):
@@ -770,6 +792,34 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
             self.assertEqual(evidence["status"], "inconclusive")
             self.assertIn("environment_inconclusive", evidence["failure_codes"])
 
+    def test_png_dimensions_and_decompression_bombs_fail_closed(self):
+        cases = (
+            (100_000, 100_000, b"\x00", "screenshot_dimensions_mismatch"),
+            (10, 5, b"\x00" * 1_000_000, "png_resource_limit"),
+        )
+        for width, height, decoded, expected_code in cases:
+            with self.subTest(expected_code=expected_code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                baseline, task, payload, _, production_path = (
+                    self.build_domain_fixture(root)
+                )
+                _write_crafted_rgba_png(
+                    production_path,
+                    width=width,
+                    height=height,
+                    decoded=decoded,
+                )
+
+                evidence = build_task_prototype_conformance(
+                    root,
+                    payload,
+                    implementation_baseline=baseline,
+                    planned_task=task,
+                )
+
+                self.assertEqual(evidence["status"], "failed")
+                self.assertIn(expected_code, evidence["failure_codes"])
+
     def workflow_conformance_payload(self, root: Path, state):
         baseline = state["implementation_baseline"]
         task = state["delivery_goal"]["planned_tasks"][0]
@@ -937,6 +987,87 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
                 )
             )
 
+    def test_task_conformance_rejects_mutable_state_baseline_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = workflow_ready_for_handoff(root)
+            task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
+            workflow.record_implementation_launch_authorization(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+            workflow.generate_codex_goal_handoff(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+            activate_host_goal(workflow)
+            payload = self.workflow_conformance_payload(root, workflow.status())
+            state = workflow.status()
+            state["implementation_baseline"]["units"][0]["route"] = (
+                "/state-redesign"
+            )
+            write_state(root, state)
+
+            reconcile_host_goal(workflow)
+            with self.assertRaisesRegex(
+                WorkflowError,
+                "canonical implementation baseline",
+            ):
+                workflow.record_task_prototype_conformance("TASK-001", payload)
+
+    def test_completion_rejects_state_override_of_failed_conformance_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = workflow_ready_for_handoff(root)
+            task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
+            workflow.record_implementation_launch_authorization(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+            workflow.generate_codex_goal_handoff(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+            activate_host_goal(workflow)
+            reconcile_host_goal(workflow)
+            current = workflow.status()
+            failed = workflow.record_task_prototype_conformance(
+                "TASK-001",
+                {
+                    "implementation_baseline_sha256": current[
+                        "implementation_baseline"
+                    ]["baseline_sha256"],
+                    "planned_task_hash": current["delivery_goal"]["planned_tasks"][
+                        0
+                    ]["planned_task_hash"],
+                    "environment_status": "inconclusive",
+                    "environment_reason": "renderer crashed",
+                    "records": [],
+                },
+            )
+            failed["task_prototype_conformance"]["status"] = "passed"
+            failed["task_prototype_conformance"]["records"]["TASK-001"][
+                "status"
+            ] = "passed"
+            write_state(root, failed)
+
+            reconcile_host_goal(workflow)
+            with self.assertRaisesRegex(
+                WorkflowError,
+                "canonical task prototype conformance",
+            ):
+                workflow.record_task_completion(
+                    "TASK-001",
+                    artifact=task_completion_artifact(
+                        workflow.status(),
+                        "TASK-001",
+                    ),
+                )
+
 
 class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
     @staticmethod
@@ -969,7 +1100,7 @@ class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
         )
         return workflow
 
-    def test_launch_package_hash_binds_baseline_and_task_bindings(self):
+    def test_launch_package_hash_binds_canonical_baseline_and_task_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = workflow_ready_for_handoff(Path(tmp))
             state = workflow.status()
@@ -984,34 +1115,47 @@ class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
                 first["implementation_baseline_sha256"],
                 state["implementation_baseline"]["baseline_sha256"],
             )
-            changed_baseline_state = deepcopy(state)
-            changed_baseline_state["implementation_baseline"][
-                "baseline_sha256"
-            ] = "d" * 64
-            changed_baseline = workflow._build_launch_package(
-                changed_baseline_state,
-                **self.launch_args(task),
-            )
-            self.assertNotEqual(
-                first["launch_package_hash"],
-                changed_baseline["launch_package_hash"],
-            )
-
-            changed_binding_state = deepcopy(state)
-            unit = changed_binding_state["implementation_baseline"]["units"][0]
-            unit["region_ids"].append("secondary-region")
             changed_task = deepcopy(task)
-            changed_task["prototype_bindings"][0]["region_ids"] = [
-                "secondary-region"
-            ]
-            changed_binding = workflow._build_launch_package(
-                changed_binding_state,
+            changed_task["ui_impact"] = "none"
+            changed_task["ui_impact_reason"] = "Verification-only task."
+            changed_task["prototype_bindings"] = []
+            changed_contract = workflow._build_launch_package(
+                state,
                 **self.launch_args(changed_task),
             )
             self.assertNotEqual(
                 first["launch_package_hash"],
-                changed_binding["launch_package_hash"],
+                changed_contract["launch_package_hash"],
             )
+
+    def test_launch_rejects_mutable_state_or_artifact_baseline_drift(self):
+        for drift_target in ("state", "artifact"):
+            with self.subTest(drift_target=drift_target), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                workflow = workflow_ready_for_handoff(root)
+                state = workflow.status()
+                task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(state)
+                if drift_target == "state":
+                    state["implementation_baseline"]["units"][0]["route"] = (
+                        "/state-redesign"
+                    )
+                else:
+                    artifact_path = (
+                        root
+                        / ".product-delivery/artifacts/implementation-baseline.json"
+                    )
+                    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+                    artifact["units"][0]["route"] = "/artifact-redesign"
+                    _write_json(artifact_path, artifact)
+
+                with self.assertRaisesRegex(
+                    WorkflowError,
+                    "canonical implementation baseline",
+                ):
+                    workflow._build_launch_package(
+                        state,
+                        **self.launch_args(task),
+                    )
 
     def test_completion_reuse_requires_current_baseline_and_task_conformance(self):
         with tempfile.TemporaryDirectory() as tmp:
