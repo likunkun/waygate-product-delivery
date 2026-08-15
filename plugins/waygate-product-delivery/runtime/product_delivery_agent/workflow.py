@@ -2474,6 +2474,18 @@ class ProductDeliveryWorkflow:
                 self.project_root,
                 launch_package_hash="missing-launch-package",
             )
+        else:
+            pre_package_blockers = [
+                blocker
+                for blocker in derive_blockers(state, self.project_root)
+                if blocker != "implementation_launch_authorization"
+                and blocker != "stale_implementation_launch_authorization"
+            ]
+            if pre_package_blockers:
+                raise GatekeeperError(
+                    "pre-handoff gate blocked: "
+                    + ", ".join(sorted(pre_package_blockers))
+                )
         package = self._build_launch_package(
             state,
             scope=scope,
