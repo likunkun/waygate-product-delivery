@@ -2658,3 +2658,13 @@ Follow-up at `2026-06-25 00:31 +0800`:
   - `python3 /home/lichangkun/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py plugins/waygate-product-delivery` passed.
   - `env -u PYTHONPATH PYTHONNOUSERSITE=1 python3 plugins/waygate-product-delivery/scripts/validate-closure-artifact.py --help` passed.
   - `tar -tzf dist/waygate-product-delivery-1.0.11.tar.gz` check confirmed no OpenCode assets or OpenCode `package.json` are packaged.
+
+### V1.0.28 Lightweight Prototype-Driven Implementation Closure
+
+- Persisted the approved design and implementation plan on branch `feature/1.0.28-prototype-closure`.
+- Added RED-first coverage for canonical `implementation_baseline`, UI TASK impact/bindings, focused Goal/TASK prompts, per-task prototype conformance, invalidation, launch/closure identities, grandfathering, and package metadata.
+- Implemented the frozen UI implementation baseline and task-slice binding rules without changing closure schema `v0.11`.
+- Added `record_task_prototype_conformance()` and made current passed conformance evidence mandatory before a UI TASK can complete.
+- Bound launch authorization and completion reuse to implementation baseline, TASK, and conformance identities; product-domain or visual-policy changes now stale downstream evidence while annotation-only changes preserve it.
+- Updated product runtime version to `1.0.28`, regenerated the repository plugin, and refreshed its local cachebuster to `1.0.28+codex.20260815052143` using the plugin-creator helper.
+- Packaging verification passed: 8 tests; plugin structural validation passed.

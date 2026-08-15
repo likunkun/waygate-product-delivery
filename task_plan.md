@@ -13,9 +13,9 @@ Waygate Product Delivery `1.0.28` lightweight prototype-driven implementation cl
 ### Active Phase - V1.0.28 Prototype-Driven Implementation Closure
 
 - [x] Persist the approved design and detailed implementation plan.
-- [ ] Add RED tests for the implementation baseline, task bindings, task prompts, task conformance, invalidation, compatibility, and version metadata.
-- [ ] Implement the minimum runtime behavior required to pass each RED test.
-- [ ] Regenerate or synchronize packaged Waygate runtime assets at version `1.0.28`.
+- [x] Add RED tests for the implementation baseline, task bindings, task prompts, task conformance, invalidation, compatibility, and version metadata.
+- [x] Implement the minimum runtime behavior required to pass each RED test.
+- [x] Regenerate or synchronize packaged Waygate runtime assets at version `1.0.28`.
 - [ ] Run targeted tests, the full suite, compilation, and package validation.
 - [ ] Review the completed diff and prepare branch handoff.
 - **Status:** in progress
