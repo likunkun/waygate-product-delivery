@@ -6,9 +6,19 @@ Create a clean independent project under `<waygate-product-delivery-repo>` for d
 
 ## Current Phase
 
-Waygate Product Delivery V1.1 delivery has started for `v1.1-multi-agent-review-orchestration`. Product Delivery canonical state is active, requires real spawned subagents, and is blocked before implementation on current-feature Open Spec, project type confirmation, and planning-file alignment.
+Waygate Product Delivery `1.0.28` lightweight prototype-driven implementation closure is in progress on branch `feature/1.0.28-prototype-closure`. The approved design is frozen; implementation will proceed through TDD, packaged-runtime parity, full regression verification, and release metadata validation.
 
 ## Phases
+
+### Active Phase - V1.0.28 Prototype-Driven Implementation Closure
+
+- [x] Persist the approved design and detailed implementation plan.
+- [ ] Add RED tests for the implementation baseline, task bindings, task prompts, task conformance, invalidation, compatibility, and version metadata.
+- [ ] Implement the minimum runtime behavior required to pass each RED test.
+- [ ] Regenerate or synchronize packaged Waygate runtime assets at version `1.0.28`.
+- [ ] Run targeted tests, the full suite, compilation, and package validation.
+- [ ] Review the completed diff and prepare branch handoff.
+- **Status:** in progress
 
 ### Phase 1 - Project Initialization
 

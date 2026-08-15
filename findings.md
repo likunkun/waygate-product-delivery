@@ -1,5 +1,25 @@
 # Findings
 
+## 2026-08-15 V1.0.28 Prototype-Driven Implementation Closure
+
+- Approved direction: lightweight closed loop, not a new all-page pixel-comparison platform.
+- Root cause confirmed in current runtime: the Codex Goal handoff carries generic task IDs and coverage obligations but not the confirmed prototype bundle, contract, screenshots, design-system evidence, or per-task prototype slices.
+- `planned_tasks_from_coverage()` currently derives generic descriptions and verification strings, so implementation work is not structurally bound to `surface/state/viewport/region/interaction` identities.
+- Existing production conformance validates canonical hashes, routes, semantic regions, relationships, interactions, and evidence files; it intentionally allows complete semantic mapping without pixel comparison.
+- V1.0.28 must preserve existing final production conformance while adding an implementation baseline, UI task bindings, dynamic current-task prompts, and task-level conformance that blocks task completion.
+- Rollout decision: new UI deliveries use the new contract; deliveries whose product baseline was confirmed before V1.0.28 remain grandfathered until their prototype baseline is reopened. Non-UI deliveries remain unaffected.
+- Baseline verification in the isolated worktree passed: `PYTHONPATH=src python3 -m unittest discover -s tests` ran 370 tests successfully.
+- Primary runtime edit points are `handoff.py` (Goal/current-task prompt rendering), `delivery_goal.py` (task schema and completion guard), `workflow.py` (baseline lifecycle, artifact persistence, task conformance API, launch-package binding), and a focused new module for baseline/conformance validation to keep the large workflow file from owning another schema.
+- `generate_codex_goal_handoff()` normalizes tasks into the delivery goal before rendering the handoff, making the normalized task schema the correct boundary for prompt generation and launch hashing.
+- `_build_launch_package()` already hashes the normalized task queue and prototype identity; V1.0.28 should add the implementation-baseline hash so task bindings and frozen visual policy participate in authorization staleness.
+- `record_task_completion()` currently validates only task artifact identity and command success. The new UI-specific guard belongs immediately before the existing delivery-goal completion transition; non-UI and grandfathered UI tasks must preserve current behavior.
+- Packaging is generated from `src/product_delivery_agent` into `plugins/waygate-product-delivery/runtime/product_delivery_agent`; source changes should be made only under `src` and mirrored by the existing packaging function after tests turn green.
+- Canonical closure schema remains `v0.11`; only `PLUGIN_VERSION` and generated manifest/cachebuster metadata move to `1.0.28`.
+- `record_ui_prototype_design_bundle()` persists only bundle identity fields in state but also writes the complete canonical bundle JSON. The workflow already has `_rebuild_current_prototype_design_bundle()`, so the implementation baseline can be deterministically derived after product confirmation without trusting a lossy state summary.
+- Prototype fixture/runtime checks already map `surface_id + state_id + viewport` to `clean_screenshot_path` and semantic regions. This is the correct source for baseline units and avoids guessing associations from the contract's flat screenshot list.
+- A new delivery can mark the policy required during `select_project_type("ui")`. Legacy states that lack the policy remain grandfathered while their existing product baseline is confirmed; calling `record_ui_prototype_design_bundle()` after a reopened baseline upgrades the delivery to the V1.0.28 required policy.
+- Visual-policy overrides need a pre-confirmation workflow API and must participate in `surface_input_hash`/product-baseline identity. This freezes thresholds and dynamic masks under the existing product confirmation rather than adding a third confirmation.
+
 ## 2026-06-21 Initial Product Delivery Agent Boundary
 
 - The new project should be independent from the existing `workflow-controller` worktree because that worktree currently contains uncommitted V0.6.3a changes and historical controller state.
