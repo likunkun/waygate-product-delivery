@@ -360,6 +360,7 @@ def record_task_completion(
         raise DeliveryGoalError(
             f"task completion must match current task cursor: {cursor}"
         )
+    _validate_task_prototype_conformance(next_state, planned[task_id])
     _validate_task_artifact(task_id, planned[task_id], artifact)
     completed = list(goal.get("completed_tasks", []))
     if task_id in completed:
@@ -392,6 +393,35 @@ def record_task_completion(
         next_state["stage"] = "implementation_tasks_complete"
     next_state["delivery_goal"] = goal
     return next_state
+
+
+def _validate_task_prototype_conformance(
+    state: dict[str, Any],
+    planned_task: dict[str, Any],
+) -> None:
+    if not (
+        implementation_baseline_required(state)
+        and planned_task.get("ui_impact") == "prototype_bound"
+    ):
+        return
+    baseline = state.get("implementation_baseline") or {}
+    conformance = state.get("task_prototype_conformance") or {}
+    records = conformance.get("records") or {}
+    record = records.get(planned_task.get("task_id")) if isinstance(records, dict) else None
+    if not isinstance(record, dict) or record.get("status") != "passed":
+        raise DeliveryGoalError(
+            "passed task prototype conformance is required before TASK completion"
+        )
+    if record.get("implementation_baseline_sha256") != baseline.get(
+        "baseline_sha256"
+    ):
+        raise DeliveryGoalError(
+            "task prototype conformance does not match the current baseline"
+        )
+    if record.get("planned_task_hash") != planned_task.get("planned_task_hash"):
+        raise DeliveryGoalError(
+            "task prototype conformance does not match the current planned task"
+        )
 
 
 def assert_goal_can_stop(state: dict[str, Any]) -> dict[str, Any]:

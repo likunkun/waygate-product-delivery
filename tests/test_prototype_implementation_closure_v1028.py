@@ -1,10 +1,16 @@
+import json
+import struct
 import tempfile
 import unittest
+import zlib
+from copy import deepcopy
 from pathlib import Path
 
+from product_delivery_agent.evidence_artifacts import sha256_file
 from product_delivery_agent.implementation_baseline import (
     DEFAULT_VISUAL_POLICY,
     ImplementationBaselineError,
+    build_task_prototype_conformance,
     build_implementation_baseline,
     implementation_baseline_required,
     normalize_visual_policy,
@@ -19,11 +25,76 @@ from tests.conformance_fixtures import (
     record_bundled_ui_prototype_review,
 )
 from tests.test_goal_driven_closure_v104 import (
+    activate_host_goal,
     multi_agent_review,
+    reconcile_host_goal,
     scenario_row,
+    task_completion_artifact,
     ui_review_payload,
     workflow_ready_for_handoff,
 )
+
+
+def _paeth(left, above, upper_left):
+    estimate = left + above - upper_left
+    left_distance = abs(estimate - left)
+    above_distance = abs(estimate - above)
+    upper_left_distance = abs(estimate - upper_left)
+    if left_distance <= above_distance and left_distance <= upper_left_distance:
+        return left
+    if above_distance <= upper_left_distance:
+        return above
+    return upper_left
+
+
+def _write_rgba_png(path: Path, rows, *, filter_types=None):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    height = len(rows)
+    width = len(rows[0])
+    raw_rows = [bytes(channel for pixel in row for channel in pixel) for row in rows]
+    filters = list(filter_types or [0] * height)
+    encoded_rows = []
+    previous = bytes(width * 4)
+    for raw, filter_type in zip(raw_rows, filters):
+        filtered = bytearray()
+        for index, value in enumerate(raw):
+            left = raw[index - 4] if index >= 4 else 0
+            above = previous[index]
+            upper_left = previous[index - 4] if index >= 4 else 0
+            if filter_type == 0:
+                predictor = 0
+            elif filter_type == 1:
+                predictor = left
+            elif filter_type == 2:
+                predictor = above
+            elif filter_type == 3:
+                predictor = (left + above) // 2
+            elif filter_type == 4:
+                predictor = _paeth(left, above, upper_left)
+            else:
+                raise ValueError("unsupported test PNG filter")
+            filtered.append((value - predictor) & 0xFF)
+        encoded_rows.append(bytes([filter_type]) + bytes(filtered))
+        previous = raw
+
+    def chunk(kind, data):
+        body = kind + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    image = b"\x89PNG\r\n\x1a\n"
+    image += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    image += chunk(b"IDAT", zlib.compress(b"".join(encoded_rows)))
+    image += chunk(b"IEND", b"")
+    path.write_bytes(image)
+
+
+def _write_json(path: Path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 class PrototypeImplementationBaselineV1028Tests(unittest.TestCase):
@@ -395,6 +466,474 @@ class PrototypeBoundTaskAndPromptV1028Tests(unittest.TestCase):
                     ]
                 },
                 contract,
+            )
+
+
+class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
+    @staticmethod
+    def _white_rows(width=10, height=5):
+        return [[(255, 255, 255, 255) for _ in range(width)] for _ in range(height)]
+
+    def build_domain_fixture(self, root: Path, *, production_filters=None):
+        prototype_path = root / ".product-delivery/artifacts/prototype-reference.png"
+        production_path = root / ".product-delivery/artifacts/production-current.png"
+        rows = self._white_rows()
+        _write_rgba_png(prototype_path, rows)
+        _write_rgba_png(
+            production_path,
+            rows,
+            filter_types=production_filters,
+        )
+        snapshot_path = root / ".product-delivery/artifacts/production-semantic.json"
+        snapshot = {
+            "schema_version": "task-production-semantic-snapshot-v1",
+            "surface_id": "bound-surface",
+            "state_id": "ready",
+            "route": "/bound",
+            "viewport": {"class": "desktop", "width": 10, "height": 5},
+            "regions": [
+                {
+                    "region_id": "root",
+                    "matched_count": 1,
+                    "visible": True,
+                    "role": "main",
+                    "accessible_name": "Bound surface",
+                    "parent_region_id": None,
+                    "display_order": 1,
+                    "bounding_box": {"x": 0, "y": 0, "width": 10, "height": 5},
+                    "key_controls": ["submit"],
+                    "interaction_state": "ready",
+                },
+                {
+                    "region_id": "action",
+                    "matched_count": 1,
+                    "visible": True,
+                    "role": "button",
+                    "accessible_name": "Submit changes",
+                    "parent_region_id": "root",
+                    "display_order": 2,
+                    "bounding_box": {"x": 4, "y": 2, "width": 2, "height": 2},
+                    "key_controls": ["submit"],
+                    "interaction_state": "ready",
+                },
+            ],
+            "relationships": [
+                {
+                    "source_region_id": "root",
+                    "relation": "contains",
+                    "target_region_id": "action",
+                    "observed": True,
+                }
+            ],
+            "interactions": [
+                {
+                    "interaction_id": "submit",
+                    "observed": True,
+                    "relation": "updates",
+                    "target_region_id": "root",
+                    "result": "The bound surface is updated.",
+                }
+            ],
+        }
+        _write_json(snapshot_path, snapshot)
+        unit = {
+            "surface_id": "bound-surface",
+            "state_id": "ready",
+            "viewport_class": "desktop",
+            "route": "/bound",
+            "prototype_screenshot_path": str(prototype_path.relative_to(root)),
+            "prototype_screenshot_sha256": sha256_file(prototype_path),
+            "prototype_screenshot_width": 10,
+            "prototype_screenshot_height": 5,
+            "region_ids": ["root", "action"],
+            "interaction_ids": ["submit"],
+            "critical_regions": [
+                {
+                    "region_id": "root",
+                    "semantic_role": "main",
+                    "accessible_name_match": {"mode": "contains", "value": "Bound"},
+                    "visibility": "visible",
+                },
+                {
+                    "region_id": "action",
+                    "semantic_role": "button",
+                    "accessible_name_match": {"mode": "exact", "value": "Submit changes"},
+                    "visibility": "visible",
+                    "parent_region_id": "root",
+                    "display_order": 2,
+                },
+            ],
+            "critical_relationships": [
+                {
+                    "source_region_id": "root",
+                    "relation": "contains",
+                    "target_region_id": "action",
+                }
+            ],
+            "critical_interactions": [
+                {
+                    "interaction_id": "submit",
+                    "entry_region_id": "action",
+                    "action": "submit changes",
+                    "expected_relation": "updates",
+                    "target_region_id": "root",
+                }
+            ],
+            "prototype_regions": [
+                {
+                    "region_id": "root",
+                    "semantic_role": "main",
+                    "accessible_name": "Bound surface",
+                    "visibility": "visible",
+                    "display_order": 1,
+                    "bounds": {"x": 0, "y": 0, "width": 10, "height": 5},
+                    "controls": ["submit"],
+                    "interaction_state": "ready",
+                },
+                {
+                    "region_id": "action",
+                    "semantic_role": "button",
+                    "accessible_name": "Submit changes",
+                    "visibility": "visible",
+                    "parent_region_id": "root",
+                    "display_order": 2,
+                    "bounds": {"x": 4, "y": 2, "width": 2, "height": 2},
+                    "controls": ["submit"],
+                    "interaction_state": "ready",
+                },
+            ],
+            "dynamic_mask_region_ids": [],
+        }
+        baseline = {
+            "status": "ready",
+            "baseline_sha256": "a" * 64,
+            "visual_policy_sha256": "b" * 64,
+            "visual_policy": deepcopy(DEFAULT_VISUAL_POLICY),
+            "units": [unit],
+        }
+        task = {
+            "task_id": "TASK-001",
+            "title": "Implement bound action",
+            "description": "Implement the action without redesigning it.",
+            "verification": "pytest",
+            "planned_task_hash": "c" * 64,
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [
+                {
+                    "surface_id": "bound-surface",
+                    "state_id": "ready",
+                    "viewport_classes": ["desktop"],
+                    "region_ids": ["action"],
+                    "interaction_ids": ["submit"],
+                }
+            ],
+        }
+        payload = {
+            "implementation_baseline_sha256": baseline["baseline_sha256"],
+            "planned_task_hash": task["planned_task_hash"],
+            "environment_status": "stable",
+            "records": [
+                {
+                    "surface_id": "bound-surface",
+                    "state_id": "ready",
+                    "viewport_class": "desktop",
+                    "production_route": "/bound",
+                    "production_screenshot_path": str(production_path.relative_to(root)),
+                    "semantic_snapshot_path": str(snapshot_path.relative_to(root)),
+                    "computed_style_comparisons": [
+                        {
+                            "region_id": "action",
+                            "prototype": {
+                                "display": "inline-flex",
+                                "font-size": "14px",
+                            },
+                            "production": {
+                                "display": "inline-flex",
+                                "font-size": "14px",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        return baseline, task, payload, snapshot_path, production_path
+
+    def test_matching_task_conformance_passes_and_decodes_all_png_filters(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline, task, payload, _, _ = self.build_domain_fixture(
+                root,
+                production_filters=[0, 1, 2, 3, 4],
+            )
+
+            evidence = build_task_prototype_conformance(
+                root,
+                payload,
+                implementation_baseline=baseline,
+                planned_task=task,
+            )
+
+            self.assertEqual(evidence["status"], "passed")
+            self.assertEqual(evidence["failure_codes"], [])
+            record = evidence["records"][0]
+            self.assertEqual(record["full_surface_diff_ratio"], 0)
+            self.assertEqual(record["critical_region_results"][0]["diff_ratio"], 0)
+            self.assertRegex(evidence["evidence_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_contract_visual_and_evidence_failures_are_independently_reported(self):
+        cases = (
+            ("route_mismatch", "route_mismatch"),
+            ("region_hierarchy_mismatch", "region_hierarchy_mismatch"),
+            ("region_order_mismatch", "region_order_mismatch"),
+            ("interaction_missing", "interaction_missing"),
+            ("computed_style_mismatch", "computed_style_mismatch"),
+            ("geometry_mismatch", "geometry_mismatch"),
+            ("critical_region_pixel_diff", "critical_region_pixel_diff"),
+            ("full_surface_pixel_diff", "full_surface_pixel_diff"),
+            ("missing_evidence", "evidence_missing"),
+        )
+        for mutation, expected_code in cases:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                baseline, task, payload, snapshot_path, production_path = (
+                    self.build_domain_fixture(root)
+                )
+                snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                action = next(
+                    region for region in snapshot["regions"] if region["region_id"] == "action"
+                )
+                if mutation == "route_mismatch":
+                    payload["records"][0]["production_route"] = "/redesigned"
+                elif mutation == "region_hierarchy_mismatch":
+                    action["parent_region_id"] = None
+                elif mutation == "region_order_mismatch":
+                    action["display_order"] = 3
+                elif mutation == "interaction_missing":
+                    snapshot["interactions"] = []
+                elif mutation == "computed_style_mismatch":
+                    payload["records"][0]["computed_style_comparisons"][0][
+                        "production"
+                    ]["display"] = "block"
+                elif mutation == "geometry_mismatch":
+                    action["bounding_box"] = {"x": 2, "y": 2, "width": 8, "height": 2}
+                elif mutation == "critical_region_pixel_diff":
+                    rows = self._white_rows()
+                    rows[2][4] = (0, 0, 0, 255)
+                    _write_rgba_png(production_path, rows)
+                elif mutation == "full_surface_pixel_diff":
+                    rows = self._white_rows()
+                    for x in range(3):
+                        rows[0][x] = (0, 0, 0, 255)
+                    _write_rgba_png(production_path, rows)
+                elif mutation == "missing_evidence":
+                    payload["records"][0]["semantic_snapshot_path"] = (
+                        ".product-delivery/artifacts/missing.json"
+                    )
+                if mutation in {
+                    "region_hierarchy_mismatch",
+                    "region_order_mismatch",
+                    "interaction_missing",
+                    "geometry_mismatch",
+                }:
+                    _write_json(snapshot_path, snapshot)
+
+                evidence = build_task_prototype_conformance(
+                    root,
+                    payload,
+                    implementation_baseline=baseline,
+                    planned_task=task,
+                )
+
+                self.assertEqual(evidence["status"], "failed")
+                self.assertIn(expected_code, evidence["failure_codes"])
+
+    def test_unstable_capture_environment_is_inconclusive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline, task, payload, _, _ = self.build_domain_fixture(root)
+            payload.update(
+                {
+                    "environment_status": "inconclusive",
+                    "environment_reason": "browser renderer crashed during capture",
+                    "records": [],
+                }
+            )
+
+            evidence = build_task_prototype_conformance(
+                root,
+                payload,
+                implementation_baseline=baseline,
+                planned_task=task,
+            )
+
+            self.assertEqual(evidence["status"], "inconclusive")
+            self.assertIn("environment_inconclusive", evidence["failure_codes"])
+
+    def workflow_conformance_payload(self, root: Path, state):
+        baseline = state["implementation_baseline"]
+        task = state["delivery_goal"]["planned_tasks"][0]
+        unit = baseline["units"][0]
+        production_path = (
+            root / ".product-delivery/artifacts/task-conformance/production.png"
+        )
+        production_path.parent.mkdir(parents=True, exist_ok=True)
+        production_path.write_bytes((root / unit["prototype_screenshot_path"]).read_bytes())
+        prototype_region = unit["prototype_regions"][0]
+        snapshot_path = (
+            root / ".product-delivery/artifacts/task-conformance/semantic.json"
+        )
+        _write_json(
+            snapshot_path,
+            {
+                "schema_version": "task-production-semantic-snapshot-v1",
+                "surface_id": unit["surface_id"],
+                "state_id": unit["state_id"],
+                "route": unit["route"],
+                "viewport": {
+                    "class": unit["viewport_class"],
+                    "width": unit["prototype_screenshot_width"],
+                    "height": unit["prototype_screenshot_height"],
+                },
+                "regions": [
+                    {
+                        "region_id": prototype_region["region_id"],
+                        "matched_count": 1,
+                        "visible": True,
+                        "role": prototype_region["semantic_role"],
+                        "accessible_name": prototype_region["accessible_name"],
+                        "parent_region_id": prototype_region.get("parent_region_id"),
+                        "display_order": prototype_region["display_order"],
+                        "bounding_box": deepcopy(prototype_region["bounds"]),
+                        "key_controls": list(prototype_region["controls"]),
+                        "interaction_state": prototype_region["interaction_state"],
+                    }
+                ],
+                "relationships": [
+                    {**relationship, "observed": True}
+                    for relationship in unit["critical_relationships"]
+                ],
+                "interactions": [
+                    {
+                        "interaction_id": interaction["interaction_id"],
+                        "observed": True,
+                        "relation": interaction["expected_relation"],
+                        "target_region_id": interaction["target_region_id"],
+                        "result": "The expected production state was observed.",
+                    }
+                    for interaction in unit["critical_interactions"]
+                ],
+            },
+        )
+        return {
+            "implementation_baseline_sha256": baseline["baseline_sha256"],
+            "planned_task_hash": task["planned_task_hash"],
+            "environment_status": "stable",
+            "records": [
+                {
+                    "surface_id": unit["surface_id"],
+                    "state_id": unit["state_id"],
+                    "viewport_class": unit["viewport_class"],
+                    "production_route": unit["route"],
+                    "production_screenshot_path": str(production_path.relative_to(root)),
+                    "semantic_snapshot_path": str(snapshot_path.relative_to(root)),
+                    "computed_style_comparisons": [
+                        {
+                            "region_id": region_id,
+                            "prototype": {"display": "block"},
+                            "production": {"display": "block"},
+                        }
+                        for region_id in task["prototype_bindings"][0]["region_ids"]
+                    ],
+                }
+            ],
+        }
+
+    def test_functional_success_cannot_complete_bound_task_without_conformance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = workflow_ready_for_handoff(root)
+            task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
+            workflow.record_implementation_launch_authorization(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+            workflow.generate_codex_goal_handoff(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+            activate_host_goal(workflow)
+            state = workflow.status()
+
+            reconcile_host_goal(workflow)
+            with self.assertRaisesRegex(WorkflowError, "task prototype conformance"):
+                workflow.record_task_completion(
+                    "TASK-001",
+                    artifact=task_completion_artifact(state, "TASK-001"),
+                )
+
+            reconcile_host_goal(workflow)
+            current = workflow.status()
+            inconclusive = workflow.record_task_prototype_conformance(
+                "TASK-001",
+                {
+                    "implementation_baseline_sha256": current[
+                        "implementation_baseline"
+                    ]["baseline_sha256"],
+                    "planned_task_hash": current["delivery_goal"]["planned_tasks"][
+                        0
+                    ]["planned_task_hash"],
+                    "environment_status": "inconclusive",
+                    "environment_reason": "browser renderer crashed during capture",
+                    "records": [],
+                },
+            )
+            self.assertEqual(
+                inconclusive["task_prototype_conformance"]["records"]["TASK-001"][
+                    "status"
+                ],
+                "inconclusive",
+            )
+            reconcile_host_goal(workflow)
+            with self.assertRaisesRegex(WorkflowError, "task prototype conformance"):
+                workflow.record_task_completion(
+                    "TASK-001",
+                    artifact=task_completion_artifact(
+                        workflow.status(),
+                        "TASK-001",
+                    ),
+                )
+
+            reconcile_host_goal(workflow)
+            conformance = workflow.record_task_prototype_conformance(
+                "TASK-001",
+                self.workflow_conformance_payload(root, workflow.status()),
+            )
+            self.assertEqual(
+                conformance["task_prototype_conformance"]["records"]["TASK-001"][
+                    "status"
+                ],
+                "passed",
+            )
+
+            reconcile_host_goal(workflow)
+            completed = workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow.status(), "TASK-001"),
+            )
+
+            self.assertEqual(
+                completed["delivery_goal"]["completed_tasks"],
+                ["TASK-001"],
+            )
+            self.assertIn("All planned TASKs are complete", completed["current_task_prompt"])
+            self.assertTrue(
+                any(
+                    event["transition_name"]
+                    == "task_prototype_conformance_recorded"
+                    for event in completed["transition_journal"]["events"]
+                )
             )
 
 

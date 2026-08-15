@@ -17,6 +17,7 @@ from tests.conformance_fixtures import (
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
+    record_passing_task_prototype_conformance,
     record_ui_conformance,
     reconcile_host_goal,
     write_prototype_screenshot,
@@ -337,6 +338,11 @@ def ready_workflow(project_root):
         prohibited_work=["Do not mutate Waygate state"],
     )
     activate_host_goal(workflow)
+    record_passing_task_prototype_conformance(
+        workflow,
+        project_root,
+        "TASK-001",
+    )
     reconcile_host_goal(workflow)
     workflow.record_task_completion(
         "TASK-001",

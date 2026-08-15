@@ -20,6 +20,7 @@ from tests.conformance_fixtures import (
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
+    record_passing_task_prototype_conformance,
     record_scenario_review,
     record_ui_conformance,
     reconcile_host_goal,
@@ -546,6 +547,11 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             )
             activate_host_goal(workflow)
             for task_id in ("TASK-001", "TASK-002", "TASK-003"):
+                record_passing_task_prototype_conformance(
+                    workflow,
+                    project_root,
+                    task_id,
+                )
                 reconcile_host_goal(workflow)
                 workflow.record_task_completion(
                     task_id,
@@ -571,6 +577,11 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             )
             activate_host_goal(workflow)
             for task in planned_tasks():
+                record_passing_task_prototype_conformance(
+                    workflow,
+                    project_root,
+                    task["task_id"],
+                )
                 reconcile_host_goal(workflow)
                 workflow.record_task_completion(
                     task["task_id"],

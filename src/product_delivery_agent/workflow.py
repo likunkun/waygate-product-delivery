@@ -105,6 +105,7 @@ from product_delivery_agent.implementation_baseline import (
     DEFAULT_VISUAL_POLICY,
     ImplementationBaselineError,
     build_implementation_baseline,
+    build_task_prototype_conformance,
     implementation_baseline_required,
     normalize_visual_policy,
 )
@@ -2954,6 +2955,90 @@ class ProductDeliveryWorkflow:
         state = self._require_started()
         return derive_goal_remaining_tasks(state)
 
+    def record_task_prototype_conformance(
+        self,
+        task_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record objective prototype conformance for the current UI task."""
+        state = self._require_started(host_goal_transition=True)
+        self._require_current_prototype_progression(state)
+        if not implementation_baseline_required(state):
+            raise WorkflowError(
+                "task prototype conformance is only available for required UI baselines"
+            )
+        goal = state.get("delivery_goal") or {}
+        if goal.get("current_task_cursor") != task_id:
+            raise WorkflowError(
+                "task prototype conformance must match the current task cursor"
+            )
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict):
+            raise WorkflowError(f"task is not in planned TASK queue: {task_id}")
+        if planned_task.get("ui_impact") != "prototype_bound":
+            raise WorkflowError(
+                "task prototype conformance is not applicable when ui_impact is none"
+            )
+        try:
+            evidence = build_task_prototype_conformance(
+                self.project_root,
+                payload,
+                implementation_baseline=state.get("implementation_baseline") or {},
+                planned_task=planned_task,
+            )
+        except Exception as cause:
+            raise WorkflowError(str(cause)) from cause
+
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        task_file_identity = hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
+        artifact_name = f"task-prototype-conformance-{task_file_identity}.json"
+        artifact_path = artifacts_dir / artifact_name
+        artifact_path.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        artifact_sha256 = self._artifact_hash(str(artifact_path))
+        current = state.get("task_prototype_conformance") or {}
+        records = dict(current.get("records") or {})
+        records[task_id] = {
+            **evidence,
+            "artifact_path": f"artifacts/{artifact_name}",
+            "artifact_sha256": artifact_sha256,
+        }
+        state["task_prototype_conformance"] = {
+            "status": evidence["status"],
+            "records": records,
+        }
+        state = append_transition(
+            state,
+            "task_prototype_conformance_recorded",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "implementation_baseline": evidence[
+                    "implementation_baseline_sha256"
+                ],
+                "planned_task": evidence["planned_task_hash"],
+            },
+            output_artifact_hashes={
+                f"artifacts/{artifact_name}": artifact_sha256,
+            },
+            metadata={
+                "task_id": task_id,
+                "status": evidence["status"],
+                "failure_codes": list(evidence["failure_codes"]),
+            },
+        )
+        return write_state(self.project_root, state)
+
     def record_task_completion(
         self,
         task_id: str,
@@ -2962,6 +3047,7 @@ class ProductDeliveryWorkflow:
     ) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
+        self._assert_current_task_prototype_conformance(state, task_id)
         try:
             next_state = record_delivery_task_completion(
                 state,
@@ -2976,6 +3062,31 @@ class ProductDeliveryWorkflow:
             "current_task": goal.get("current_task_cursor") or "TASKS_COMPLETE",
             "completed_tasks": list(goal.get("completed_tasks", [])),
         }
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        current_task_prompt_path = artifacts_dir / "current-task-prompt.md"
+        current_task_id = goal.get("current_task_cursor")
+        if current_task_id:
+            current_task = next(
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == current_task_id
+            )
+            current_task_prompt = render_current_task_prompt(
+                current_task,
+                next_state.get("implementation_baseline") or {},
+            )
+        else:
+            current_task_prompt = (
+                "# Current Prototype-Bound TASK\n\n"
+                "All planned TASKs are complete.\n"
+            )
+        current_task_prompt_path.write_text(
+            current_task_prompt,
+            encoding="utf-8",
+        )
+        next_state["current_task_prompt"] = current_task_prompt
+        next_state["current_task_prompt_path"] = "artifacts/current-task-prompt.md"
         next_state = append_transition(
             next_state,
             "task_completed",
@@ -2986,6 +3097,9 @@ class ProductDeliveryWorkflow:
             },
             output_artifact_hashes={
                 artifact["artifact_path"]: artifact["artifact_sha256"],
+                "artifacts/current-task-prompt.md": self._artifact_hash(
+                    str(current_task_prompt_path)
+                ),
             },
             metadata={
                 "task_id": task_id,
@@ -2994,6 +3108,50 @@ class ProductDeliveryWorkflow:
             },
         )
         return write_state(self.project_root, next_state)
+
+    def _assert_current_task_prototype_conformance(
+        self,
+        state: dict[str, Any],
+        task_id: str,
+    ) -> None:
+        if not implementation_baseline_required(state):
+            return
+        goal = state.get("delivery_goal") or {}
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict) or planned_task.get("ui_impact") != (
+            "prototype_bound"
+        ):
+            return
+        conformance = state.get("task_prototype_conformance") or {}
+        records = conformance.get("records") or {}
+        record = records.get(task_id) if isinstance(records, dict) else None
+        if not isinstance(record, dict) or record.get("status") != "passed":
+            raise WorkflowError(
+                "passed task prototype conformance is required before TASK completion"
+            )
+        if record.get("implementation_baseline_sha256") != (
+            state.get("implementation_baseline") or {}
+        ).get("baseline_sha256") or record.get("planned_task_hash") != planned_task.get(
+            "planned_task_hash"
+        ):
+            raise WorkflowError(
+                "task prototype conformance is stale for the current baseline or task"
+            )
+        relative_path = record.get("artifact_path")
+        if not isinstance(relative_path, str) or not relative_path.startswith("artifacts/"):
+            raise WorkflowError("task prototype conformance artifact is missing")
+        artifact_path = self.project_root / ARTIFACT_ROOT / relative_path
+        if not artifact_path.is_file() or self._artifact_hash(str(artifact_path)) != record.get(
+            "artifact_sha256"
+        ):
+            raise WorkflowError("task prototype conformance artifact is stale")
 
     def assert_goal_can_stop(self) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)

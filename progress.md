@@ -20,6 +20,9 @@
 - Task 3 focused tests turned green. The first regression run exposed five expected fixture migrations in `test_goal_driven_closure_v104`: its explicit UI task helper still used the pre-V1.0.28 schema. Updated that shared helper with the fixture's canonical prototype binding.
 - Patch error: the first fixture-migration patch assumed an expanded list literal, but the helper was a list comprehension. No files changed; re-read the function and patched the comprehension directly.
 - Task 3 regression is green: 30 tests passed across prototype closure, Codex Goal handoff, delivery-goal task queue, and goal-driven closure suites.
+- Task 4 RED verified: the domain builder/API were missing and functionally passing UI tasks completed without prototype-conformance evidence.
+- Task 4 GREEN: implemented RGB/RGBA PNG decoding with filters 0–4, semantic/route/interaction/style/geometry/pixel comparison, canonical passed/failed/inconclusive evidence, completion blocking, transition journaling, and next-task prompt regeneration.
+- Task 4 regression is green: 55 tests passed across V1.0.28 closure, final production conformance, goal-driven closure, and canonical launch suites.
 
 ## Session: 2026-06-21
 

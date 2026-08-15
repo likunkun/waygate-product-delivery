@@ -662,6 +662,152 @@ def complete_host_goal(workflow) -> dict:
     )
 
 
+def task_prototype_conformance_payload(
+    project_root: Path,
+    state: dict,
+    task_id: str,
+) -> dict:
+    baseline = state["implementation_baseline"]
+    task = next(
+        item
+        for item in state["delivery_goal"]["planned_tasks"]
+        if item["task_id"] == task_id
+    )
+    units = {
+        (unit["surface_id"], unit["state_id"], unit["viewport_class"]): unit
+        for unit in baseline["units"]
+    }
+    records = []
+    for binding in task["prototype_bindings"]:
+        for viewport in binding["viewport_classes"]:
+            unit = units[(binding["surface_id"], binding["state_id"], viewport)]
+            identity = f"{task_id.lower()}-{unit['surface_id']}-{unit['state_id']}-{viewport}"
+            screenshot_path = (
+                project_root
+                / ".product-delivery/artifacts/task-conformance"
+                / f"{identity}.png"
+            )
+            screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+            screenshot_path.write_bytes(
+                (project_root / unit["prototype_screenshot_path"]).read_bytes()
+            )
+            prototype_regions = {
+                region["region_id"]: region for region in unit["prototype_regions"]
+            }
+            contract_regions = {
+                region["region_id"]: region for region in unit["critical_regions"]
+            }
+            snapshot_path = screenshot_path.with_suffix(".json")
+            _write_json(
+                snapshot_path,
+                {
+                    "schema_version": "task-production-semantic-snapshot-v1",
+                    "surface_id": unit["surface_id"],
+                    "state_id": unit["state_id"],
+                    "route": unit["route"],
+                    "viewport": {
+                        "class": unit["viewport_class"],
+                        "width": unit["prototype_screenshot_width"],
+                        "height": unit["prototype_screenshot_height"],
+                    },
+                    "regions": [
+                        {
+                            "region_id": region_id,
+                            "matched_count": 1,
+                            "visible": True,
+                            "role": (
+                                contract_regions[region_id].get("semantic_role")
+                                or prototype_regions[region_id]["semantic_role"]
+                            ),
+                            "accessible_name": prototype_regions[region_id][
+                                "accessible_name"
+                            ],
+                            "parent_region_id": contract_regions[region_id].get(
+                                "parent_region_id",
+                                prototype_regions[region_id].get("parent_region_id"),
+                            ),
+                            "display_order": contract_regions[region_id].get(
+                                "display_order",
+                                prototype_regions[region_id]["display_order"],
+                            ),
+                            "bounding_box": deepcopy(
+                                prototype_regions[region_id]["bounds"]
+                            ),
+                            "key_controls": list(
+                                prototype_regions[region_id]["controls"]
+                            ),
+                            "interaction_state": prototype_regions[region_id][
+                                "interaction_state"
+                            ],
+                        }
+                        for region_id in binding["region_ids"]
+                    ],
+                    "relationships": [
+                        {**relationship, "observed": True}
+                        for relationship in unit["critical_relationships"]
+                        if relationship["source_region_id"] in binding["region_ids"]
+                        or relationship["target_region_id"] in binding["region_ids"]
+                    ],
+                    "interactions": [
+                        {
+                            "interaction_id": interaction["interaction_id"],
+                            "observed": True,
+                            "relation": interaction["expected_relation"],
+                            "target_region_id": interaction["target_region_id"],
+                            "result": "Expected production interaction result observed.",
+                        }
+                        for interaction in unit["critical_interactions"]
+                        if interaction["interaction_id"]
+                        in binding["interaction_ids"]
+                    ],
+                },
+            )
+            records.append(
+                {
+                    "surface_id": unit["surface_id"],
+                    "state_id": unit["state_id"],
+                    "viewport_class": unit["viewport_class"],
+                    "production_route": unit["route"],
+                    "production_screenshot_path": str(
+                        screenshot_path.relative_to(project_root)
+                    ),
+                    "semantic_snapshot_path": str(
+                        snapshot_path.relative_to(project_root)
+                    ),
+                    "computed_style_comparisons": [
+                        {
+                            "region_id": region_id,
+                            "prototype": {"display": "block"},
+                            "production": {"display": "block"},
+                        }
+                        for region_id in binding["region_ids"]
+                    ],
+                }
+            )
+    return {
+        "implementation_baseline_sha256": baseline["baseline_sha256"],
+        "planned_task_hash": task["planned_task_hash"],
+        "environment_status": "stable",
+        "records": records,
+    }
+
+
+def record_passing_task_prototype_conformance(
+    workflow,
+    project_root: Path,
+    task_id: str,
+) -> dict:
+    reconcile_host_goal(workflow)
+    return workflow.record_task_prototype_conformance(
+        task_id,
+        task_prototype_conformance_payload(
+            project_root,
+            workflow.status(),
+            task_id,
+        ),
+    )
+
+
 def record_ui_conformance(workflow, project_root: Path) -> dict:
     state = workflow.status()
     executed = state["executed_browser_evidence"]["records"][0]

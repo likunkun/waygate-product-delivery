@@ -127,21 +127,21 @@ Expected: all selected tests pass.
 - Modify: `src/product_delivery_agent/delivery_goal.py`
 - Test: `tests/test_prototype_implementation_closure_v1028.py`
 
-- [ ] **Step 1: Write failing conformance tests**
+- [x] **Step 1: Write failing conformance tests**
 
 Cover a passing record plus independent failures for route, region hierarchy/order, interaction coverage, computed style, geometry, critical-region pixel ratio, full-surface pixel ratio, missing evidence, and `environment_status=inconclusive`. Also prove that functional verification success cannot complete a prototype-bound task without passed conformance.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Expected: missing `record_task_prototype_conformance` and completion guard.
 
-- [ ] **Step 3: Implement PNG comparison and task conformance**
+- [x] **Step 3: Implement PNG comparison and task conformance**
 
 Implement standard-library decoding for non-interlaced 8-bit RGB/RGBA PNGs with filters 0-4. Compare channel deltas using the frozen pixel threshold, calculate full-surface and region ratios, compare normalized geometry, and validate fixed computed-style maps. Add `build_task_prototype_conformance(project_root, payload, *, implementation_baseline, planned_task)` to the domain module and `ProductDeliveryWorkflow.record_task_prototype_conformance(task_id, payload)` to the workflow facade. The domain function returns canonical pass/fail/inconclusive evidence; the workflow method persists it and updates the transition journal.
 
 Persist pass/fail/inconclusive artifacts and a canonical journal transition. Require a current `passed` record with matching baseline/task hashes before `record_task_completion`. Regenerate the current-task prompt for the next cursor.
 
-- [ ] **Step 4: Run conformance and completion regression tests**
+- [x] **Step 4: Run conformance and completion regression tests**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_prototype_implementation_closure_v1028.py tests/test_prototype_production_conformance_v1016.py tests/test_goal_driven_closure_v104.py tests/test_canonical_launch_v106.py -v`
 

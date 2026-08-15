@@ -254,6 +254,16 @@ def planned_tasks(extra=False):
             "title": "Implement provider governance",
             "description": "Deliver the frozen provider governance slice.",
             "verification": "pytest -k task_001",
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [
+                {
+                    "surface_id": "primary-surface",
+                    "state_id": "ready",
+                    "viewport_classes": ["desktop"],
+                    "region_ids": ["primary-region"],
+                    "interaction_ids": ["primary-action"],
+                }
+            ],
         }
     ]
     if extra:
@@ -263,6 +273,16 @@ def planned_tasks(extra=False):
                 "title": "Unexpected extra task",
                 "description": "This task was not in the launch package.",
                 "verification": "pytest -k task_002",
+                "ui_impact": "prototype_bound",
+                "prototype_bindings": [
+                    {
+                        "surface_id": "primary-surface",
+                        "state_id": "ready",
+                        "viewport_classes": ["desktop"],
+                        "region_ids": ["primary-region"],
+                        "interaction_ids": ["primary-action"],
+                    }
+                ],
             }
         )
     return tasks
