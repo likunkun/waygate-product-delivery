@@ -11,7 +11,7 @@ from product_delivery_agent.implementation_baseline import (
 )
 from product_delivery_agent.prototype_design import build_prototype_design_bundle
 from product_delivery_agent.ui_prototype import build_prototype_contract
-from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.conformance_fixtures import (
     confirm_product_baseline,
     prototype_contract,
@@ -22,6 +22,7 @@ from tests.test_goal_driven_closure_v104 import (
     multi_agent_review,
     scenario_row,
     ui_review_payload,
+    workflow_ready_for_handoff,
 )
 
 
@@ -239,6 +240,141 @@ class PrototypeImplementationBaselineWorkflowV1028Tests(unittest.TestCase):
         }
 
         self.assertFalse(implementation_baseline_required(legacy_state))
+
+
+class PrototypeBoundTaskAndPromptV1028Tests(unittest.TestCase):
+    @staticmethod
+    def generic_task():
+        return {
+            "task_id": "TASK-001",
+            "title": "Implement the confirmed UI",
+            "description": "Implement the user-visible primary surface.",
+            "verification": "pytest",
+        }
+
+    @classmethod
+    def bound_task(cls, state):
+        unit = state["implementation_baseline"]["units"][0]
+        return {
+            **cls.generic_task(),
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [
+                {
+                    "surface_id": unit["surface_id"],
+                    "state_id": unit["state_id"],
+                    "viewport_classes": [unit["viewport_class"]],
+                    "region_ids": list(unit["region_ids"]),
+                    "interaction_ids": list(unit["interaction_ids"]),
+                }
+            ],
+        }
+
+    def test_new_ui_explicit_task_without_binding_blocks_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = workflow_ready_for_handoff(Path(tmp))
+
+            with self.assertRaisesRegex(WorkflowError, "prototype_bindings"):
+                workflow.record_implementation_launch_authorization(
+                    scope="Implement the confirmed UI",
+                    verification_commands=["pytest"],
+                    planned_tasks=[self.generic_task()],
+                )
+
+    def test_non_visual_task_requires_an_explicit_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = workflow_ready_for_handoff(Path(tmp))
+            task = {
+                **self.generic_task(),
+                "ui_impact": "none",
+                "prototype_bindings": [],
+            }
+
+            with self.assertRaisesRegex(WorkflowError, "ui_impact_reason"):
+                workflow.record_implementation_launch_authorization(
+                    scope="Implement supporting code",
+                    verification_commands=["pytest"],
+                    planned_tasks=[task],
+                )
+
+    def test_handoff_writes_baseline_bound_goal_and_current_task_prompts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = workflow_ready_for_handoff(root)
+            task = self.bound_task(workflow.status())
+            workflow.record_implementation_launch_authorization(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+
+            state = workflow.generate_codex_goal_handoff(
+                scope="Implement the confirmed UI",
+                verification_commands=["pytest"],
+                planned_tasks=[task],
+            )
+
+            baseline_hash = state["implementation_baseline"]["baseline_sha256"]
+            self.assertIn(baseline_hash, state["codex_goal_prompt"])
+            self.assertIn("不是在重新设计", state["codex_goal_prompt"])
+            self.assertIn("primary-surface", state["current_task_prompt"])
+            self.assertIn("primary-region", state["current_task_prompt"])
+            self.assertEqual(
+                state["current_task_prompt_path"],
+                "artifacts/current-task-prompt.md",
+            )
+            self.assertTrue(
+                (
+                    root
+                    / ".product-delivery/artifacts/current-task-prompt.md"
+                ).is_file()
+            )
+
+    def test_current_task_prompt_excludes_unbound_baseline_units(self):
+        from product_delivery_agent.handoff import render_current_task_prompt
+
+        task = {
+            **self.generic_task(),
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [
+                {
+                    "surface_id": "bound-surface",
+                    "state_id": "ready",
+                    "viewport_classes": ["desktop"],
+                    "region_ids": ["bound-region"],
+                    "interaction_ids": ["bound-action"],
+                }
+            ],
+        }
+        baseline = {
+            "baseline_sha256": "a" * 64,
+            "prototype_path": "docs/prototype.html",
+            "visual_policy_sha256": "b" * 64,
+            "units": [
+                {
+                    "surface_id": "bound-surface",
+                    "state_id": "ready",
+                    "viewport_class": "desktop",
+                    "route": "/bound",
+                    "prototype_screenshot_path": "bound.png",
+                    "region_ids": ["bound-region"],
+                    "interaction_ids": ["bound-action"],
+                },
+                {
+                    "surface_id": "unrelated-settings-surface",
+                    "state_id": "ready",
+                    "viewport_class": "desktop",
+                    "route": "/settings",
+                    "prototype_screenshot_path": "settings.png",
+                    "region_ids": ["settings-region"],
+                    "interaction_ids": ["settings-action"],
+                },
+            ],
+        }
+
+        prompt = render_current_task_prompt(task, baseline)
+
+        self.assertIn("bound-surface", prompt)
+        self.assertNotIn("unrelated-settings-surface", prompt)
 
     def test_visual_policy_rejects_unknown_mask_regions(self):
         contract = prototype_contract()

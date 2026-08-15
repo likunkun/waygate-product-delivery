@@ -16,6 +16,10 @@
 - Task 1 GREEN: implemented strict visual-policy normalization and deterministic implementation-baseline construction; all 5 focused tests pass.
 - Task 2 RED verified: lifecycle tests failed at the missing compatibility-policy API before any workflow assertion could pass.
 - Task 2 GREEN: product confirmation now persists the canonical implementation baseline, strict visual-policy overrides are frozen into the product surface hash, and legacy/non-UI compatibility tests pass. Focused regression: 42 tests passed.
+- Task 3 RED verified: explicit UI tasks without bindings and non-visual tasks without reasons were accepted; Goal/current-task prompts lacked baseline authority and slice content.
+- Task 3 focused tests turned green. The first regression run exposed five expected fixture migrations in `test_goal_driven_closure_v104`: its explicit UI task helper still used the pre-V1.0.28 schema. Updated that shared helper with the fixture's canonical prototype binding.
+- Patch error: the first fixture-migration patch assumed an expanded list literal, but the helper was a list comprehension. No files changed; re-read the function and patched the comprehension directly.
+- Task 3 regression is green: 30 tests passed across prototype closure, Codex Goal handoff, delivery-goal task queue, and goal-driven closure suites.
 
 ## Session: 2026-06-21
 

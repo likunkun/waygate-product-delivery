@@ -8,6 +8,9 @@ import re
 from typing import Any
 
 from product_delivery_agent.gatekeeper import state_requires_delivery_goal
+from product_delivery_agent.implementation_baseline import (
+    implementation_baseline_required,
+)
 
 
 class DeliveryGoalError(RuntimeError):
@@ -19,7 +22,12 @@ _STANDARD_TASK_ID = re.compile(r"^TASK-(\d{3})$")
 _STANDARD_TASK_RANGE = re.compile(r"^TASK-(\d{3})\.\.TASK-(\d{3})$")
 
 
-def normalize_planned_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def normalize_planned_tasks(
+    tasks: list[dict[str, Any]],
+    *,
+    implementation_baseline: dict[str, Any] | None = None,
+    require_prototype_bindings: bool = False,
+) -> list[dict[str, Any]]:
     """Validate and normalize a planned implementation task queue."""
     if not tasks:
         raise DeliveryGoalError("planned TASK queue is required")
@@ -40,24 +48,35 @@ def normalize_planned_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]
         if task_id in seen:
             raise DeliveryGoalError(f"duplicate planned task: {task_id}")
         seen.add(task_id)
-        normalized.append(
-            {
-                "task_id": task_id,
-                "title": str(task["title"]),
-                "description": str(task["description"]),
-                "verification": str(task["verification"]),
-                "planned_task_hash": str(
-                    task.get("planned_task_hash") or _stable_hash(
-                        {
-                            "task_id": task_id,
-                            "title": str(task["title"]),
-                            "description": str(task["description"]),
-                            "verification": str(task["verification"]),
-                        }
-                    )
-                ),
-            }
+        normalized_task = {
+            "task_id": task_id,
+            "title": str(task["title"]),
+            "description": str(task["description"]),
+            "verification": str(task["verification"]),
+        }
+        has_ui_contract = any(
+            field_name in task
+            for field_name in (
+                "ui_impact",
+                "ui_impact_reason",
+                "prototype_bindings",
+            )
         )
+        if require_prototype_bindings or has_ui_contract:
+            normalized_task.update(
+                _normalize_task_ui_contract(
+                    task,
+                    implementation_baseline=implementation_baseline,
+                    required=require_prototype_bindings,
+                )
+            )
+        computed_hash = _stable_hash(normalized_task)
+        normalized_task["planned_task_hash"] = (
+            computed_hash
+            if require_prototype_bindings or has_ui_contract
+            else str(task.get("planned_task_hash") or computed_hash)
+        )
+        normalized.append(normalized_task)
     return normalized
 
 
@@ -83,7 +102,7 @@ def planned_tasks_from_coverage(state: dict[str, Any]) -> list[dict[str, Any]]:
     ] + custom_task_ids
     if not task_ids:
         return []
-    return [
+    tasks = [
         {
             "task_id": task_id,
             "title": task_id,
@@ -92,6 +111,14 @@ def planned_tasks_from_coverage(state: dict[str, Any]) -> list[dict[str, Any]]:
         }
         for task_id in task_ids
     ]
+    if implementation_baseline_required(state):
+        bindings = _bindings_for_all_baseline_units(
+            state.get("implementation_baseline") or {}
+        )
+        for task in tasks:
+            task["ui_impact"] = "prototype_bound"
+            task["prototype_bindings"] = deepcopy_bindings(bindings)
+    return tasks
 
 
 def _parse_coverage_task_reference(reference: str) -> list[int] | None:
@@ -114,6 +141,163 @@ def _parse_coverage_task_reference(reference: str) -> list[int] | None:
             return None
         task_numbers.extend(range(range_start, range_end + 1))
     return task_numbers
+
+
+def _normalize_task_ui_contract(
+    task: dict[str, Any],
+    *,
+    implementation_baseline: dict[str, Any] | None,
+    required: bool,
+) -> dict[str, Any]:
+    ui_impact = task.get("ui_impact")
+    if ui_impact not in {"prototype_bound", "none"}:
+        if required:
+            raise DeliveryGoalError(
+                "UI task requires ui_impact and prototype_bindings"
+            )
+        raise DeliveryGoalError("ui_impact must be 'prototype_bound' or 'none'")
+    if ui_impact == "none":
+        reason = task.get("ui_impact_reason")
+        if not _has_value(reason):
+            raise DeliveryGoalError("ui_impact_reason is required when ui_impact is none")
+        bindings = task.get("prototype_bindings", [])
+        if bindings not in (None, []):
+            raise DeliveryGoalError(
+                "prototype_bindings must be empty when ui_impact is none"
+            )
+        return {
+            "ui_impact": "none",
+            "ui_impact_reason": str(reason),
+            "prototype_bindings": [],
+        }
+
+    raw_bindings = task.get("prototype_bindings")
+    if not isinstance(raw_bindings, list) or not raw_bindings:
+        raise DeliveryGoalError(
+            "prototype_bindings are required when ui_impact is prototype_bound"
+        )
+    units = {
+        (
+            unit.get("surface_id"),
+            unit.get("state_id"),
+            unit.get("viewport_class"),
+        ): unit
+        for unit in (implementation_baseline or {}).get("units", [])
+        if isinstance(unit, dict)
+    }
+    normalized_bindings = []
+    covered_units: set[tuple[Any, Any, Any]] = set()
+    expected_fields = {
+        "surface_id",
+        "state_id",
+        "viewport_classes",
+        "region_ids",
+        "interaction_ids",
+    }
+    for index, binding in enumerate(raw_bindings, start=1):
+        if not isinstance(binding, dict) or set(binding) != expected_fields:
+            raise DeliveryGoalError(
+                f"prototype binding {index} must contain exactly: "
+                + ", ".join(sorted(expected_fields))
+            )
+        surface_id = str(binding.get("surface_id") or "")
+        state_id = str(binding.get("state_id") or "")
+        viewports = _non_empty_unique_strings(
+            binding.get("viewport_classes"),
+            f"prototype binding {index} viewport_classes",
+        )
+        region_ids = _non_empty_unique_strings(
+            binding.get("region_ids"),
+            f"prototype binding {index} region_ids",
+        )
+        interaction_ids = _non_empty_unique_strings(
+            binding.get("interaction_ids"),
+            f"prototype binding {index} interaction_ids",
+        )
+        for viewport in viewports:
+            key = (surface_id, state_id, viewport)
+            unit = units.get(key)
+            if implementation_baseline is not None and unit is None:
+                raise DeliveryGoalError(
+                    f"prototype binding {index} references unknown baseline unit: {key}"
+                )
+            if key in covered_units:
+                raise DeliveryGoalError(f"duplicate prototype binding unit: {key}")
+            covered_units.add(key)
+            if unit is not None:
+                unknown_regions = sorted(
+                    set(region_ids) - set(unit.get("region_ids", []))
+                )
+                unknown_interactions = sorted(
+                    set(interaction_ids) - set(unit.get("interaction_ids", []))
+                )
+                if unknown_regions:
+                    raise DeliveryGoalError(
+                        f"prototype binding {index} references unknown regions: "
+                        + ", ".join(unknown_regions)
+                    )
+                if unknown_interactions:
+                    raise DeliveryGoalError(
+                        f"prototype binding {index} references unknown interactions: "
+                        + ", ".join(unknown_interactions)
+                    )
+        normalized_bindings.append(
+            {
+                "surface_id": surface_id,
+                "state_id": state_id,
+                "viewport_classes": viewports,
+                "region_ids": region_ids,
+                "interaction_ids": interaction_ids,
+            }
+        )
+    return {
+        "ui_impact": "prototype_bound",
+        "prototype_bindings": normalized_bindings,
+    }
+
+
+def _bindings_for_all_baseline_units(
+    implementation_baseline: dict[str, Any],
+) -> list[dict[str, Any]]:
+    bindings = []
+    for unit in implementation_baseline.get("units", []):
+        bindings.append(
+            {
+                "surface_id": unit["surface_id"],
+                "state_id": unit["state_id"],
+                "viewport_classes": [unit["viewport_class"]],
+                "region_ids": list(unit["region_ids"]),
+                "interaction_ids": list(unit["interaction_ids"]),
+            }
+        )
+    if not bindings:
+        raise DeliveryGoalError(
+            "ready implementation baseline units are required for UI tasks"
+        )
+    return bindings
+
+
+def deepcopy_bindings(bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **binding,
+            "viewport_classes": list(binding["viewport_classes"]),
+            "region_ids": list(binding["region_ids"]),
+            "interaction_ids": list(binding["interaction_ids"]),
+        }
+        for binding in bindings
+    ]
+
+
+def _non_empty_unique_strings(value: Any, label: str) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item.strip() for item in value)
+        or len(value) != len(set(value))
+    ):
+        raise DeliveryGoalError(f"{label} must contain unique non-empty strings")
+    return [str(item) for item in value]
 
 
 def build_delivery_goal(

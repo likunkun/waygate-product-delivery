@@ -251,6 +251,16 @@ def planned_tasks():
             "title": f"Implement task {index}",
             "description": f"Deliver implementation slice {index}",
             "verification": f"pytest -k task_{index}",
+            "ui_impact": "prototype_bound",
+            "prototype_bindings": [
+                {
+                    "surface_id": "primary-surface",
+                    "state_id": "ready",
+                    "viewport_classes": ["desktop"],
+                    "region_ids": ["primary-region"],
+                    "interaction_ids": ["primary-action"],
+                }
+            ],
         }
         for index in range(1, 5)
     ]

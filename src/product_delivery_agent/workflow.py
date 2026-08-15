@@ -79,6 +79,7 @@ from product_delivery_agent.gatekeeper import (
 )
 from product_delivery_agent.handoff import (
     build_codex_goal_handoff,
+    render_current_task_prompt,
     render_handoff_document,
 )
 from product_delivery_agent.host_goal import (
@@ -769,6 +770,7 @@ class ProductDeliveryWorkflow:
             prohibited_work=prohibited_work,
             planned_tasks=task_queue,
         )
+        task_queue = list(package["task_queue"])
         blockers = [
             blocker
             for blocker in derive_blockers(
@@ -2538,6 +2540,7 @@ class ProductDeliveryWorkflow:
         goal_path = artifacts_dir / "codex-goal-prompt.md"
         implementation_goal_path = artifacts_dir / "implementation-goal.md"
         task_queue_path = artifacts_dir / "task-queue.md"
+        current_task_prompt_path = artifacts_dir / "current-task-prompt.md"
         handoff_path.write_text(render_handoff_document(handoff), encoding="utf-8")
         goal_path.write_text(handoff["codex_goal_prompt"], encoding="utf-8")
         implementation_goal_path.write_text(
@@ -2545,6 +2548,15 @@ class ProductDeliveryWorkflow:
             encoding="utf-8",
         )
         task_queue_path.write_text(render_task_queue(delivery_goal), encoding="utf-8")
+        current_task = delivery_goal["planned_tasks"][0]
+        current_task_prompt = render_current_task_prompt(
+            current_task,
+            state.get("implementation_baseline") or {},
+        )
+        current_task_prompt_path.write_text(
+            current_task_prompt,
+            encoding="utf-8",
+        )
 
         state["handoff"] = {
             **handoff,
@@ -2552,6 +2564,7 @@ class ProductDeliveryWorkflow:
             "codex_goal_prompt_path": "artifacts/codex-goal-prompt.md",
             "implementation_goal_path": "artifacts/implementation-goal.md",
             "task_queue_path": "artifacts/task-queue.md",
+            "current_task_prompt_path": "artifacts/current-task-prompt.md",
         }
         state["delivery_goal"] = {
             **delivery_goal,
@@ -2566,6 +2579,8 @@ class ProductDeliveryWorkflow:
             "completed_tasks": list(delivery_goal["completed_tasks"]),
         }
         state["codex_goal_prompt"] = handoff["codex_goal_prompt"]
+        state["current_task_prompt"] = current_task_prompt
+        state["current_task_prompt_path"] = "artifacts/current-task-prompt.md"
         state["freeze"] = {
             "frozen": True,
             "scope_version": state.get("freeze", {}).get("scope_version") or "v1",
@@ -2613,6 +2628,9 @@ class ProductDeliveryWorkflow:
                     str(implementation_goal_path)
                 ),
                 "artifacts/task-queue.md": self._artifact_hash(str(task_queue_path)),
+                "artifacts/current-task-prompt.md": self._artifact_hash(
+                    str(current_task_prompt_path)
+                ),
             },
             metadata={
                 "launch_package_hash": package["launch_package_hash"],
@@ -3761,7 +3779,20 @@ class ProductDeliveryWorkflow:
         prohibited_work: list[str] | None,
         planned_tasks: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        task_queue = normalize_planned_tasks(planned_tasks)
+        try:
+            task_queue = normalize_planned_tasks(
+                planned_tasks,
+                implementation_baseline=(
+                    state.get("implementation_baseline")
+                    if implementation_baseline_required(state)
+                    else None
+                ),
+                require_prototype_bindings=implementation_baseline_required(
+                    state
+                ),
+            )
+        except DeliveryGoalError as cause:
+            raise WorkflowError(str(cause)) from cause
         required_commands = list(verification_commands or [])
         review_modes = {
             review_type: review.get("review_mode", "spawned_subagents")

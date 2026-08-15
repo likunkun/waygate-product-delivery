@@ -90,7 +90,7 @@ Expected: all selected tests pass.
 - Modify: `src/product_delivery_agent/workflow.py`
 - Test: `tests/test_prototype_implementation_closure_v1028.py`
 
-- [ ] **Step 1: Write failing task-schema and prompt tests**
+- [x] **Step 1: Write failing task-schema and prompt tests**
 
 ```python
 def test_new_ui_explicit_task_without_binding_blocks_launch(self):
@@ -105,15 +105,15 @@ def test_current_task_prompt_contains_only_bound_units(self):
     self.assertNotIn("unrelated-settings-surface", prompt)
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Expected: generic UI task is accepted and no current-task prompt exists.
 
-- [ ] **Step 3: Extend normalized task schema and handoff rendering**
+- [x] **Step 3: Extend normalized task schema and handoff rendering**
 
 Normalize `ui_impact`, `ui_impact_reason`, and `prototype_bindings` into `planned_task_hash`. Validate binding references against the current implementation baseline. Coverage-derived UI tasks bind all baseline units; explicit queues must declare their bindings. Extend the Goal prompt with immutable prototype authority rules and baseline identity. Add `render_current_task_prompt(task, baseline)` and persist `artifacts/current-task-prompt.md` at handoff.
 
-- [ ] **Step 4: Run prompt/task tests and handoff regression suites**
+- [x] **Step 4: Run prompt/task tests and handoff regression suites**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_prototype_implementation_closure_v1028.py tests/test_codex_goal_handoff.py tests/test_delivery_goal_task_queue.py tests/test_goal_driven_closure_v104.py -v`
 
