@@ -6,13 +6,22 @@ from product_delivery_agent.implementation_baseline import (
     DEFAULT_VISUAL_POLICY,
     ImplementationBaselineError,
     build_implementation_baseline,
+    implementation_baseline_required,
     normalize_visual_policy,
 )
 from product_delivery_agent.prototype_design import build_prototype_design_bundle
 from product_delivery_agent.ui_prototype import build_prototype_contract
+from product_delivery_agent.workflow import ProductDeliveryWorkflow
 from tests.conformance_fixtures import (
+    confirm_product_baseline,
     prototype_contract,
     prototype_design_bundle_payload,
+    record_bundled_ui_prototype_review,
+)
+from tests.test_goal_driven_closure_v104 import (
+    multi_agent_review,
+    scenario_row,
+    ui_review_payload,
 )
 
 
@@ -116,6 +125,120 @@ class PrototypeImplementationBaselineV1028Tests(unittest.TestCase):
                 {"full_surface_max_diff_ratio": 0.08},
                 contract,
             )
+
+
+class PrototypeImplementationBaselineWorkflowV1028Tests(unittest.TestCase):
+    def ready_ui_workflow(self, root: Path) -> ProductDeliveryWorkflow:
+        workflow = ProductDeliveryWorkflow(root)
+        workflow.start(
+            feature_slug="v1.0.28-prototype-driven-implementation",
+            multi_agent_mode="spawned_subagents_authorized",
+        )
+        workflow.record_scenario_matrix([scenario_row()])
+        workflow.select_project_type("ui")
+        review = ui_review_payload("docs/prototypes/v1028-prototype.html")
+        record_bundled_ui_prototype_review(workflow, root, review)
+        return workflow
+
+    def test_new_ui_confirmation_writes_implementation_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = self.ready_ui_workflow(root)
+
+            state = confirm_product_baseline(
+                workflow,
+                multi_agent_review("scenario"),
+            )
+
+            baseline = state["implementation_baseline"]
+            self.assertEqual(baseline["status"], "ready")
+            self.assertRegex(baseline["baseline_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(
+                baseline["product_domain_sha256"],
+                state["prototype_design_bundle"]["product_domain_sha256"],
+            )
+            self.assertEqual(
+                baseline["artifact_path"],
+                "artifacts/implementation-baseline.json",
+            )
+            self.assertTrue(
+                (
+                    root
+                    / ".product-delivery/artifacts/implementation-baseline.json"
+                ).is_file()
+            )
+
+    def test_visual_policy_is_frozen_into_product_confirmation_and_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = self.ready_ui_workflow(root)
+
+            state = workflow.record_implementation_visual_policy(
+                {
+                    "full_surface_max_diff_ratio": 0.03,
+                    "critical_region_max_diff_ratio": 0.01,
+                }
+            )
+            self.assertEqual(
+                state["implementation_visual_policy"][
+                    "full_surface_max_diff_ratio"
+                ],
+                0.03,
+            )
+            state = confirm_product_baseline(
+                workflow,
+                multi_agent_review("scenario"),
+            )
+
+            self.assertEqual(
+                state["implementation_baseline"]["visual_policy"][
+                    "full_surface_max_diff_ratio"
+                ],
+                0.03,
+            )
+            confirmation = state["user_confirmations"]["product_baseline"]
+            self.assertEqual(
+                confirmation["implementation_visual_policy_sha256"],
+                state["implementation_baseline"]["visual_policy_sha256"],
+            )
+
+    def test_visual_policy_cannot_change_after_product_confirmation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = self.ready_ui_workflow(root)
+            confirm_product_baseline(workflow, multi_agent_review("scenario"))
+
+            with self.assertRaisesRegex(Exception, "reopen product baseline"):
+                workflow.record_implementation_visual_policy(
+                    {"full_surface_max_diff_ratio": 0.03}
+                )
+
+    def test_non_ui_delivery_marks_implementation_baseline_not_applicable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = ProductDeliveryWorkflow(tmp)
+            workflow.start(
+                feature_slug="v1.0.28-non-ui",
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+
+            state = workflow.select_project_type("non_ui")
+
+            self.assertEqual(
+                state["implementation_baseline_policy"]["status"],
+                "not_applicable",
+            )
+            self.assertFalse(implementation_baseline_required(state))
+
+    def test_confirmed_legacy_ui_without_policy_is_grandfathered(self):
+        legacy_state = {
+            "project_type": "ui",
+            "ui_prototype": {"confirmed_by_user": True},
+            "user_confirmations": {
+                "product_baseline": {"decision": "approved"}
+            },
+        }
+
+        self.assertFalse(implementation_baseline_required(legacy_state))
 
     def test_visual_policy_rejects_unknown_mask_regions(self):
         contract = prototype_contract()

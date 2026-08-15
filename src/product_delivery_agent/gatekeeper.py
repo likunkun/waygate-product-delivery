@@ -131,6 +131,11 @@ def surface_input_hash(state: dict[str, Any]) -> str:
         surface_facts["prototype_design_product_domain_sha256"] = (
             product_domain_sha256
         )
+    implementation_policy = state.get("implementation_baseline_policy") or {}
+    if implementation_policy.get("status") == "required":
+        surface_facts["implementation_visual_policy"] = state.get(
+            "implementation_visual_policy"
+        )
     return stable_state_hash(surface_facts)
 
 

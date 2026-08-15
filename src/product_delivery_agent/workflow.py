@@ -99,6 +99,14 @@ from product_delivery_agent.host_goal import (
     recover_stale_owner_claim_checkpoint,
     stable_hash as host_goal_stable_hash,
 )
+from product_delivery_agent.implementation_baseline import (
+    BASELINE_VERSION,
+    DEFAULT_VISUAL_POLICY,
+    ImplementationBaselineError,
+    build_implementation_baseline,
+    implementation_baseline_required,
+    normalize_visual_policy,
+)
 from product_delivery_agent.non_ui_behavior import (
     render_non_ui_behavior_contract,
     validate_non_ui_behavior_contract,
@@ -362,6 +370,16 @@ class ProductDeliveryWorkflow:
         }
         state["prototype_contract"] = {"status": "missing"}
         state["prototype_design_bundle"] = {"status": "missing"}
+        state["implementation_baseline_policy"] = {
+            "policy_version": BASELINE_VERSION,
+            "status": "pending_project_type",
+            "introduced_in": "1.0.28",
+        }
+        state["implementation_baseline"] = {"status": "missing"}
+        state["task_prototype_conformance"] = {
+            "status": "missing",
+            "records": {},
+        }
         state["prototype_production_conformance"] = {
             "status": "missing",
             "records": [],
@@ -942,6 +960,14 @@ class ProductDeliveryWorkflow:
                     ],
                 }
             )
+            if implementation_baseline_required(state):
+                visual_policy = normalize_visual_policy(
+                    state.get("implementation_visual_policy"),
+                    current_contract,
+                )
+                confirmation["implementation_visual_policy_sha256"] = (
+                    stable_state_hash(visual_policy)
+                )
         artifact_name = f"product-baseline-{pending['nonce']}.md"
         relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
         confirmations_dir = (
@@ -987,6 +1013,33 @@ class ProductDeliveryWorkflow:
                 "confirmation_source": "chat_user_reply",
                 "confirmation_artifact_path": relative_artifact_path,
             }
+            if implementation_baseline_required(state):
+                try:
+                    implementation_baseline = build_implementation_baseline(
+                        self.project_root,
+                        bundle,
+                        current_contract,
+                        state.get("implementation_visual_policy"),
+                    )
+                except ImplementationBaselineError as cause:
+                    raise ConfirmationError(str(cause)) from cause
+                artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+                artifacts_dir.mkdir(parents=True, exist_ok=True)
+                baseline_path = artifacts_dir / "implementation-baseline.json"
+                baseline_path.write_text(
+                    json.dumps(
+                        implementation_baseline,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                state["implementation_baseline"] = {
+                    **implementation_baseline,
+                    "artifact_path": "artifacts/implementation-baseline.json",
+                    "artifact_sha256": self._artifact_hash(str(baseline_path)),
+                }
         else:
             contract_confirmation = {
                 **logical,
@@ -1018,6 +1071,47 @@ class ProductDeliveryWorkflow:
         )
         state["stage"] = "product_baseline_user_confirmed"
         state["next_gate"] = "planned_e2e_obligations"
+        return write_state(self.project_root, state)
+
+    def record_implementation_visual_policy(
+        self,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Freeze stricter visual thresholds before product confirmation."""
+        state = self._require_started(host_goal_transition=True)
+        if state.get("project_type") != "ui":
+            raise WorkflowError(
+                "implementation visual policy is only available for UI projects"
+            )
+        if self._product_baseline_is_confirmed(state):
+            raise WorkflowError(
+                "reopen product baseline before changing implementation visual policy"
+            )
+        if not implementation_baseline_required(state):
+            raise WorkflowError(
+                "implementation visual policy requires V1.0.28 baseline policy"
+            )
+        _, prototype_contract = self._rebuild_current_prototype_design_bundle(
+            state
+        )
+        try:
+            normalized = normalize_visual_policy(policy, prototype_contract)
+        except ImplementationBaselineError as cause:
+            raise WorkflowError(str(cause)) from cause
+        if state.get("implementation_visual_policy") == normalized:
+            return state
+        state["implementation_visual_policy"] = normalized
+        state.setdefault("pending_confirmations", {}).pop(
+            "product_baseline",
+            None,
+        )
+        self._mark_reviews_stale(
+            state,
+            ("scenario",),
+            reason="implementation_visual_policy_changed",
+        )
+        state["stage"] = "implementation_visual_policy_ready"
+        state["next_gate"] = "multi_agent_scenario_review"
         return write_state(self.project_root, state)
 
     def prepare_test_coverage_confirmation(self) -> dict[str, Any]:
@@ -1326,6 +1420,14 @@ class ProductDeliveryWorkflow:
         required_artifacts = list(state.get("required_artifacts", []))
         feature_slug = state.get("feature_slug")
         if project_type == "ui":
+            state["implementation_baseline_policy"] = {
+                "policy_version": BASELINE_VERSION,
+                "status": "required",
+                "introduced_in": "1.0.28",
+            }
+            state["implementation_visual_policy"] = deepcopy(
+                DEFAULT_VISUAL_POLICY
+            )
             state["stage"] = "ui_prototype_confirmation"
             state["next_gate"] = "ui_prototype_review"
             if "ui_html_prototype_confirmation" not in blocked_until:
@@ -1335,6 +1437,11 @@ class ProductDeliveryWorkflow:
                 if prototype_path not in required_artifacts:
                     required_artifacts.append(prototype_path)
         else:
+            state["implementation_baseline_policy"] = {
+                "policy_version": BASELINE_VERSION,
+                "status": "not_applicable",
+                "introduced_in": "1.0.28",
+            }
             state["stage"] = "non_ui_behavior_contract_confirmation"
             state["next_gate"] = "non_ui_behavior_contract"
             if "non_ui_behavior_contract_confirmation" not in blocked_until:

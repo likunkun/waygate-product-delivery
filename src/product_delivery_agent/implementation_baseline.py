@@ -45,6 +45,16 @@ _MASK_FIELDS = {
 }
 
 
+def implementation_baseline_required(state: dict[str, Any]) -> bool:
+    """Return whether the delivery opted into the V1.0.28 UI policy."""
+    policy = state.get("implementation_baseline_policy") or {}
+    return bool(
+        state.get("project_type") == "ui"
+        and policy.get("policy_version") == BASELINE_VERSION
+        and policy.get("status") == "required"
+    )
+
+
 def normalize_visual_policy(
     policy: dict[str, Any] | None,
     prototype_contract: dict[str, Any],

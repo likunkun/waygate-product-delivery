@@ -55,7 +55,7 @@ Expected: baseline-domain tests pass.
 - Modify: `src/product_delivery_agent/workflow.py`
 - Test: `tests/test_prototype_implementation_closure_v1028.py`
 
-- [ ] **Step 1: Write failing workflow lifecycle tests**
+- [x] **Step 1: Write failing workflow lifecycle tests**
 
 ```python
 def test_new_ui_confirmation_writes_implementation_baseline(self):
@@ -68,15 +68,15 @@ def test_non_ui_and_confirmed_legacy_ui_are_not_forced_into_new_policy(self):
     self.assertFalse(implementation_baseline_required(legacy_confirmed_ui_state))
 ```
 
-- [ ] **Step 2: Run lifecycle tests and verify RED**
+- [x] **Step 2: Run lifecycle tests and verify RED**
 
 Expected: missing policy/baseline state and workflow API.
 
-- [ ] **Step 3: Implement lifecycle integration**
+- [x] **Step 3: Implement lifecycle integration**
 
 Add `implementation_baseline_policy` for new deliveries when project type is selected. Add `record_implementation_visual_policy(policy)` before product confirmation, include it in `surface_input_hash`, and write the canonical baseline during `confirm_product_baseline`. Add a helper that loads the artifact and verifies its hash before use. Product-domain invalidation must mark the baseline stale and clear task conformance; review-domain-only changes must not.
 
-- [ ] **Step 4: Run lifecycle tests and existing confirmation/prototype suites**
+- [x] **Step 4: Run lifecycle tests and existing confirmation/prototype suites**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_prototype_implementation_closure_v1028.py tests/test_layered_confirmation_v1021.py tests/test_prototype_design_workflow_v1023.py -v`
 
