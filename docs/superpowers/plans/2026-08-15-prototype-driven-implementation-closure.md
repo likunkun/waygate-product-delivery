@@ -179,21 +179,21 @@ Expected: all selected tests pass.
 - Modify: release/docs indexes as required by existing packaging tests
 - Test: `tests/test_plugin_packaging.py`
 
-- [ ] **Step 1: Write failing packaging/version assertions**
+- [x] **Step 1: Write failing packaging/version assertions**
 
 Require manifest/runtime version `1.0.28`, the new implementation-baseline module in packaged runtime, V1.0.28 skill rules, and exact source/runtime parity.
 
-- [ ] **Step 2: Run packaging tests and verify RED**
+- [x] **Step 2: Run packaging tests and verify RED**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_plugin_packaging.py -v`
 
 Expected: version/content assertions fail against `1.0.27`.
 
-- [ ] **Step 3: Update version and regenerate package**
+- [x] **Step 3: Update version and regenerate package**
 
 Set `PLUGIN_VERSION = "1.0.28"`, document the new hard rules in generated skill text, run `package_codex_plugin(repo_root)`, and refresh the manifest cachebuster using the existing release convention. Keep canonical closure schema at `v0.11`.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run:
 
@@ -206,6 +206,6 @@ git diff --check
 
 Expected: all tests pass, compilation succeeds, validator help exits zero, and diff check is clean.
 
-- [ ] **Step 5: Commit implementation**
+- [x] **Step 5: Commit implementation**
 
 Commit runtime/tests, then generated package/version/docs as reviewable commits. Do not commit `.codegraph`, caches, distributions, or temporary evidence.

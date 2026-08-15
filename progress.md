@@ -2666,5 +2666,8 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Implemented the frozen UI implementation baseline and task-slice binding rules without changing closure schema `v0.11`.
 - Added `record_task_prototype_conformance()` and made current passed conformance evidence mandatory before a UI TASK can complete.
 - Bound launch authorization and completion reuse to implementation baseline, TASK, and conformance identities; product-domain or visual-policy changes now stale downstream evidence while annotation-only changes preserve it.
-- Updated product runtime version to `1.0.28`, regenerated the repository plugin, and refreshed its local cachebuster to `1.0.28+codex.20260815052143` using the plugin-creator helper.
-- Packaging verification passed: 8 tests; plugin structural validation passed.
+- Updated product runtime version to `1.0.28`, regenerated the repository plugin and distribution archive, and refreshed its local cachebuster to `1.0.28+codex.20260815061129` using the plugin-creator helper.
+- Migrated older UI test fixtures to provide explicit bindings and current per-task conformance evidence; kept the product-baseline blocker ahead of low-level launch-package construction errors.
+- Independent code review found four Important issues and no Critical issues. Added canonical baseline/conformance artifact reload and hash validation, corrected reused-task prompt cursors, and bounded PNG file/pixel/decompression resources; preserved annotation-only compatibility and no-side-effects-on-failed-handoff behavior.
+- Independent re-review found no remaining Critical, Important, or Minor issues and returned `Ready to merge: Yes`; its 42 focused baseline/conformance/supersession/launch tests passed.
+- Final post-review verification: 399 tests passed in 89.388s; source and packaged runtime compilation, plugin structural validation, closure CLI smoke, distribution contents, and `git diff --check` all passed.
