@@ -15,9 +15,13 @@ from product_delivery_agent.gatekeeper import derive_blockers, render_closure_va
 from product_delivery_agent.plugin_packaging import package_codex_plugin
 from product_delivery_agent.transition_journal import transition_names
 
-from tests.conformance_fixtures import activate_host_goal, reconcile_host_goal
+from tests.conformance_fixtures import (
+    activate_host_goal,
+    record_passing_task_prototype_conformance,
+    reconcile_host_goal,
+)
 from tests.test_feature_closure import ready_workflow, valid_closure_artifact
-from tests.test_goal_driven_closure_v104 import workflow_ready_for_handoff
+from tests.test_goal_driven_closure_v104 import planned_tasks, workflow_ready_for_handoff
 
 
 def write_raw_state(project_root, state):
@@ -284,29 +288,16 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = workflow_ready_for_handoff(project_root)
+            task_queue = planned_tasks()[:1]
             workflow.record_implementation_launch_authorization(
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
-                planned_tasks=[
-                    {
-                        "task_id": "TASK-001",
-                        "title": "Implement task 1",
-                        "description": "Deliver implementation slice 1",
-                        "verification": "pytest -k task_1",
-                    }
-                ],
+                planned_tasks=task_queue,
             )
             workflow.generate_codex_goal_handoff(
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
-                planned_tasks=[
-                    {
-                        "task_id": "TASK-001",
-                        "title": "Implement task 1",
-                        "description": "Deliver implementation slice 1",
-                        "verification": "pytest -k task_1",
-                    }
-                ],
+                planned_tasks=task_queue,
             )
             state = load_state(project_root)
             self.assertEqual(
@@ -315,6 +306,9 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
             )
 
             activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
             reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",

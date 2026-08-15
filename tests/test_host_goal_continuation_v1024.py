@@ -19,6 +19,7 @@ from product_delivery_agent.gatekeeper import (
 )
 from product_delivery_agent.transition_journal import append_transition
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+from tests.conformance_fixtures import record_passing_task_prototype_conformance
 from tests.test_codex_goal_handoff import authorize_launch, ready_workflow
 from tests.test_launch_package_supersession_v1018 import task_completion_artifact
 
@@ -312,7 +313,8 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
 
     def test_post_handoff_progress_requires_fresh_goal_reconciliation(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = handed_off_workflow(Path(tmp))
+            project_root = Path(tmp)
+            workflow = handed_off_workflow(project_root)
 
             with self.assertRaisesRegex(WorkflowError, "Host Goal"):
                 workflow.record_task_completion(
@@ -323,6 +325,9 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                 )
 
             active = activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
             checkpoint = workflow.prepare_host_goal_reconciliation(
                 "stage_transition",
                 target_gate=active["next_gate"],
@@ -765,6 +770,9 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
             project_root = Path(tmp)
             workflow = handed_off_workflow(project_root)
             active = activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
             objective = active["host_goal_binding"]["objective"]
             state = workflow.status()
             state["blocked_until"] = ["requirements_clarification"]

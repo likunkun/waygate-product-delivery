@@ -22,6 +22,7 @@ from tests.conformance_fixtures import (
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
+    record_passing_task_prototype_conformance,
     reconcile_host_goal,
     write_prototype_screenshot,
 )
@@ -632,6 +633,10 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ready_for_handoff(project_root)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
+            reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
                 artifact=task_completion_artifact(workflow._state(), "TASK-001"),
@@ -652,6 +657,10 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ready_for_handoff(project_root)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
+            reconcile_host_goal(workflow)
             workflow.record_task_completion(
                 "TASK-001",
                 artifact=task_completion_artifact(workflow._state(), "TASK-001"),
