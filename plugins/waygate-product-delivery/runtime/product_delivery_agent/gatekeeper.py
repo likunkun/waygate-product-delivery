@@ -38,7 +38,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.27"
+PLUGIN_VERSION = "1.0.28"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -130,6 +130,11 @@ def surface_input_hash(state: dict[str, Any]) -> str:
     if _non_empty_string(product_domain_sha256):
         surface_facts["prototype_design_product_domain_sha256"] = (
             product_domain_sha256
+        )
+    implementation_policy = state.get("implementation_baseline_policy") or {}
+    if implementation_policy.get("status") == "required":
+        surface_facts["implementation_visual_policy"] = state.get(
+            "implementation_visual_policy"
         )
     return stable_state_hash(surface_facts)
 

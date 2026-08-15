@@ -79,6 +79,7 @@ from product_delivery_agent.gatekeeper import (
 )
 from product_delivery_agent.handoff import (
     build_codex_goal_handoff,
+    render_current_task_prompt,
     render_handoff_document,
 )
 from product_delivery_agent.host_goal import (
@@ -98,6 +99,15 @@ from product_delivery_agent.host_goal import (
     recover_stale_activation_checkpoint,
     recover_stale_owner_claim_checkpoint,
     stable_hash as host_goal_stable_hash,
+)
+from product_delivery_agent.implementation_baseline import (
+    BASELINE_VERSION,
+    DEFAULT_VISUAL_POLICY,
+    ImplementationBaselineError,
+    build_implementation_baseline,
+    build_task_prototype_conformance,
+    implementation_baseline_required,
+    normalize_visual_policy,
 )
 from product_delivery_agent.non_ui_behavior import (
     render_non_ui_behavior_contract,
@@ -362,6 +372,16 @@ class ProductDeliveryWorkflow:
         }
         state["prototype_contract"] = {"status": "missing"}
         state["prototype_design_bundle"] = {"status": "missing"}
+        state["implementation_baseline_policy"] = {
+            "policy_version": BASELINE_VERSION,
+            "status": "pending_project_type",
+            "introduced_in": "1.0.28",
+        }
+        state["implementation_baseline"] = {"status": "missing"}
+        state["task_prototype_conformance"] = {
+            "status": "missing",
+            "records": {},
+        }
         state["prototype_production_conformance"] = {
             "status": "missing",
             "records": [],
@@ -751,6 +771,7 @@ class ProductDeliveryWorkflow:
             prohibited_work=prohibited_work,
             planned_tasks=task_queue,
         )
+        task_queue = list(package["task_queue"])
         blockers = [
             blocker
             for blocker in derive_blockers(
@@ -942,6 +963,14 @@ class ProductDeliveryWorkflow:
                     ],
                 }
             )
+            if implementation_baseline_required(state):
+                visual_policy = normalize_visual_policy(
+                    state.get("implementation_visual_policy"),
+                    current_contract,
+                )
+                confirmation["implementation_visual_policy_sha256"] = (
+                    stable_state_hash(visual_policy)
+                )
         artifact_name = f"product-baseline-{pending['nonce']}.md"
         relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
         confirmations_dir = (
@@ -987,6 +1016,33 @@ class ProductDeliveryWorkflow:
                 "confirmation_source": "chat_user_reply",
                 "confirmation_artifact_path": relative_artifact_path,
             }
+            if implementation_baseline_required(state):
+                try:
+                    implementation_baseline = build_implementation_baseline(
+                        self.project_root,
+                        bundle,
+                        current_contract,
+                        state.get("implementation_visual_policy"),
+                    )
+                except ImplementationBaselineError as cause:
+                    raise ConfirmationError(str(cause)) from cause
+                artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+                artifacts_dir.mkdir(parents=True, exist_ok=True)
+                baseline_path = artifacts_dir / "implementation-baseline.json"
+                baseline_path.write_text(
+                    json.dumps(
+                        implementation_baseline,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                state["implementation_baseline"] = {
+                    **implementation_baseline,
+                    "artifact_path": "artifacts/implementation-baseline.json",
+                    "artifact_sha256": self._artifact_hash(str(baseline_path)),
+                }
         else:
             contract_confirmation = {
                 **logical,
@@ -1018,6 +1074,55 @@ class ProductDeliveryWorkflow:
         )
         state["stage"] = "product_baseline_user_confirmed"
         state["next_gate"] = "planned_e2e_obligations"
+        return write_state(self.project_root, state)
+
+    def record_implementation_visual_policy(
+        self,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Freeze stricter visual thresholds before product confirmation."""
+        state = self._require_started(host_goal_transition=True)
+        if state.get("project_type") != "ui":
+            raise WorkflowError(
+                "implementation visual policy is only available for UI projects"
+            )
+        if self._product_baseline_is_confirmed(state):
+            raise WorkflowError(
+                "reopen product baseline before changing implementation visual policy"
+            )
+        if not implementation_baseline_required(state):
+            raise WorkflowError(
+                "implementation visual policy requires V1.0.28 baseline policy"
+            )
+        _, prototype_contract = self._rebuild_current_prototype_design_bundle(
+            state
+        )
+        try:
+            normalized = normalize_visual_policy(policy, prototype_contract)
+        except ImplementationBaselineError as cause:
+            raise WorkflowError(str(cause)) from cause
+        if state.get("implementation_visual_policy") == normalized:
+            return state
+        state["implementation_visual_policy"] = normalized
+        self._invalidate_implementation_baseline(
+            state,
+            reason="implementation_visual_policy_changed",
+        )
+        self._invalidate_launch_authorization(
+            state,
+            reason="implementation_visual_policy_changed",
+        )
+        state.setdefault("pending_confirmations", {}).pop(
+            "product_baseline",
+            None,
+        )
+        self._mark_reviews_stale(
+            state,
+            ("scenario",),
+            reason="implementation_visual_policy_changed",
+        )
+        state["stage"] = "implementation_visual_policy_ready"
+        state["next_gate"] = "multi_agent_scenario_review"
         return write_state(self.project_root, state)
 
     def prepare_test_coverage_confirmation(self) -> dict[str, Any]:
@@ -1326,6 +1431,14 @@ class ProductDeliveryWorkflow:
         required_artifacts = list(state.get("required_artifacts", []))
         feature_slug = state.get("feature_slug")
         if project_type == "ui":
+            state["implementation_baseline_policy"] = {
+                "policy_version": BASELINE_VERSION,
+                "status": "required",
+                "introduced_in": "1.0.28",
+            }
+            state["implementation_visual_policy"] = deepcopy(
+                DEFAULT_VISUAL_POLICY
+            )
             state["stage"] = "ui_prototype_confirmation"
             state["next_gate"] = "ui_prototype_review"
             if "ui_html_prototype_confirmation" not in blocked_until:
@@ -1335,6 +1448,11 @@ class ProductDeliveryWorkflow:
                 if prototype_path not in required_artifacts:
                     required_artifacts.append(prototype_path)
         else:
+            state["implementation_baseline_policy"] = {
+                "policy_version": BASELINE_VERSION,
+                "status": "not_applicable",
+                "introduced_in": "1.0.28",
+            }
             state["stage"] = "non_ui_behavior_contract_confirmation"
             state["next_gate"] = "non_ui_behavior_contract"
             if "non_ui_behavior_contract_confirmation" not in blocked_until:
@@ -1716,6 +1834,10 @@ class ProductDeliveryWorkflow:
             state,
             reason="ui_prototype_feedback",
         )
+        self._invalidate_implementation_baseline(
+            state,
+            reason="ui_prototype_feedback",
+        )
         self._invalidate_requirements_e2e_confirmation(
             state,
             reason="ui_prototype_feedback",
@@ -1870,6 +1992,10 @@ class ProductDeliveryWorkflow:
         }
 
         if product_changed:
+            self._invalidate_implementation_baseline(
+                state,
+                reason="prototype_design_product_domain_changed",
+            )
             self._mark_reviews_stale(
                 state,
                 ("scenario", "test", "test_coverage", "test_implementation", "ui_conformance"),
@@ -2397,6 +2523,11 @@ class ProductDeliveryWorkflow:
         reusable_completions = self._matching_task_completions(
             previous_goal,
             delivery_goal,
+            implementation_baseline=state.get("implementation_baseline") or {},
+            task_prototype_conformance=state.get(
+                "task_prototype_conformance"
+            )
+            or {},
         )
         if replacing_package:
             previous_binding = deepcopy(state.get("host_goal_binding") or {})
@@ -2431,6 +2562,7 @@ class ProductDeliveryWorkflow:
         goal_path = artifacts_dir / "codex-goal-prompt.md"
         implementation_goal_path = artifacts_dir / "implementation-goal.md"
         task_queue_path = artifacts_dir / "task-queue.md"
+        current_task_prompt_path = artifacts_dir / "current-task-prompt.md"
         handoff_path.write_text(render_handoff_document(handoff), encoding="utf-8")
         goal_path.write_text(handoff["codex_goal_prompt"], encoding="utf-8")
         implementation_goal_path.write_text(
@@ -2438,6 +2570,15 @@ class ProductDeliveryWorkflow:
             encoding="utf-8",
         )
         task_queue_path.write_text(render_task_queue(delivery_goal), encoding="utf-8")
+        current_task = delivery_goal["planned_tasks"][0]
+        current_task_prompt = render_current_task_prompt(
+            current_task,
+            state.get("implementation_baseline") or {},
+        )
+        current_task_prompt_path.write_text(
+            current_task_prompt,
+            encoding="utf-8",
+        )
 
         state["handoff"] = {
             **handoff,
@@ -2445,6 +2586,7 @@ class ProductDeliveryWorkflow:
             "codex_goal_prompt_path": "artifacts/codex-goal-prompt.md",
             "implementation_goal_path": "artifacts/implementation-goal.md",
             "task_queue_path": "artifacts/task-queue.md",
+            "current_task_prompt_path": "artifacts/current-task-prompt.md",
         }
         state["delivery_goal"] = {
             **delivery_goal,
@@ -2459,6 +2601,8 @@ class ProductDeliveryWorkflow:
             "completed_tasks": list(delivery_goal["completed_tasks"]),
         }
         state["codex_goal_prompt"] = handoff["codex_goal_prompt"]
+        state["current_task_prompt"] = current_task_prompt
+        state["current_task_prompt_path"] = "artifacts/current-task-prompt.md"
         state["freeze"] = {
             "frozen": True,
             "scope_version": state.get("freeze", {}).get("scope_version") or "v1",
@@ -2506,6 +2650,9 @@ class ProductDeliveryWorkflow:
                     str(implementation_goal_path)
                 ),
                 "artifacts/task-queue.md": self._artifact_hash(str(task_queue_path)),
+                "artifacts/current-task-prompt.md": self._artifact_hash(
+                    str(current_task_prompt_path)
+                ),
             },
             metadata={
                 "launch_package_hash": package["launch_package_hash"],
@@ -2829,6 +2976,90 @@ class ProductDeliveryWorkflow:
         state = self._require_started()
         return derive_goal_remaining_tasks(state)
 
+    def record_task_prototype_conformance(
+        self,
+        task_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record objective prototype conformance for the current UI task."""
+        state = self._require_started(host_goal_transition=True)
+        self._require_current_prototype_progression(state)
+        if not implementation_baseline_required(state):
+            raise WorkflowError(
+                "task prototype conformance is only available for required UI baselines"
+            )
+        goal = state.get("delivery_goal") or {}
+        if goal.get("current_task_cursor") != task_id:
+            raise WorkflowError(
+                "task prototype conformance must match the current task cursor"
+            )
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict):
+            raise WorkflowError(f"task is not in planned TASK queue: {task_id}")
+        if planned_task.get("ui_impact") != "prototype_bound":
+            raise WorkflowError(
+                "task prototype conformance is not applicable when ui_impact is none"
+            )
+        try:
+            evidence = build_task_prototype_conformance(
+                self.project_root,
+                payload,
+                implementation_baseline=state.get("implementation_baseline") or {},
+                planned_task=planned_task,
+            )
+        except Exception as cause:
+            raise WorkflowError(str(cause)) from cause
+
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        task_file_identity = hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
+        artifact_name = f"task-prototype-conformance-{task_file_identity}.json"
+        artifact_path = artifacts_dir / artifact_name
+        artifact_path.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        artifact_sha256 = self._artifact_hash(str(artifact_path))
+        current = state.get("task_prototype_conformance") or {}
+        records = dict(current.get("records") or {})
+        records[task_id] = {
+            **evidence,
+            "artifact_path": f"artifacts/{artifact_name}",
+            "artifact_sha256": artifact_sha256,
+        }
+        state["task_prototype_conformance"] = {
+            "status": evidence["status"],
+            "records": records,
+        }
+        state = append_transition(
+            state,
+            "task_prototype_conformance_recorded",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "implementation_baseline": evidence[
+                    "implementation_baseline_sha256"
+                ],
+                "planned_task": evidence["planned_task_hash"],
+            },
+            output_artifact_hashes={
+                f"artifacts/{artifact_name}": artifact_sha256,
+            },
+            metadata={
+                "task_id": task_id,
+                "status": evidence["status"],
+                "failure_codes": list(evidence["failure_codes"]),
+            },
+        )
+        return write_state(self.project_root, state)
+
     def record_task_completion(
         self,
         task_id: str,
@@ -2837,11 +3068,39 @@ class ProductDeliveryWorkflow:
     ) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
+        self._assert_current_task_prototype_conformance(state, task_id)
+        canonical_artifact = dict(artifact)
+        if implementation_baseline_required(state):
+            goal = state.get("delivery_goal") or {}
+            planned_task = next(
+                (
+                    task
+                    for task in goal.get("planned_tasks", [])
+                    if task.get("task_id") == task_id
+                ),
+                {},
+            )
+            if planned_task.get("ui_impact") == "prototype_bound":
+                conformance = (
+                    (state.get("task_prototype_conformance") or {})
+                    .get("records", {})
+                    .get(task_id, {})
+                )
+                canonical_artifact.update(
+                    {
+                        "implementation_baseline_sha256": (
+                            state.get("implementation_baseline") or {}
+                        ).get("baseline_sha256"),
+                        "task_prototype_conformance_sha256": conformance.get(
+                            "evidence_sha256"
+                        ),
+                    }
+                )
         try:
             next_state = record_delivery_task_completion(
                 state,
                 task_id,
-                artifact,
+                canonical_artifact,
                 completed_at=self._timestamp_from_state(state),
             )
         except DeliveryGoalError as error:
@@ -2851,24 +3110,102 @@ class ProductDeliveryWorkflow:
             "current_task": goal.get("current_task_cursor") or "TASKS_COMPLETE",
             "completed_tasks": list(goal.get("completed_tasks", [])),
         }
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        current_task_prompt_path = artifacts_dir / "current-task-prompt.md"
+        current_task_id = goal.get("current_task_cursor")
+        if current_task_id:
+            current_task = next(
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == current_task_id
+            )
+            current_task_prompt = render_current_task_prompt(
+                current_task,
+                next_state.get("implementation_baseline") or {},
+            )
+        else:
+            current_task_prompt = (
+                "# Current Prototype-Bound TASK\n\n"
+                "All planned TASKs are complete.\n"
+            )
+        current_task_prompt_path.write_text(
+            current_task_prompt,
+            encoding="utf-8",
+        )
+        next_state["current_task_prompt"] = current_task_prompt
+        next_state["current_task_prompt_path"] = "artifacts/current-task-prompt.md"
         next_state = append_transition(
             next_state,
             "task_completed",
             feature_slug=next_state.get("feature_slug"),
             runtime_version=PLUGIN_VERSION,
             input_artifact_hashes={
-                "planned_task": artifact["planned_task_hash"],
+                "planned_task": canonical_artifact["planned_task_hash"],
             },
             output_artifact_hashes={
-                artifact["artifact_path"]: artifact["artifact_sha256"],
+                canonical_artifact["artifact_path"]: canonical_artifact[
+                    "artifact_sha256"
+                ],
+                "artifacts/current-task-prompt.md": self._artifact_hash(
+                    str(current_task_prompt_path)
+                ),
             },
             metadata={
                 "task_id": task_id,
-                "verification_command": artifact["verification_command"],
-                "verification_exit_code": artifact["verification_exit_code"],
+                "verification_command": canonical_artifact[
+                    "verification_command"
+                ],
+                "verification_exit_code": canonical_artifact[
+                    "verification_exit_code"
+                ],
             },
         )
         return write_state(self.project_root, next_state)
+
+    def _assert_current_task_prototype_conformance(
+        self,
+        state: dict[str, Any],
+        task_id: str,
+    ) -> None:
+        if not implementation_baseline_required(state):
+            return
+        goal = state.get("delivery_goal") or {}
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict) or planned_task.get("ui_impact") != (
+            "prototype_bound"
+        ):
+            return
+        conformance = state.get("task_prototype_conformance") or {}
+        records = conformance.get("records") or {}
+        record = records.get(task_id) if isinstance(records, dict) else None
+        if not isinstance(record, dict) or record.get("status") != "passed":
+            raise WorkflowError(
+                "passed task prototype conformance is required before TASK completion"
+            )
+        if record.get("implementation_baseline_sha256") != (
+            state.get("implementation_baseline") or {}
+        ).get("baseline_sha256") or record.get("planned_task_hash") != planned_task.get(
+            "planned_task_hash"
+        ):
+            raise WorkflowError(
+                "task prototype conformance is stale for the current baseline or task"
+            )
+        relative_path = record.get("artifact_path")
+        if not isinstance(relative_path, str) or not relative_path.startswith("artifacts/"):
+            raise WorkflowError("task prototype conformance artifact is missing")
+        artifact_path = self.project_root / ARTIFACT_ROOT / relative_path
+        if not artifact_path.is_file() or self._artifact_hash(str(artifact_path)) != record.get(
+            "artifact_sha256"
+        ):
+            raise WorkflowError("task prototype conformance artifact is stale")
 
     def assert_goal_can_stop(self) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
@@ -3458,6 +3795,20 @@ class ProductDeliveryWorkflow:
             "status": "missing",
             "enforcement": "required_for_prototype_revision",
         }
+        state["implementation_baseline_policy"] = {
+            "policy_version": BASELINE_VERSION,
+            "status": "required",
+            "introduced_in": "1.0.28",
+            "upgrade_reason": "grandfathered_product_baseline_reopened",
+        }
+        state["implementation_visual_policy"] = deepcopy(
+            DEFAULT_VISUAL_POLICY
+        )
+        state["implementation_baseline"] = {"status": "missing"}
+        state["task_prototype_conformance"] = {
+            "status": "missing",
+            "records": {},
+        }
 
     def _rebuild_current_prototype_design_bundle(
         self,
@@ -3654,7 +4005,20 @@ class ProductDeliveryWorkflow:
         prohibited_work: list[str] | None,
         planned_tasks: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        task_queue = normalize_planned_tasks(planned_tasks)
+        try:
+            task_queue = normalize_planned_tasks(
+                planned_tasks,
+                implementation_baseline=(
+                    state.get("implementation_baseline")
+                    if implementation_baseline_required(state)
+                    else None
+                ),
+                require_prototype_bindings=implementation_baseline_required(
+                    state
+                ),
+            )
+        except DeliveryGoalError as cause:
+            raise WorkflowError(str(cause)) from cause
         required_commands = list(verification_commands or [])
         review_modes = {
             review_type: review.get("review_mode", "spawned_subagents")
@@ -3686,6 +4050,16 @@ class ProductDeliveryWorkflow:
             "required_commands_hash": required_commands_hash,
             "prohibited_work": list(prohibited_work or []),
         }
+        if implementation_baseline_required(state):
+            baseline = state.get("implementation_baseline") or {}
+            baseline_hash = baseline.get("baseline_sha256")
+            if baseline.get("status") != "ready" or not isinstance(
+                baseline_hash, str
+            ):
+                raise WorkflowError(
+                    "ready implementation baseline is required for UI launch"
+                )
+            package["implementation_baseline_sha256"] = baseline_hash
         package_hash = self._stable_hash(package)
         return {
             **package,
@@ -3748,6 +4122,10 @@ class ProductDeliveryWorkflow:
             "authorized_by": authorization["authorized_by"],
             "authorized_at": authorization["authorized_at"],
         }
+        if "implementation_baseline_sha256" in package:
+            state["implementation_launch_authorization"][
+                "implementation_baseline_sha256"
+            ] = package["implementation_baseline_sha256"]
         state.setdefault("user_confirmations", {}).pop(
             "implementation_launch_authorization",
             None,
@@ -3808,6 +4186,49 @@ class ProductDeliveryWorkflow:
             "stale_at": self._timestamp_from_state(state),
         }
         self._add_blockers(state, "prototype_production_conformance")
+
+    def _invalidate_implementation_baseline(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        if not implementation_baseline_required(state):
+            return
+        stale_at = self._timestamp_from_state(state)
+        baseline = state.get("implementation_baseline")
+        if isinstance(baseline, dict) and baseline.get("status") in {
+            "ready",
+            "stale",
+        }:
+            state["implementation_baseline"] = {
+                **baseline,
+                "status": "stale",
+                "stale_reason": reason,
+                "stale_at": stale_at,
+            }
+        conformance = state.get("task_prototype_conformance")
+        if not isinstance(conformance, dict):
+            return
+        records = conformance.get("records") or {}
+        stale_records = {
+            task_id: {
+                **record,
+                "status": "stale",
+                "stale_reason": reason,
+                "stale_at": stale_at,
+            }
+            for task_id, record in records.items()
+            if isinstance(record, dict)
+        }
+        if stale_records or conformance.get("status") not in {None, "missing"}:
+            state["task_prototype_conformance"] = {
+                **conformance,
+                "status": "stale",
+                "stale_reason": reason,
+                "stale_at": stale_at,
+                "records": stale_records,
+            }
 
     def _invalidate_requirements_e2e_confirmation(
         self,
@@ -4034,6 +4455,9 @@ class ProductDeliveryWorkflow:
     def _matching_task_completions(
         previous_goal: dict[str, Any],
         next_goal: dict[str, Any],
+        *,
+        implementation_baseline: dict[str, Any] | None = None,
+        task_prototype_conformance: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
         previous_tasks = {
             task.get("task_id"): task
@@ -4045,13 +4469,38 @@ class ProductDeliveryWorkflow:
             task_id = task.get("task_id")
             previous = previous_tasks.get(task_id) or {}
             artifact = artifacts.get(task_id)
-            if (
+            base_match = (
                 artifact
                 and task.get("planned_task_hash")
                 and task.get("planned_task_hash") == previous.get("planned_task_hash")
                 and artifact.get("planned_task_hash") == task.get("planned_task_hash")
-            ):
-                matches[str(task_id)] = dict(artifact)
+            )
+            if not base_match:
+                continue
+            if task.get("ui_impact") == "prototype_bound":
+                baseline = implementation_baseline or {}
+                conformance_records = (
+                    task_prototype_conformance or {}
+                ).get("records") or {}
+                conformance = (
+                    conformance_records.get(task_id)
+                    if isinstance(conformance_records, dict)
+                    else None
+                )
+                if not (
+                    baseline.get("status") == "ready"
+                    and isinstance(conformance, dict)
+                    and conformance.get("status") == "passed"
+                    and artifact.get("implementation_baseline_sha256")
+                    == baseline.get("baseline_sha256")
+                    == conformance.get("implementation_baseline_sha256")
+                    and artifact.get("task_prototype_conformance_sha256")
+                    == conformance.get("evidence_sha256")
+                    and conformance.get("planned_task_hash")
+                    == task.get("planned_task_hash")
+                ):
+                    continue
+            matches[str(task_id)] = dict(artifact)
         return matches
 
     @staticmethod
@@ -4100,6 +4549,14 @@ class ProductDeliveryWorkflow:
             f"Nonce: {package['nonce']}",
             f"Scope: {package['scope']}",
             f"Prototype Hash: {package.get('prototype_hash')}",
+            *(
+                [
+                    "Implementation Baseline: "
+                    + str(package["implementation_baseline_sha256"])
+                ]
+                if "implementation_baseline_sha256" in package
+                else []
+            ),
             f"Planned E2E Hash: {package['planned_e2e_hash']}",
             f"Task Queue Hash: {package['task_queue_hash']}",
             f"Required Commands Hash: {package['required_commands_hash']}",

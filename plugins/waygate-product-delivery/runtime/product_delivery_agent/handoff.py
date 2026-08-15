@@ -31,6 +31,20 @@ def build_codex_goal_handoff(
     if not coverage.get("passed"):
         raise HandoffError("passing coverage audit is required before handoff")
 
+    implementation_baseline = state.get("implementation_baseline") or {}
+    baseline_summary = None
+    if implementation_baseline.get("status") == "ready":
+        baseline_summary = {
+            "baseline_sha256": implementation_baseline.get("baseline_sha256"),
+            "artifact_path": implementation_baseline.get("artifact_path"),
+            "prototype_path": implementation_baseline.get("prototype_path"),
+            "product_domain_sha256": implementation_baseline.get(
+                "product_domain_sha256"
+            ),
+            "visual_policy_sha256": implementation_baseline.get(
+                "visual_policy_sha256"
+            ),
+        }
     handoff = {
         "scope": scope,
         "non_goals": list(non_goals or []),
@@ -50,6 +64,10 @@ def build_codex_goal_handoff(
         "planned_tasks": list(planned_tasks or []),
         "current_task_cursor": (
             planned_tasks[0]["task_id"] if planned_tasks else None
+        ),
+        "implementation_baseline": baseline_summary,
+        "current_task_prompt_path": (
+            "artifacts/current-task-prompt.md" if baseline_summary else None
         ),
         "cr_supersession_rules": [
             "Acceptance feedback after freeze must create or update a CR.",
@@ -140,7 +158,96 @@ def render_codex_goal_prompt(handoff: dict[str, Any]) -> str:
         "Prohibited work: " + "; ".join(handoff["prohibited_work"]),
         "Formal closure remains required after implementation.",
     ]
+    baseline = handoff.get("implementation_baseline")
+    if isinstance(baseline, dict):
+        lines.extend(
+            [
+                "",
+                "你正在实现用户已确认的 UI 产品基线，不是在重新设计。",
+                "原型是权威输入；禁止自行增删、移动、合并或重设计可见 UI。",
+                "无法按原型实现时停止当前 TASK 并发起 CR，不得静默降级。",
+                "检查失败时修复生产实现，不得修改冻结原型、mask 或阈值。",
+                "Implementation baseline: " + str(baseline["baseline_sha256"]),
+                "Implementation baseline artifact: "
+                + str(baseline["artifact_path"]),
+                "Current task prompt: "
+                + str(handoff["current_task_prompt_path"]),
+            ]
+        )
     return "\n".join(lines)
+
+
+def render_current_task_prompt(
+    task: dict[str, Any],
+    implementation_baseline: dict[str, Any],
+) -> str:
+    """Render only the prototype units bound to the current task."""
+    lines = [
+        "# Current Prototype-Bound TASK",
+        "",
+        f"Task: {task['task_id']} — {task['title']}",
+        f"Description: {task['description']}",
+        f"Verification: {task['verification']}",
+    ]
+    if task.get("ui_impact") == "none":
+        lines.extend(
+            [
+                "UI impact: none",
+                "Reason: " + str(task.get("ui_impact_reason") or ""),
+            ]
+        )
+        return "\n".join(lines) + "\n"
+
+    baseline_hash = implementation_baseline.get("baseline_sha256")
+    lines.extend(
+        [
+            "UI impact: prototype_bound",
+            "Implementation baseline: " + str(baseline_hash),
+            "Prototype HTML: "
+            + str(implementation_baseline.get("prototype_path")),
+            "Visual policy: "
+            + str(implementation_baseline.get("visual_policy_sha256")),
+            "",
+            "你正在实现用户已确认的 UI 产品基线，不是在重新设计。",
+            "必须保持绑定页面的 route、区域层级、控件顺序、关键状态和交互结果一致。",
+            "允许调整内部代码架构；禁止自行重设计可见 UI。",
+            "完成前必须生成生产截图、语义快照和一致性证据。",
+            "",
+            "## Bound Prototype Units",
+        ]
+    )
+    unit_map = {
+        (
+            unit.get("surface_id"),
+            unit.get("state_id"),
+            unit.get("viewport_class"),
+        ): unit
+        for unit in implementation_baseline.get("units", [])
+    }
+    for binding in task.get("prototype_bindings", []):
+        for viewport in binding.get("viewport_classes", []):
+            key = (
+                binding.get("surface_id"),
+                binding.get("state_id"),
+                viewport,
+            )
+            unit = unit_map.get(key)
+            if unit is None:
+                raise HandoffError(f"current task references unknown baseline unit: {key}")
+            lines.extend(
+                [
+                    f"- Surface: {unit['surface_id']}",
+                    f"  State: {unit['state_id']}",
+                    f"  Viewport: {unit['viewport_class']}",
+                    f"  Route: {unit['route']}",
+                    "  Reference screenshot: "
+                    + str(unit["prototype_screenshot_path"]),
+                    "  Regions: " + ", ".join(binding["region_ids"]),
+                    "  Interactions: "
+                    + ", ".join(binding["interaction_ids"]),
+                ]
+            )
+    return "\n".join(lines) + "\n"
 
 
 def _confirmation_results(state: dict[str, Any]) -> dict[str, bool]:
