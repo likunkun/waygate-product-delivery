@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.27-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.28-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -33,6 +33,7 @@ Waygate Product Delivery 把这些失败模式变成明确的门禁。
 | 强制技能门禁 | 按阶段检查 Product Delivery、Open Spec、planning files、UI/UX、浏览器测试和闭包技能。 |
 | 分层产品确认 | 先确认需求范围和 UI 原型或非 UI 行为契约，再生成详细测试设计。 |
 | 原型设计完整性 | 纯净产品表面必须继承全局产品上下文，评审标注只能放在独立评审页。 |
+| 原型绑定 TASK | 每个可见 UI TASK 都绑定冻结原型的精确切片，并在完成前通过逐任务语义与视觉一致性检查。 |
 | 非 UI 行为契约 | API、CLI、服务、后台任务用行为契约替代 HTML 原型。 |
 | 多 Agent 评审 artifact | 场景和测试覆盖评审必须留下可见 artifact，不能只在聊天里说做过。 |
 | Goal 驱动实现 | 实现阶段必须按 TASK 队列推进，不能无阻塞就中途停下。 |
@@ -111,7 +112,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.27.tar.gz
+dist/waygate-product-delivery-1.0.28.tar.gz
 ```
 
 ## Codex 使用方式

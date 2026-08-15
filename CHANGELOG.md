@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.28
+
+- Derives a read-only `implementation_baseline` from the confirmed prototype design bundle and contract, including exact surface, state, viewport, region, interaction, screenshot, and visual-policy identities.
+- Requires every user-visible UI TASK to declare `ui_impact` and exact `prototype_bindings`; non-UI TASKs must explicitly record why they do not affect visible UI.
+- Adds focused Goal and current-task prompts that treat the confirmed prototype as authoritative and prohibit silent redesign or degradation.
+- Adds `record_task_prototype_conformance()` with fail-closed route, structure, semantic, interaction, geometry, computed-style, and pixel evidence before a UI TASK can complete.
+- Binds launch authorization and completion reuse to the implementation baseline, task, and conformance hashes; product, mask, threshold, or task-binding changes stale downstream evidence while annotation-only changes do not.
+- Keeps active confirmed UI deliveries grandfathered until their prototype is reopened, and keeps canonical closure schema `v0.11` unchanged.
+
 ## 1.0.27
 
 - Adds a `runtime_provenance` receipt to every newly activated delivery: external Waygate plugin name, release version, package-root digest, nonempty delivery ID, owner metadata, and a hash-linked `delivery_activated` journal event.

@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.27-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.28-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -33,6 +33,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | Required skill gates | Product Delivery, Open Spec, planning files, UI/UX, browser testing, and closure skills are checked by stage. |
 | Layered product confirmation | Product scope and the UI prototype or non-UI behavior contract are confirmed before detailed test design. |
 | Prototype design integrity | Clean product surfaces must inherit the global product context, while review annotations remain on an external review-only surface. |
+| Prototype-bound task execution | Every visible UI task binds an exact frozen prototype slice and must pass per-task semantic and visual conformance before completion. |
 | Prototype-to-production conformance | UI closure requires frozen prototype contracts, production PNG and semantic evidence, plus an independent UI conformance review. |
 | Non-UI behavior gate | API, CLI, service, and background-job projects use behavior contracts instead of HTML prototypes. |
 | Multi-agent review artifacts | Scenario and test coverage reviews must be visible artifacts, not vague chat claims. |
@@ -113,7 +114,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.27.tar.gz
+dist/waygate-product-delivery-1.0.28.tar.gz
 ```
 
 ## Use In Codex
