@@ -16,7 +16,7 @@
 - Create: `src/product_delivery_agent/implementation_baseline.py`
 - Create: `tests/test_prototype_implementation_closure_v1028.py`
 
-- [ ] **Step 1: Write failing baseline and visual-policy tests**
+- [x] **Step 1: Write failing baseline and visual-policy tests**
 
 ```python
 def test_builds_units_from_confirmed_bundle_runtime_checks(self):
@@ -30,19 +30,19 @@ def test_policy_rejects_relaxed_thresholds_and_unknown_mask_regions(self):
         normalize_visual_policy({"full_surface_max_diff_ratio": 0.08}, contract)
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_prototype_implementation_closure_v1028.py -v`
 
 Expected: import failure for `product_delivery_agent.implementation_baseline`.
 
-- [ ] **Step 3: Implement canonical policy and baseline builders**
+- [x] **Step 3: Implement canonical policy and baseline builders**
 
 Implement `ImplementationBaselineError`, `normalize_visual_policy(policy, prototype_contract)`, and `build_implementation_baseline(project_root, canonical_bundle, prototype_contract, visual_policy=None)` as the public domain interfaces. Both builder functions return canonical dictionaries and raise `ImplementationBaselineError` for schema, reference, artifact, or policy failures.
 
 Load the already-validated prototype semantic snapshot to attach prototype region bounds. Match contract requirements to `clean_surface.runtime_checks` and `artifact_metadata.clean_screenshots` by surface/state/viewport. Return `baseline_sha256` over the canonical body.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run: `PYTHONPATH=src python3 -m unittest tests/test_prototype_implementation_closure_v1028.py -v`
 
