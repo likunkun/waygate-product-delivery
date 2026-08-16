@@ -157,6 +157,7 @@ def planned_obligation(**overrides):
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "系列管理 -> 系列详情课程表 -> 查看内容状态抽屉",
         "data_state_contract": "existing V1.4.3 standard course series with course rows",
+        "surface_ids": ["primary-surface"],
     }
     payload.update(overrides)
     return payload

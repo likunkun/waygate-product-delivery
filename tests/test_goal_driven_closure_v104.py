@@ -207,6 +207,7 @@ def planned_obligation():
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "operator opens the existing owner edit surface",
         "data_state_contract": "operator account with editable owner data",
+        "surface_ids": ["primary-surface"],
         "coverage_items": ["owner-edit"],
         "action_assertions": [
             {
@@ -408,7 +409,6 @@ def authorize_launch(workflow):
     workflow.record_implementation_launch_authorization(
         scope="Implement the frozen delivery scope",
         verification_commands=["pytest"],
-        planned_tasks=planned_tasks(),
     )
 
 
@@ -506,14 +506,13 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             state = workflow.generate_codex_goal_handoff(
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
-                planned_tasks=planned_tasks(),
             )
             activate_host_goal(workflow)
 
             goal = state["delivery_goal"]
             self.assertEqual(goal["status"], "active")
             self.assertEqual(goal["current_task_cursor"], "TASK-001")
-            self.assertEqual(len(goal["planned_tasks"]), 4)
+            self.assertEqual(len(goal["planned_tasks"]), 1)
             self.assertEqual(goal["completed_tasks"], [])
             self.assertTrue(goal["closure_required"])
             self.assertIn("不要在 TASK 未完成时停止", state["codex_goal_prompt"])
@@ -543,27 +542,14 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             workflow.generate_codex_goal_handoff(
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
-                planned_tasks=planned_tasks(),
             )
             activate_host_goal(workflow)
-            for task_id in ("TASK-001", "TASK-002", "TASK-003"):
-                record_passing_task_prototype_conformance(
-                    workflow,
-                    project_root,
-                    task_id,
-                )
-                reconcile_host_goal(workflow)
-                workflow.record_task_completion(
-                    task_id,
-                    artifact=task_completion_artifact(workflow._state(), task_id),
-                )
-
             reconcile_host_goal(workflow)
             with self.assertRaises(WorkflowError) as caught:
                 workflow.assert_goal_can_stop()
 
             self.assertIn("remaining TASK", str(caught.exception))
-            self.assertIn("TASK-004", str(caught.exception))
+            self.assertIn("TASK-001", str(caught.exception))
 
     def test_closure_failure_keeps_goal_active_and_closure_pass_completes_goal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -573,20 +559,18 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             workflow.generate_codex_goal_handoff(
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
-                planned_tasks=planned_tasks(),
             )
             activate_host_goal(workflow)
-            for task in planned_tasks():
-                record_passing_task_prototype_conformance(
-                    workflow,
-                    project_root,
-                    task["task_id"],
-                )
-                reconcile_host_goal(workflow)
-                workflow.record_task_completion(
-                    task["task_id"],
-                    artifact=task_completion_artifact(workflow._state(), task["task_id"]),
-                )
+            record_passing_task_prototype_conformance(
+                workflow,
+                project_root,
+                "TASK-001",
+            )
+            reconcile_host_goal(workflow)
+            workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow._state(), "TASK-001"),
+            )
 
             reconcile_host_goal(workflow)
             with self.assertRaises(WorkflowError) as caught:
@@ -630,9 +614,19 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
             workflow.generate_codex_goal_handoff(
                 scope="Implement the frozen delivery scope",
                 verification_commands=["pytest"],
-                planned_tasks=planned_tasks(),
+                planned_tasks=None,
             )
             activate_host_goal(workflow)
+            record_passing_task_prototype_conformance(
+                workflow,
+                project_root,
+                "TASK-001",
+            )
+            reconcile_host_goal(workflow)
+            workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow._state(), "TASK-001"),
+            )
             reconcile_host_goal(workflow)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
             reconcile_host_goal(workflow)
@@ -673,7 +667,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 workflow.generate_codex_goal_handoff(
                     scope="Implement the frozen delivery scope",
                     verification_commands=["pytest"],
-                    planned_tasks=planned_tasks(),
+                    planned_tasks=None,
                 )
 
             self.assertIn("product_baseline_user_confirmation", str(caught.exception))

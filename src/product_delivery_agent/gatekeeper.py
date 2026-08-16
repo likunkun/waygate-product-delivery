@@ -38,7 +38,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.28"
+PLUGIN_VERSION = "1.0.29"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -229,6 +229,7 @@ def test_coverage_user_semantics_hash(state: dict[str, Any]) -> str:
     exemption_semantics = {
         stable_state_hash(record): record for record in exemptions
     }
+    queue = state.get("journey_slice_task_queue") or {}
     return stable_state_hash(
         {
             "product_baseline": product_baseline_hash(state),
@@ -239,6 +240,8 @@ def test_coverage_user_semantics_hash(state: dict[str, Any]) -> str:
                 exemption_semantics[key] for key in sorted(exemption_semantics)
             ],
             "coverage_rows": [row_semantics[key] for key in sorted(row_semantics)],
+            "task_queue_hash": queue.get("task_queue_hash"),
+            "journey_slice_tasks": list(queue.get("identity") or []),
         }
     )
 
@@ -251,6 +254,9 @@ def test_coverage_plan_hash(state: dict[str, Any]) -> str:
             "user_semantics": test_coverage_user_semantics_hash(state),
             "planned_e2e": planned_e2e_input_hash(state),
             "coverage_audit": coverage_audit_input_hash(state),
+            "task_queue_hash": (state.get("journey_slice_task_queue") or {}).get(
+                "task_queue_hash"
+            ),
             "reviews": {
                 review_type: {
                     "status": reviews.get(review_type, {}).get("status"),
@@ -294,6 +300,9 @@ def review_input_hash(state: dict[str, Any], review_type: str) -> str:
                 "surface": surface_input_hash(state),
                 "planned_e2e": planned_e2e_input_hash(state),
                 "coverage_audit": coverage_audit_input_hash(state),
+                "task_queue_hash": (state.get("journey_slice_task_queue") or {}).get(
+                    "task_queue_hash"
+                ),
             }
         )
     if review_type == "test_implementation":

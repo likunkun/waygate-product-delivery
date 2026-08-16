@@ -648,6 +648,7 @@ def build_executed_browser_evidence(
     *,
     planned_obligations: list[dict[str, Any]] | None = None,
     exemptions: list[dict[str, Any]] | None = None,
+    allow_extra_records: bool = False,
 ) -> dict[str, Any]:
     """Validate executed browser evidence and attach content hashes."""
     if not records:
@@ -657,7 +658,11 @@ def build_executed_browser_evidence(
         exemptions or [],
     )
     if planned_by_key:
-        _validate_executed_records_cover_planned(records, planned_by_key)
+        _validate_executed_records_cover_planned(
+            records,
+            planned_by_key,
+            allow_extra_records=allow_extra_records,
+        )
     root = Path(project_root)
     hydrated = []
     for index, record in enumerate(records, start=1):
@@ -1176,6 +1181,8 @@ def _planned_obligations_by_key(
 def _validate_executed_records_cover_planned(
     records: list[dict[str, Any]],
     planned_by_key: dict[tuple[str, str], dict[str, Any]],
+    *,
+    allow_extra_records: bool = False,
 ) -> None:
     record_keys = {
         (record.get("obligation_id"), record.get("test_id"))
@@ -1196,7 +1203,7 @@ def _validate_executed_records_cover_planned(
         for record in records
         if (record.get("obligation_id"), record.get("test_id")) not in planned_by_key
     ]
-    if extra:
+    if extra and not allow_extra_records:
         raise CoverageAuditError(
             "executed browser evidence is not linked to planned E2E obligation: "
             + ", ".join(extra)

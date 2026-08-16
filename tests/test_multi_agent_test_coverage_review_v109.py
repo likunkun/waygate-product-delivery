@@ -137,6 +137,7 @@ def planned_workbench_obligation(**overrides):
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "operator opens the existing workbench surface",
         "data_state_contract": "existing operator account with every workbench tab enabled",
+        "surface_ids": ["primary-surface"],
         "coverage_items": WORKBENCH_ITEMS,
         "action_assertions": [
             {

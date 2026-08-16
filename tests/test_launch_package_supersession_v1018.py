@@ -47,14 +47,6 @@ def changed_task_queue():
             "ui_impact": "prototype_bound",
             "prototype_bindings": [dict(binding)],
         },
-        {
-            "task_id": "TASK-002",
-            "title": "Verify revised provider governance",
-            "description": "Verify the revised provider governance slice.",
-            "verification": "pytest -k task_002",
-            "ui_impact": "prototype_bound",
-            "prototype_bindings": [dict(binding)],
-        },
     ]
 
 
@@ -153,7 +145,7 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
 
     def test_identical_task_hash_reuses_completion(self):
         with tempfile.TemporaryDirectory() as tmp:
-            replacement = planned_tasks(extra=True)
+            replacement = planned_tasks()
             workflow = self._stale_launch_workflow(Path(tmp), replacement)
 
             state = workflow.recover_stale_launch_package(
@@ -166,13 +158,8 @@ class LaunchPackageSupersessionV1018Tests(unittest.TestCase):
             self.assertIn(
                 "TASK-001", state["delivery_goal"]["task_completion_artifacts"]
             )
-            self.assertEqual(state["delivery_goal"]["current_task_cursor"], "TASK-002")
-            self.assertIn("Task: TASK-002", state["current_task_prompt"])
-            self.assertNotIn("Task: TASK-001", state["current_task_prompt"])
-            self.assertIn(
-                "Current task cursor: TASK-002",
-                state["codex_goal_prompt"],
-            )
+            self.assertIsNone(state["delivery_goal"]["current_task_cursor"])
+            self.assertIn("All planned TASKs are complete", state["current_task_prompt"])
 
     def test_all_reused_tasks_render_completed_current_task_prompt(self):
         with tempfile.TemporaryDirectory() as tmp:

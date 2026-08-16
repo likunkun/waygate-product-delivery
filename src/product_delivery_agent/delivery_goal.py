@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from typing import Any
 
 from product_delivery_agent.gatekeeper import state_requires_delivery_goal
@@ -54,6 +55,14 @@ def normalize_planned_tasks(
             "description": str(task["description"]),
             "verification": str(task["verification"]),
         }
+        for field_name in (
+            "journey",
+            "obligation_ids",
+            "owned_coverage_items",
+            "includes_minimum_shell",
+        ):
+            if field_name in task:
+                normalized_task[field_name] = deepcopy(task[field_name]) if isinstance(task[field_name], list) else task[field_name]
         has_ui_contract = any(
             field_name in task
             for field_name in (
@@ -82,6 +91,18 @@ def normalize_planned_tasks(
 
 def planned_tasks_from_coverage(state: dict[str, Any]) -> list[dict[str, Any]]:
     """Derive a conservative TASK queue from the coverage audit rows."""
+    from product_delivery_agent.journey_slice_tasks import (
+        derive_journey_slice_tasks,
+        journey_slice_tasks_required,
+    )
+
+    if journey_slice_tasks_required(state):
+        queued = (state.get("journey_slice_task_queue") or {}).get("tasks")
+        if queued:
+            return [dict(task) for task in queued]
+        if not (state.get("planned_e2e_obligations") or {}).get("obligations"):
+            return []
+        return derive_journey_slice_tasks(state)
     rows = state.get("test_coverage_audit", {}).get("rows", [])
     standard_task_numbers: set[int] = set()
     custom_task_ids: list[str] = []
@@ -361,6 +382,7 @@ def record_task_completion(
             f"task completion must match current task cursor: {cursor}"
         )
     _validate_task_prototype_conformance(next_state, planned[task_id])
+    _validate_task_slice_evidence(next_state, planned[task_id])
     _validate_task_artifact(task_id, planned[task_id], artifact)
     completed = list(goal.get("completed_tasks", []))
     if task_id in completed:
@@ -550,6 +572,32 @@ def render_stop_guard_result(result: dict[str, Any]) -> str:
 
 def _has_value(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+
+def _validate_task_slice_evidence(
+    state: dict[str, Any],
+    planned_task: dict[str, Any],
+) -> None:
+    from product_delivery_agent.journey_slice_tasks import journey_slice_tasks_required
+
+    if not journey_slice_tasks_required(state):
+        return
+    records = ((state.get("task_executed_evidence") or {}).get("records") or {})
+    record = records.get(planned_task.get("task_id"))
+    if not isinstance(record, dict) or record.get("status") != "passed":
+        raise DeliveryGoalError(
+            "passed journey slice evidence is required before TASK completion"
+        )
+    if record.get("planned_task_hash") != planned_task.get("planned_task_hash"):
+        raise DeliveryGoalError(
+            "journey slice evidence does not match the current planned task"
+        )
+    expected = list(planned_task.get("obligation_ids") or [])
+    if list(record.get("obligation_ids") or []) != expected:
+        raise DeliveryGoalError(
+            "journey slice evidence does not cover the current TASK obligations"
+        )
 
 
 def _validate_task_artifact(

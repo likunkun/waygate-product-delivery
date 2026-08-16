@@ -367,11 +367,16 @@ class PrototypeBoundTaskAndPromptV1028Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = workflow_ready_for_handoff(Path(tmp))
 
-            with self.assertRaisesRegex(WorkflowError, "prototype_bindings"):
+            with self.assertRaisesRegex(WorkflowError, "prototype bindings cannot be empty"):
                 workflow.record_implementation_launch_authorization(
                     scope="Implement the confirmed UI",
                     verification_commands=["pytest"],
-                    planned_tasks=[self.generic_task()],
+                    planned_tasks=[
+                        {
+                            **self.generic_task(),
+                            "prototype_bindings": [],
+                        }
+                    ],
                 )
 
     def test_non_visual_task_requires_an_explicit_reason(self):
@@ -383,7 +388,7 @@ class PrototypeBoundTaskAndPromptV1028Tests(unittest.TestCase):
                 "prototype_bindings": [],
             }
 
-            with self.assertRaisesRegex(WorkflowError, "ui_impact_reason"):
+            with self.assertRaisesRegex(WorkflowError, "prototype bindings cannot be empty"):
                 workflow.record_implementation_launch_authorization(
                     scope="Implement supporting code",
                     verification_commands=["pytest"],
@@ -968,6 +973,9 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
                 "passed",
             )
 
+            reconcile_host_goal(workflow)
+            from tests.conformance_fixtures import record_passing_task_slice_evidence
+            record_passing_task_slice_evidence(workflow, root, "TASK-001")
             reconcile_host_goal(workflow)
             completed = workflow.record_task_completion(
                 "TASK-001",

@@ -105,6 +105,17 @@ from product_delivery_agent.host_goal import (
     recover_stale_owner_claim_checkpoint,
     stable_hash as host_goal_stable_hash,
 )
+from product_delivery_agent.journey_slice_tasks import (
+    JourneySliceTaskError,
+    default_journey_slice_task_policy,
+    derive_journey_slice_tasks,
+    ensure_journey_slice_task_policy,
+    journey_slice_task_identity,
+    journey_slice_tasks_required,
+    refine_journey_slice_tasks,
+    rewrite_coverage_task_column,
+    task_obligation_keys,
+)
 from product_delivery_agent.implementation_baseline import (
     BASELINE_VERSION,
     DEFAULT_VISUAL_POLICY,
@@ -383,6 +394,17 @@ class ProductDeliveryWorkflow:
             "policy_version": BASELINE_VERSION,
             "status": "pending_project_type",
             "introduced_in": "1.0.28",
+        }
+        state["journey_slice_task_policy"] = default_journey_slice_task_policy(
+            status="pending_project_type"
+        )
+        state["journey_slice_task_queue"] = {
+            "status": "missing",
+            "tasks": [],
+        }
+        state["task_executed_evidence"] = {
+            "status": "missing",
+            "records": {},
         }
         state["implementation_baseline"] = {"status": "missing"}
         state["task_prototype_conformance"] = {
@@ -770,7 +792,7 @@ class ProductDeliveryWorkflow:
     ) -> dict[str, Any]:
         """Record runtime authorization to start implementation for this package."""
         state = self._require_started(host_goal_transition=True)
-        task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
+        task_queue = self._resolved_planned_tasks(state, planned_tasks)
         package = self._build_launch_package(
             state,
             scope=scope,
@@ -1443,6 +1465,9 @@ class ProductDeliveryWorkflow:
                 "status": "required",
                 "introduced_in": "1.0.28",
             }
+            state["journey_slice_task_policy"] = default_journey_slice_task_policy(
+                status="required"
+            )
             state["implementation_visual_policy"] = deepcopy(
                 DEFAULT_VISUAL_POLICY
             )
@@ -1460,6 +1485,9 @@ class ProductDeliveryWorkflow:
                 "status": "not_applicable",
                 "introduced_in": "1.0.28",
             }
+            state["journey_slice_task_policy"] = default_journey_slice_task_policy(
+                status="required"
+            )
             state["stage"] = "non_ui_behavior_contract_confirmation"
             state["next_gate"] = "non_ui_behavior_contract"
             if "non_ui_behavior_contract_confirmation" not in blocked_until:
@@ -1916,6 +1944,10 @@ class ProductDeliveryWorkflow:
                 state,
                 reason="user_requested_test_coverage_change",
             )
+            self._upgrade_grandfathered_journey_slice_policy(
+                state,
+                reason="user_requested_test_coverage_change",
+            )
             state["stage"] = "test_coverage_plan_revision"
             state["next_gate"] = "planned_e2e_obligations"
         return write_state(self.project_root, state)
@@ -2214,6 +2246,10 @@ class ProductDeliveryWorkflow:
         state.setdefault("closure_inputs", {})
         state["closure_inputs"]["coverage_matrix_range"] = audit["matrix_range"]
         state["closure_inputs"]["latest_test_case"] = audit["latest_test_case"]
+        try:
+            self._refresh_journey_slice_task_queue(state)
+        except JourneySliceTaskError as error:
+            raise WorkflowError(str(error)) from error
         state["stage"] = "test_coverage_audit_ready"
         state["next_gate"] = "multi_agent_test_coverage_review"
         return write_state(self.project_root, state)
@@ -2328,6 +2364,10 @@ class ProductDeliveryWorkflow:
                 "test_coverage_plan_user_confirmation",
             )
         self._remove_blockers(state, "planned_e2e_obligations")
+        try:
+            self._refresh_journey_slice_task_queue(state)
+        except JourneySliceTaskError as error:
+            raise WorkflowError(str(error)) from error
         state["stage"] = "planned_e2e_obligations_ready"
         state["next_gate"] = "multi_agent_test_coverage_review"
         return write_state(self.project_root, state)
@@ -2339,11 +2379,16 @@ class ProductDeliveryWorkflow:
         state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
         planned = state.get("planned_e2e_obligations", {})
+        if journey_slice_tasks_required(state) and (
+            (state.get("delivery_goal") or {}).get("planned_tasks")
+        ):
+            self._assert_slice_evidence_union(state, records)
         evidence = build_executed_browser_evidence(
             self.project_root,
             records,
             planned_obligations=list(planned.get("obligations", [])),
             exemptions=list(planned.get("exemptions", [])),
+            allow_extra_records=journey_slice_tasks_required(state),
         )
 
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
@@ -2474,7 +2519,7 @@ class ProductDeliveryWorkflow:
         planned_tasks: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
-        task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
+        task_queue = self._resolved_planned_tasks(state, planned_tasks)
         if not task_queue:
             assert_pre_handoff_ready(
                 state,
@@ -2985,7 +3030,7 @@ class ProductDeliveryWorkflow:
     ) -> dict[str, Any]:
         """Canonically replace an implementation package bound to an old launch hash."""
         state = self._require_started()
-        task_queue = list(planned_tasks or planned_tasks_from_coverage(state))
+        task_queue = self._resolved_planned_tasks(state, planned_tasks)
         package = self._build_launch_package(
             state,
             scope=scope,
@@ -3112,6 +3157,83 @@ class ProductDeliveryWorkflow:
                 "status": evidence["status"],
                 "failure_codes": list(evidence["failure_codes"]),
             },
+        )
+        return write_state(self.project_root, state)
+
+
+    def record_task_executed_evidence(
+        self,
+        task_id: str,
+        records: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Record the current TASK's bound full-stack evidence slice."""
+        state = self._require_started(host_goal_transition=True)
+        ensure_journey_slice_task_policy(state)
+        if not journey_slice_tasks_required(state):
+            raise WorkflowError("journey slice evidence is not required for this delivery")
+        goal = state.get("delivery_goal") or {}
+        if goal.get("current_task_cursor") != task_id:
+            raise WorkflowError(
+                "slice evidence must match current task cursor: "
+                + str(goal.get("current_task_cursor"))
+            )
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict):
+            raise WorkflowError(f"task is not in planned TASK queue: {task_id}")
+        planned = state.get("planned_e2e_obligations") or {}
+        owned_ids = set(planned_task.get("obligation_ids") or [])
+        owned = [
+            obligation
+            for obligation in planned.get("obligations", [])
+            if obligation.get("obligation_id") in owned_ids
+        ]
+        if not owned:
+            raise WorkflowError("journey slice TASK is missing bound obligations")
+        try:
+            if state.get("project_type") == "ui":
+                evidence = build_executed_browser_evidence(
+                    self.project_root,
+                    records,
+                    planned_obligations=owned,
+                    exemptions=list(planned.get("exemptions", [])),
+                )
+                evidence_kind = "browser"
+            else:
+                evidence = build_executed_browser_evidence(
+                    self.project_root,
+                    records,
+                    planned_obligations=owned,
+                    exemptions=list(planned.get("exemptions", [])),
+                )
+                evidence_kind = "behavior"
+        except Exception as cause:
+            raise WorkflowError(str(cause)) from cause
+        current = dict(state.get("task_executed_evidence") or {})
+        stored = dict(current.get("records") or {})
+        stored[task_id] = {
+            "status": "passed",
+            "evidence_kind": evidence_kind,
+            "planned_task_hash": planned_task.get("planned_task_hash"),
+            "obligation_ids": list(planned_task.get("obligation_ids") or []),
+            "records": list(evidence.get("records") or []),
+        }
+        state["task_executed_evidence"] = {
+            "status": "in_progress",
+            "records": stored,
+        }
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = artifacts_dir / f"task-slice-evidence-{task_id.lower()}.md"
+        artifact_path.write_text(
+            self._render_executed_browser_evidence(evidence),
+            encoding="utf-8",
         )
         return write_state(self.project_root, state)
 
@@ -4031,6 +4153,108 @@ class ProductDeliveryWorkflow:
             ),
             encoding="utf-8",
         )
+
+
+    def _resolved_planned_tasks(
+        self,
+        state: dict[str, Any],
+        planned_tasks: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        ensure_journey_slice_task_policy(state)
+        if not journey_slice_tasks_required(state):
+            return list(planned_tasks or planned_tasks_from_coverage(state))
+        queued = list((state.get("journey_slice_task_queue") or {}).get("tasks") or [])
+        if queued:
+            derived = queued
+        elif not (state.get("planned_e2e_obligations") or {}).get("obligations"):
+            return list(planned_tasks or planned_tasks_from_coverage(state))
+        try:
+            derived = queued or derive_journey_slice_tasks(state)
+            if not planned_tasks:
+                return derived
+            baseline = None
+            require_bindings = False
+            if implementation_baseline_required(state):
+                try:
+                    baseline = self._load_current_implementation_baseline(state)
+                    require_bindings = True
+                except WorkflowError:
+                    baseline = state.get("implementation_baseline") or None
+                    require_bindings = False
+            return refine_journey_slice_tasks(
+                derived,
+                planned_tasks,
+                implementation_baseline=baseline,
+                require_prototype_bindings=require_bindings,
+            )
+        except JourneySliceTaskError as error:
+            raise WorkflowError(str(error)) from error
+
+    def _refresh_journey_slice_task_queue(self, state: dict[str, Any]) -> None:
+        ensure_journey_slice_task_policy(state)
+        if not journey_slice_tasks_required(state):
+            return
+        planned = state.get("planned_e2e_obligations") or {}
+        if not planned.get("obligations"):
+            return
+        tasks = derive_journey_slice_tasks(state)
+        audit = dict(state.get("test_coverage_audit") or {})
+        if audit.get("rows"):
+            audit["rows"] = rewrite_coverage_task_column(list(audit["rows"]), tasks)
+            state["test_coverage_audit"] = audit
+        state["journey_slice_task_queue"] = {
+            "status": "ready",
+            "policy_version": (state.get("journey_slice_task_policy") or {}).get(
+                "policy_version"
+            ),
+            "tasks": tasks,
+            "identity": journey_slice_task_identity(tasks),
+            "task_queue_hash": self._stable_hash(journey_slice_task_identity(tasks)),
+        }
+        state["task_executed_evidence"] = {
+            "status": "missing",
+            "records": {},
+        }
+
+    def _upgrade_grandfathered_journey_slice_policy(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        policy = ensure_journey_slice_task_policy(state)
+        if policy.get("status") == "grandfathered":
+            next_policy = default_journey_slice_task_policy(status="required")
+            next_policy["upgrade_reason"] = reason
+            state["journey_slice_task_policy"] = next_policy
+
+    def _assert_slice_evidence_union(
+        self,
+        state: dict[str, Any],
+        records: list[dict[str, Any]],
+    ) -> None:
+        tasks = list((state.get("journey_slice_task_queue") or {}).get("tasks") or [])
+        if not tasks and state.get("delivery_goal"):
+            tasks = list((state.get("delivery_goal") or {}).get("planned_tasks") or [])
+        if not tasks:
+            raise WorkflowError("journey slice TASK queue is required before full evidence")
+        stored = ((state.get("task_executed_evidence") or {}).get("records") or {})
+        planned = list((state.get("planned_e2e_obligations") or {}).get("obligations") or [])
+        incoming = {
+            (record.get("obligation_id"), record.get("test_id"))
+            for record in records
+        }
+        for task in tasks:
+            record = stored.get(task.get("task_id"))
+            if not isinstance(record, dict) or record.get("status") != "passed":
+                raise WorkflowError(
+                    "full-stack evidence requires recorded journey slice evidence"
+                )
+            for key in task_obligation_keys(task, planned):
+                if key not in incoming:
+                    raise WorkflowError(
+                        "full-stack evidence must include the recorded journey slice union"
+                    )
 
     def _build_launch_package(
         self,

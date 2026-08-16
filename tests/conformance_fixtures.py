@@ -798,7 +798,7 @@ def record_passing_task_prototype_conformance(
     task_id: str,
 ) -> dict:
     reconcile_host_goal(workflow)
-    return workflow.record_task_prototype_conformance(
+    result = workflow.record_task_prototype_conformance(
         task_id,
         task_prototype_conformance_payload(
             project_root,
@@ -806,6 +806,103 @@ def record_passing_task_prototype_conformance(
             task_id,
         ),
     )
+    policy = (result.get("journey_slice_task_policy") or {})
+    if policy.get("status") == "required":
+        record_passing_task_slice_evidence(workflow, project_root, task_id)
+        return workflow.status()
+    return result
+
+
+def slice_browser_evidence(project_root: Path, obligation: dict, *, segment_id: str) -> dict:
+    identity = segment_id.lower().replace(" ", "-")
+    evidence_path = (
+        project_root
+        / ".product-delivery"
+        / "artifacts"
+        / f"browser-e2e-{identity}.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    probe_path = (
+        project_root
+        / ".product-delivery"
+        / "artifacts"
+        / f"browser-e2e-{identity}-probe.json"
+    )
+    probe_path.write_text(
+        json.dumps(
+            {
+                "acceptance_url": "http://127.0.0.1:15082/customer/course-production",
+                "api_health_url": "http://127.0.0.1:15082/api/health",
+                "api_health_identity": "classroom-api",
+                "health_response_content_type": "application/json",
+                "health_response_body_sample": '{"service":"classroom-api"}',
+                "business_api_requests": [
+                    {
+                        "method": "GET",
+                        "url": "http://127.0.0.1:15082/api/classrooms",
+                        "status": 200,
+                        "source": "network",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "test_id": obligation["test_id"],
+        "obligation_id": obligation["obligation_id"],
+        "command": "npx playwright test tests/e2e/classroom.spec.ts",
+        "exit_code": 0,
+        "trace_path": f".product-delivery/artifacts/e2e/{identity}-trace.zip",
+        "screenshot_path": f".product-delivery/artifacts/e2e/{identity}-screenshot.png",
+        "console_errors": [],
+        "network_errors": [],
+        "semantic_assertions": list(obligation.get("semantic_assertions") or ["teacher creates classroom"]),
+        "evidence_path": str(evidence_path.relative_to(project_root)),
+        "evidence_strength": "full_stack_browser_e2e",
+        "acceptance_url": "http://127.0.0.1:15082/customer/course-production",
+        "api_health_url": "http://127.0.0.1:15082/api/health",
+        "api_health_identity": "classroom-api",
+        "network_probe_summary": {
+            "business_api_request_count": 1,
+            "html_shell_health_response": False,
+        },
+        "mocked_routes": [],
+        "probe_artifact_path": str(probe_path.relative_to(project_root)),
+        "executed_actor_roles": list(obligation.get("required_actor_roles") or ["teacher"]),
+        "primary_actor_role": (obligation.get("required_actor_roles") or ["teacher"])[0],
+        "actor_identity_evidence": {
+            "role": (obligation.get("required_actor_roles") or ["teacher"])[0],
+            "user_id": "teacher-1",
+        },
+        "ordinary_path_observed": True,
+        "execution_segment_id": segment_id,
+        "test_title_or_step": f"{obligation['obligation_id']} {obligation['test_id']}",
+    }
+
+
+def record_passing_task_slice_evidence(workflow, project_root: Path, task_id: str) -> dict:
+    reconcile_host_goal(workflow)
+    state = workflow.status()
+    task = next(
+        item
+        for item in state["delivery_goal"]["planned_tasks"]
+        if item["task_id"] == task_id
+    )
+    obligations = {
+        item["obligation_id"]: item
+        for item in (state.get("planned_e2e_obligations") or {}).get("obligations", [])
+    }
+    records = [
+        slice_browser_evidence(
+            project_root,
+            obligations[obligation_id],
+            segment_id=f"{task_id}-{obligation_id}",
+        )
+        for obligation_id in task.get("obligation_ids") or []
+    ]
+    return workflow.record_task_executed_evidence(task_id, records)
 
 
 def record_ui_conformance(workflow, project_root: Path) -> dict:

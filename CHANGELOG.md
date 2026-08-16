@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.29
+
+- Derives the authoritative TASK queue from planned E2E obligations by user journey instead of extracting coverage-matrix TASK numbers.
+- Splits overloaded journeys when action assertions, coverage items, surfaces, or primary happy paths exceed the slice thresholds, and rejects collection obligations larger than three items.
+- Binds each TASK to its own obligation set and prototype surfaces; the first journey absorbs the minimum shell, and independent scaffold TASKs are forbidden.
+- Lets agents refine titles, descriptions, verification text, and narrower bindings only. Merging TASKs, moving E2E, or expanding bindings fails closed.
+- Rewrites coverage `task` columns, includes `task_queue_hash` in test-coverage review and user confirmation, and requires `record_task_executed_evidence()` plus prototype conformance before a TASK can complete.
+- Accepts final `record_executed_browser_evidence()` only as the union of recorded slice evidence plus optional regression.
+- Grandfathers active deliveries that already confirmed `test_coverage_plan` until that plan is reopened, and keeps canonical closure schema `v0.11` unchanged.
+
 ## 1.0.28
 
 - Derives a read-only `implementation_baseline` from the confirmed prototype design bundle and contract, including exact surface, state, viewport, region, interaction, screenshot, and visual-policy identities.

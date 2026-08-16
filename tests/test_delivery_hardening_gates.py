@@ -123,6 +123,7 @@ def planned_obligation(**overrides):
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "teacher opens the existing classroom dashboard",
         "data_state_contract": "teacher account with permission to create classrooms",
+        "surface_ids": ["primary-surface"],
         "coverage_items": ["classroom-create"],
         "action_assertions": [
             {

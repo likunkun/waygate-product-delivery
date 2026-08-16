@@ -15,7 +15,7 @@ from product_delivery_agent.gatekeeper import (
     normalize_project_type,
     validate_state_invariants,
 )
-from product_delivery_agent.workflow import ProductDeliveryWorkflow
+from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.conformance_fixtures import (
     activate_host_goal,
     confirm_product_baseline,
@@ -199,6 +199,7 @@ def planned_obligation(**overrides):
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "teacher opens the existing owner operation dashboard",
         "data_state_contract": "teacher account with owner operation access",
+        "surface_ids": ["primary-surface"],
         "coverage_items": ["teacher-owner-operation"],
         "action_assertions": [
             {
@@ -621,13 +622,22 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ready_for_handoff(project_root)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
+            reconcile_host_goal(workflow)
+            workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow._state(), "TASK-001"),
+            )
+            reconcile_host_goal(workflow)
 
-            with self.assertRaises(CoverageAuditError) as caught:
+            with self.assertRaises(WorkflowError) as caught:
                 workflow.record_executed_browser_evidence(
                     [browser_evidence(project_root, obligation_id="OBL-OTHER")]
                 )
 
-            self.assertIn("planned E2E obligation missing executed evidence", str(caught.exception))
+            self.assertIn("journey slice union", str(caught.exception))
 
     def test_closure_requires_executed_evidence_matching_planned_obligations(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -686,6 +696,15 @@ class GatekeeperV103Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ready_for_handoff(project_root)
+            record_passing_task_prototype_conformance(
+                workflow, project_root, "TASK-001"
+            )
+            reconcile_host_goal(workflow)
+            workflow.record_task_completion(
+                "TASK-001",
+                artifact=task_completion_artifact(workflow._state(), "TASK-001"),
+            )
+            reconcile_host_goal(workflow)
             workflow.record_executed_browser_evidence([browser_evidence(project_root)])
             reconcile_host_goal(workflow)
             workflow.record_multi_agent_review(

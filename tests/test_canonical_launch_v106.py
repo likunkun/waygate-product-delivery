@@ -209,6 +209,7 @@ def planned_obligation():
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "operator opens the existing owner edit surface",
         "data_state_contract": "operator account with editable owner data",
+        "surface_ids": ["primary-surface"],
         "coverage_items": ["owner-edit"],
         "action_assertions": [
             {
@@ -267,24 +268,8 @@ def planned_tasks(extra=False):
         }
     ]
     if extra:
-        tasks.append(
-            {
-                "task_id": "TASK-002",
-                "title": "Unexpected extra task",
-                "description": "This task was not in the launch package.",
-                "verification": "pytest -k task_002",
-                "ui_impact": "prototype_bound",
-                "prototype_bindings": [
-                    {
-                        "surface_id": "primary-surface",
-                        "state_id": "ready",
-                        "viewport_classes": ["desktop"],
-                        "region_ids": ["primary-region"],
-                        "interaction_ids": ["primary-action"],
-                    }
-                ],
-            }
-        )
+        tasks[0]["title"] = "Implement revised provider governance"
+        tasks[0]["verification"] = "pytest -k task_001_revised"
     return tasks
 
 

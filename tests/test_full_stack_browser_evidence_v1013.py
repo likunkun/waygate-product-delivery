@@ -35,6 +35,7 @@ def planned_obligation():
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "teacher opens the existing classroom dashboard",
         "data_state_contract": "teacher account can create a classroom through the dashboard",
+        "surface_ids": ["primary-surface"],
         "coverage_items": ["classroom-create"],
         "action_assertions": [
             {

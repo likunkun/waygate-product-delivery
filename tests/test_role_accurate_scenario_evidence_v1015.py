@@ -36,6 +36,7 @@ def planned_obligation(**overrides):
         "path_kind": "primary_happy_path",
         "ordinary_entry_path": "/customer/course-production/standard-courses -> series detail -> content drawer",
         "data_state_contract": "existing assembled standard-course row owned by the teacher",
+        "surface_ids": ["primary-surface"],
         "coverage_items": ["submit-teachable", "refresh-readback"],
         "action_assertions": [
             {
