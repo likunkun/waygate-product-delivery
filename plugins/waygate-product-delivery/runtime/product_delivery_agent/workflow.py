@@ -124,6 +124,8 @@ from product_delivery_agent.implementation_baseline import (
     build_task_prototype_conformance,
     implementation_baseline_required,
     normalize_visual_policy,
+    task_conformance_is_visual_only_failure,
+    task_conformance_visual_deviations,
     validate_implementation_baseline,
     validate_task_prototype_conformance,
 )
@@ -410,6 +412,9 @@ class ProductDeliveryWorkflow:
         state["task_prototype_conformance"] = {
             "status": "missing",
             "records": {},
+            "visual_retry": {},
+            "visual_adjudications": {},
+            "visual_adjudication_history": [],
         }
         state["prototype_production_conformance"] = {
             "status": "missing",
@@ -659,6 +664,11 @@ class ProductDeliveryWorkflow:
             prototype_design_bundle=(
                 state.get("prototype_design_bundle") or {}
                 if review_type == "scenario"
+                else None
+            ),
+            visual_adjudications=(
+                self._current_visual_adjudication_deviations(state)
+                if review_type == "ui_conformance"
                 else None
             ),
         )
@@ -1910,6 +1920,7 @@ class ProductDeliveryWorkflow:
             user_message=user_message,
         )
         if "product_baseline" in requested:
+            self._clear_task_visual_adjudication_state(state)
             self._reopen_legacy_prototype_design_bundle(state)
             self._mark_reviews_stale(
                 state,
@@ -3120,23 +3131,138 @@ class ProductDeliveryWorkflow:
         artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         task_file_identity = hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
-        artifact_name = f"task-prototype-conformance-{task_file_identity}.json"
+        artifact_name = (
+            f"task-prototype-conformance-{task_file_identity}-"
+            f"{evidence['evidence_sha256'][:12]}.json"
+        )
         artifact_path = artifacts_dir / artifact_name
         artifact_path.write_text(
             json.dumps(evidence, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         artifact_sha256 = self._artifact_hash(str(artifact_path))
-        current = state.get("task_prototype_conformance") or {}
+        current = deepcopy(state.get("task_prototype_conformance") or {})
         records = dict(current.get("records") or {})
         records[task_id] = {
             **evidence,
             "artifact_path": f"artifacts/{artifact_name}",
             "artifact_sha256": artifact_sha256,
         }
+        visual_retry = deepcopy(current.get("visual_retry") or {})
+        visual_adjudications = deepcopy(current.get("visual_adjudications") or {})
+        visual_history = list(current.get("visual_adjudication_history") or [])
+        pending_decisions = state.setdefault("pending_user_decisions", {})
+        decision_key = self._task_visual_decision_key(task_id)
+
+        if evidence["status"] == "passed":
+            visual_retry.pop(task_id, None)
+            visual_adjudications.pop(task_id, None)
+            pending_decisions.pop(decision_key, None)
+            self._remove_blockers(state, "task_visual_conformance_adjudication")
+        elif task_conformance_is_visual_only_failure(evidence):
+            tracker = visual_retry.get(task_id) or {}
+            identity_matches = (
+                tracker.get("implementation_baseline_sha256")
+                == evidence["implementation_baseline_sha256"]
+                and tracker.get("planned_task_hash") == evidence["planned_task_hash"]
+            )
+            attempts = list(tracker.get("attempts") or []) if identity_matches else []
+            if not any(
+                attempt.get("evidence_sha256") == evidence["evidence_sha256"]
+                for attempt in attempts
+                if isinstance(attempt, dict)
+            ):
+                attempts.append(
+                    {
+                        "evidence_sha256": evidence["evidence_sha256"],
+                        "artifact_path": f"artifacts/{artifact_name}",
+                        "artifact_sha256": artifact_sha256,
+                        "production_screenshot_sha256s": [
+                            record.get("production_screenshot_sha256")
+                            for record in evidence.get("records") or []
+                            if isinstance(record, dict)
+                            and record.get("production_screenshot_sha256")
+                        ],
+                        "failure_codes": list(evidence["failure_codes"]),
+                        "recorded_at": self._timestamp_from_state(state),
+                    }
+                )
+            remediation_rounds_completed = max(0, len(attempts) - 1)
+            eligible = remediation_rounds_completed >= 2
+            tracker = {
+                "implementation_baseline_sha256": evidence[
+                    "implementation_baseline_sha256"
+                ],
+                "planned_task_hash": evidence["planned_task_hash"],
+                "attempts": attempts,
+                "remediation_rounds_completed": remediation_rounds_completed,
+                "adjudication_eligible": eligible,
+                "pending_decision_id": None,
+            }
+            if eligible:
+                decision_material = {
+                    "delivery_id": state.get("delivery_id"),
+                    "feature_slug": state.get("feature_slug"),
+                    "task_id": task_id,
+                    "implementation_baseline_sha256": evidence[
+                        "implementation_baseline_sha256"
+                    ],
+                    "planned_task_hash": evidence["planned_task_hash"],
+                    "attempt_artifact_sha256s": [
+                        attempt["artifact_sha256"] for attempt in attempts
+                    ],
+                }
+                decision_id = "visual-decision-" + stable_json_hash(decision_material)[:20]
+                pending = pending_decisions.get(decision_key)
+                if not isinstance(pending, dict) or pending.get("decision_id") != decision_id:
+                    pending = {
+                        "decision_id": decision_id,
+                        "status": "pending",
+                        "task_id": task_id,
+                        "reason": "pixel thresholds remain exceeded after two remediation rounds",
+                        "attempt_artifact_sha256s": [
+                            attempt["artifact_sha256"] for attempt in attempts
+                        ],
+                        "current_conformance_artifact_path": f"artifacts/{artifact_name}",
+                        "current_conformance_artifact_sha256": artifact_sha256,
+                        "visual_deviations": task_conformance_visual_deviations(
+                            evidence,
+                            adjudication_artifact_sha256="pending",
+                        ),
+                        "presentation": {
+                            "prototype_screenshot_paths": [
+                                unit.get("prototype_screenshot_path")
+                                for unit in implementation_baseline.get("units") or []
+                                if isinstance(unit, dict)
+                                and unit.get("prototype_screenshot_path")
+                            ],
+                            "production_screenshot_paths": [
+                                item.get("production_screenshot_path")
+                                for item in evidence.get("records") or []
+                                if isinstance(item, dict)
+                                and item.get("production_screenshot_path")
+                            ],
+                            "pixel_diff_artifact_paths": [
+                                item.get("pixel_diff_artifact_path")
+                                for item in evidence.get("records") or []
+                                if isinstance(item, dict)
+                                and item.get("pixel_diff_artifact_path")
+                            ],
+                        },
+                        "created_at": self._timestamp_from_state(state),
+                    }
+                pending_decisions[decision_key] = pending
+                tracker["pending_decision_id"] = decision_id
+                self._add_blockers(state, "task_visual_conformance_adjudication")
+                state["next_gate"] = "task_visual_conformance_adjudication"
+            visual_retry[task_id] = tracker
+
         state["task_prototype_conformance"] = {
             "status": evidence["status"],
             "records": records,
+            "visual_retry": visual_retry,
+            "visual_adjudications": visual_adjudications,
+            "visual_adjudication_history": visual_history,
         }
         state = append_transition(
             state,
@@ -3156,10 +3282,251 @@ class ProductDeliveryWorkflow:
                 "task_id": task_id,
                 "status": evidence["status"],
                 "failure_codes": list(evidence["failure_codes"]),
+                "visual_remediation_rounds_completed": (
+                    visual_retry.get(task_id, {}).get("remediation_rounds_completed", 0)
+                ),
             },
         )
         return write_state(self.project_root, state)
 
+    def record_task_visual_conformance_adjudication(
+        self,
+        task_id: str,
+        *,
+        decision: str,
+        user_message: str,
+        decision_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Record an exceptional user decision for pixel-only task conformance."""
+        state = self._require_started(host_goal_transition=True)
+        if decision not in {"accept", "continue_remediation"}:
+            raise WorkflowError("visual adjudication decision must be accept or continue_remediation")
+        if not isinstance(user_message, str) or not user_message.strip():
+            raise WorkflowError("visual adjudication requires an explicit user message")
+        goal = state.get("delivery_goal") or {}
+        if goal.get("current_task_cursor") != task_id:
+            raise WorkflowError("visual adjudication must match the current task cursor")
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict):
+            raise WorkflowError(f"task is not in planned TASK queue: {task_id}")
+        implementation_baseline = self._load_current_implementation_baseline(state)
+        conformance = deepcopy(state.get("task_prototype_conformance") or {})
+        records = dict(conformance.get("records") or {})
+        record = records.get(task_id)
+        if not isinstance(record, dict) or not task_conformance_is_visual_only_failure(record):
+            raise WorkflowError("visual adjudication requires current pixel-only conformance failure")
+        if (
+            record.get("implementation_baseline_sha256")
+            != implementation_baseline.get("baseline_sha256")
+            or record.get("planned_task_hash") != planned_task.get("planned_task_hash")
+        ):
+            raise WorkflowError("visual adjudication evidence is stale")
+
+        decision_key = self._task_visual_decision_key(task_id)
+        pending_decisions = state.setdefault("pending_user_decisions", {})
+        pending = pending_decisions.get(decision_key)
+        prompted = isinstance(pending, dict)
+        if prompted and decision_id != pending.get("decision_id"):
+            raise WorkflowError("current visual adjudication decision_id is required")
+        if not prompted and decision_id is not None:
+            raise WorkflowError("visual adjudication decision_id is not current")
+
+        visual_retry = deepcopy(conformance.get("visual_retry") or {})
+        visual_adjudications = deepcopy(conformance.get("visual_adjudications") or {})
+        visual_history = list(conformance.get("visual_adjudication_history") or [])
+        tracker = deepcopy(visual_retry.get(task_id) or {})
+        effective_decision_id = (
+            str(pending.get("decision_id"))
+            if prompted
+            else "visual-decision-"
+            + stable_json_hash(
+                {
+                    "delivery_id": state.get("delivery_id"),
+                    "task_id": task_id,
+                    "evidence_sha256": record.get("evidence_sha256"),
+                    "user_message": user_message.strip(),
+                }
+            )[:20]
+        )
+
+        if decision == "continue_remediation":
+            visual_history.append(
+                {
+                    "task_id": task_id,
+                    "decision_id": effective_decision_id,
+                    "decision": decision,
+                    "user_message": user_message.strip(),
+                    "recorded_at": self._timestamp_from_state(state),
+                }
+            )
+            visual_retry[task_id] = {
+                "implementation_baseline_sha256": record[
+                    "implementation_baseline_sha256"
+                ],
+                "planned_task_hash": record["planned_task_hash"],
+                "attempts": [],
+                "remediation_rounds_completed": 0,
+                "adjudication_eligible": False,
+                "pending_decision_id": None,
+            }
+            visual_adjudications.pop(task_id, None)
+            pending_decisions.pop(decision_key, None)
+            self._remove_blockers(state, "task_visual_conformance_adjudication")
+            state["next_gate"] = task_id
+            conformance.update(
+                {
+                    "visual_retry": visual_retry,
+                    "visual_adjudications": visual_adjudications,
+                    "visual_adjudication_history": visual_history,
+                }
+            )
+            state["task_prototype_conformance"] = conformance
+            return write_state(self.project_root, state)
+
+        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        adjudication_body = {
+            "schema_version": "task-visual-conformance-adjudication-v1",
+            "decision_id": effective_decision_id,
+            "decision": "accept",
+            "source": "prompted" if prompted else "user_initiated",
+            "task_id": task_id,
+            "feature_slug": state.get("feature_slug"),
+            "implementation_baseline_sha256": record[
+                "implementation_baseline_sha256"
+            ],
+            "planned_task_hash": record["planned_task_hash"],
+            "source_conformance_evidence_sha256": record["evidence_sha256"],
+            "source_conformance_artifact_sha256": record["artifact_sha256"],
+            "failure_codes": list(record.get("failure_codes") or []),
+            "remediation_rounds_completed": int(
+                tracker.get("remediation_rounds_completed") or 0
+            ),
+            "user_message": user_message.strip(),
+            "recorded_at": self._timestamp_from_state(state),
+        }
+        adjudication_name = (
+            "task-visual-conformance-adjudication-"
+            + hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
+            + "-"
+            + effective_decision_id.removeprefix("visual-decision-")
+            + ".json"
+        )
+        adjudication_path = artifacts_dir / adjudication_name
+        adjudication_path.write_text(
+            json.dumps(adjudication_body, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        adjudication_sha256 = self._artifact_hash(str(adjudication_path))
+        adjudication_ref = {
+            "decision_id": effective_decision_id,
+            "source": adjudication_body["source"],
+            "artifact_path": f"artifacts/{adjudication_name}",
+            "artifact_sha256": adjudication_sha256,
+            "source_conformance_evidence_sha256": record["evidence_sha256"],
+        }
+        canonical_body = {
+            key: deepcopy(value)
+            for key, value in record.items()
+            if key not in {"status", "evidence_sha256", "artifact_path", "artifact_sha256"}
+        }
+        canonical_body["visual_adjudication"] = adjudication_ref
+        accepted_record = {
+            **canonical_body,
+            "status": "accepted_by_user",
+            "evidence_sha256": stable_json_hash(canonical_body),
+        }
+        task_identity = hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
+        accepted_name = (
+            f"task-prototype-conformance-{task_identity}-"
+            f"{accepted_record['evidence_sha256'][:12]}.json"
+        )
+        accepted_path = artifacts_dir / accepted_name
+        accepted_path.write_text(
+            json.dumps(accepted_record, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        accepted_sha256 = self._artifact_hash(str(accepted_path))
+        records[task_id] = {
+            **accepted_record,
+            "artifact_path": f"artifacts/{accepted_name}",
+            "artifact_sha256": accepted_sha256,
+        }
+        deviations = task_conformance_visual_deviations(
+            accepted_record,
+            adjudication_artifact_sha256=adjudication_sha256,
+        )
+        visual_adjudications[task_id] = {
+            **adjudication_ref,
+            "implementation_baseline_sha256": record[
+                "implementation_baseline_sha256"
+            ],
+            "planned_task_hash": record["planned_task_hash"],
+            "deviations": deviations,
+        }
+        pending_decisions.pop(decision_key, None)
+        self._remove_blockers(state, "task_visual_conformance_adjudication")
+        conformance.update(
+            {
+                "status": "accepted_by_user",
+                "records": records,
+                "visual_retry": visual_retry,
+                "visual_adjudications": visual_adjudications,
+                "visual_adjudication_history": visual_history,
+            }
+        )
+        state["task_prototype_conformance"] = conformance
+        state = append_transition(
+            state,
+            "task_visual_conformance_adjudicated",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "implementation_baseline": record[
+                    "implementation_baseline_sha256"
+                ],
+                "planned_task": record["planned_task_hash"],
+                "task_conformance": record["artifact_sha256"],
+            },
+            output_artifact_hashes={
+                f"artifacts/{adjudication_name}": adjudication_sha256,
+                f"artifacts/{accepted_name}": accepted_sha256,
+            },
+            metadata={
+                "task_id": task_id,
+                "decision_id": effective_decision_id,
+                "source": adjudication_body["source"],
+            },
+        )
+        return write_state(self.project_root, state)
+
+    @staticmethod
+    def _current_visual_adjudication_deviations(
+        state: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        conformance = state.get("task_prototype_conformance") or {}
+        adjudications = conformance.get("visual_adjudications") or {}
+        rows: list[dict[str, Any]] = []
+        if isinstance(adjudications, dict):
+            for adjudication in adjudications.values():
+                if isinstance(adjudication, dict):
+                    rows.extend(
+                        deepcopy(row)
+                        for row in adjudication.get("deviations") or []
+                        if isinstance(row, dict)
+                    )
+        return rows
+
+    @staticmethod
+    def _task_visual_decision_key(task_id: str) -> str:
+        return f"task_visual_conformance:{task_id}"
 
     def record_task_executed_evidence(
         self,
@@ -3966,6 +4333,9 @@ class ProductDeliveryWorkflow:
         state["task_prototype_conformance"] = {
             "status": "missing",
             "records": {},
+            "visual_retry": {},
+            "visual_adjudications": {},
+            "visual_adjudication_history": [],
         }
 
     def _rebuild_current_prototype_design_bundle(
@@ -4521,9 +4891,12 @@ class ProductDeliveryWorkflow:
         conformance = state.get("task_prototype_conformance") or {}
         records = conformance.get("records") or {}
         record = records.get(task_id) if isinstance(records, dict) else None
-        if not isinstance(record, dict) or record.get("status") != "passed":
+        if not isinstance(record, dict) or record.get("status") not in {
+            "passed",
+            "accepted_by_user",
+        }:
             raise WorkflowError(
-                "passed task prototype conformance is required before TASK completion"
+                "passed or user-adjudicated task prototype conformance is required before TASK completion"
             )
         artifact_path = record.get("artifact_path")
         artifact_sha256 = record.get("artifact_sha256")
@@ -4556,10 +4929,36 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "canonical task prototype conformance does not match workflow state"
             )
-        if canonical.get("status") != "passed":
+        if canonical.get("status") not in {"passed", "accepted_by_user"}:
             raise WorkflowError(
-                "canonical task prototype conformance must have passed"
+                "canonical task prototype conformance must have passed or been user-adjudicated"
             )
+        if canonical.get("status") == "accepted_by_user":
+            adjudication = canonical.get("visual_adjudication") or {}
+            adjudication_path = adjudication.get("artifact_path")
+            adjudication_sha256 = adjudication.get("artifact_sha256")
+            if not isinstance(adjudication_path, str) or not adjudication_path.startswith("artifacts/"):
+                raise WorkflowError("canonical visual adjudication artifact is missing")
+            try:
+                adjudication_payload, adjudication_metadata = load_json_artifact(
+                    self.project_root,
+                    str(Path(ARTIFACT_ROOT) / adjudication_path),
+                )
+            except (EvidenceArtifactError, OSError) as cause:
+                raise WorkflowError("canonical visual adjudication artifact is invalid") from cause
+            if adjudication_metadata.get("sha256") != adjudication_sha256:
+                raise WorkflowError("canonical visual adjudication artifact hash is stale")
+            if (
+                adjudication_payload.get("decision") != "accept"
+                or adjudication_payload.get("task_id") != task_id
+                or adjudication_payload.get("implementation_baseline_sha256")
+                != implementation_baseline.get("baseline_sha256")
+                or adjudication_payload.get("planned_task_hash")
+                != planned_task.get("planned_task_hash")
+                or adjudication_payload.get("source_conformance_evidence_sha256")
+                != adjudication.get("source_conformance_evidence_sha256")
+            ):
+                raise WorkflowError("canonical visual adjudication does not match current task evidence")
         if canonical.get("implementation_baseline_sha256") != (
             implementation_baseline.get("baseline_sha256")
         ) or canonical.get("planned_task_hash") != planned_task.get(
@@ -4574,12 +4973,29 @@ class ProductDeliveryWorkflow:
             "artifact_sha256": artifact_sha256,
         }
 
+    @staticmethod
+    def _clear_task_visual_adjudication_state(state: dict[str, Any]) -> None:
+        pending = state.setdefault("pending_user_decisions", {})
+        for key in list(pending):
+            if str(key).startswith("task_visual_conformance:"):
+                pending.pop(key, None)
+        state["blocked_until"] = [
+            blocker
+            for blocker in state.get("blocked_until", [])
+            if blocker != "task_visual_conformance_adjudication"
+        ]
+        conformance = state.get("task_prototype_conformance")
+        if isinstance(conformance, dict):
+            conformance["visual_retry"] = {}
+            conformance["visual_adjudications"] = {}
+
     def _invalidate_implementation_baseline(
         self,
         state: dict[str, Any],
         *,
         reason: str,
     ) -> None:
+        self._clear_task_visual_adjudication_state(state)
         if not implementation_baseline_required(state):
             return
         stale_at = self._timestamp_from_state(state)
@@ -4877,7 +5293,7 @@ class ProductDeliveryWorkflow:
                 if not (
                     baseline.get("status") == "ready"
                     and isinstance(conformance, dict)
-                    and conformance.get("status") == "passed"
+                    and conformance.get("status") in {"passed", "accepted_by_user"}
                     and artifact.get("implementation_baseline_sha256")
                     == baseline.get("baseline_sha256")
                     == conformance.get("implementation_baseline_sha256")

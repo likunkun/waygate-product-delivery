@@ -69,6 +69,7 @@ def validate_multi_agent_review(
     executed_records: list[dict[str, Any]] | None = None,
     prototype_contract: dict[str, Any] | None = None,
     prototype_design_bundle: dict[str, Any] | None = None,
+    visual_adjudications: list[dict[str, Any]] | None = None,
 ) -> None:
     """Validate visible multi-agent review output."""
     if review_type not in VALID_REVIEW_TYPES:
@@ -125,12 +126,18 @@ def validate_multi_agent_review(
             executed_records=executed_records,
         )
     elif review_type == "ui_conformance":
-        _validate_ui_conformance_review(review, prototype_contract or {})
+        _validate_ui_conformance_review(
+            review,
+            prototype_contract or {},
+            visual_adjudications=visual_adjudications or [],
+        )
 
 
 def _validate_ui_conformance_review(
     review: dict[str, Any],
     prototype_contract: dict[str, Any],
+    *,
+    visual_adjudications: list[dict[str, Any]],
 ) -> None:
     required_list_fields = (
         "reviewed_surface_ids",
@@ -159,6 +166,21 @@ def _validate_ui_conformance_review(
         "unmapped_regions",
     ):
         _reject_unresolved_review_items(review, field_name)
+
+    actual_deviations = {
+        json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in review.get("accepted_visual_deviations") or []
+        if isinstance(row, dict)
+    }
+    expected_deviations = {
+        json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in visual_adjudications
+        if isinstance(row, dict)
+    }
+    if actual_deviations != expected_deviations:
+        raise ReviewGateError(
+            "accepted_visual_deviations must match current user adjudications"
+        )
 
     surfaces = prototype_contract.get("surfaces") or []
     required_surfaces = {surface.get("surface_id") for surface in surfaces}
@@ -231,6 +253,21 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
                 "",
                 "```json",
                 json.dumps(_scenario_review_evidence(review), indent=2, sort_keys=True),
+                "```",
+                "",
+            ]
+        )
+    if review["review_type"] == "ui_conformance":
+        lines.extend(
+            [
+                "## UI Conformance Evidence",
+                "",
+                "```json",
+                json.dumps(
+                    {"accepted_visual_deviations": review.get("accepted_visual_deviations") or []},
+                    indent=2,
+                    sort_keys=True,
+                ),
                 "```",
                 "",
             ]

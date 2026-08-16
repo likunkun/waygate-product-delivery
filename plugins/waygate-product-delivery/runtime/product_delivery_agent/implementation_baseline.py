@@ -44,6 +44,9 @@ DEFAULT_VISUAL_POLICY = {
     "geometry_tolerance_viewport_ratio": 0.01,
     "dynamic_masks": [],
 }
+VISUAL_PIXEL_FAILURE_CODES = frozenset(
+    {"critical_region_pixel_diff", "full_surface_pixel_diff"}
+)
 
 _THRESHOLD_FIELDS = (
     "critical_region_max_diff_ratio",
@@ -105,6 +108,7 @@ def validate_task_prototype_conformance(value: dict[str, Any]) -> dict[str, Any]
         "passed",
         "failed",
         "inconclusive",
+        "accepted_by_user",
     }:
         raise ImplementationBaselineError(
             "canonical task prototype conformance status is invalid"
@@ -130,7 +134,86 @@ def validate_task_prototype_conformance(value: dict[str, Any]) -> dict[str, Any]
         raise ImplementationBaselineError(
             "canonical task prototype conformance passed status is inconsistent"
         )
+    if value.get("status") == "accepted_by_user":
+        if not task_conformance_is_visual_only_failure(value):
+            raise ImplementationBaselineError(
+                "user-adjudicated task conformance must contain pixel-only failures"
+            )
+        adjudication = value.get("visual_adjudication")
+        if not isinstance(adjudication, dict) or not all(
+            isinstance(adjudication.get(field), str) and adjudication[field].strip()
+            for field in (
+                "artifact_path",
+                "artifact_sha256",
+                "decision_id",
+                "source",
+            )
+        ):
+            raise ImplementationBaselineError(
+                "user-adjudicated task conformance requires canonical adjudication evidence"
+            )
     return deepcopy(value)
+
+
+def task_conformance_is_visual_only_failure(value: dict[str, Any]) -> bool:
+    """Return whether stable, complete conformance failed only on pixel ratios."""
+    codes = value.get("failure_codes")
+    return bool(
+        isinstance(value, dict)
+        and value.get("environment_status") == "stable"
+        and isinstance(codes, list)
+        and codes
+        and set(codes).issubset(VISUAL_PIXEL_FAILURE_CODES)
+    )
+
+
+def task_conformance_visual_deviations(
+    value: dict[str, Any],
+    *,
+    adjudication_artifact_sha256: str,
+) -> list[dict[str, Any]]:
+    """Render normalized visual deviations for final UI review evidence."""
+    if not task_conformance_is_visual_only_failure(value):
+        return []
+    rows: list[dict[str, Any]] = []
+    for record in value.get("records") or []:
+        if not isinstance(record, dict):
+            continue
+        common = {
+            "task_id": value.get("task_id"),
+            "adjudication_artifact_sha256": adjudication_artifact_sha256,
+            "surface_id": record.get("surface_id"),
+            "state_id": record.get("state_id"),
+            "viewport_class": record.get("viewport_class"),
+        }
+        full_ratio = record.get("full_surface_diff_ratio")
+        full_max = record.get("full_surface_max_diff_ratio")
+        if isinstance(full_ratio, (int, float)) and isinstance(full_max, (int, float)) and full_ratio > full_max:
+            rows.append(
+                {
+                    **common,
+                    "scope": "full_surface",
+                    "region_id": None,
+                    "diff_ratio": full_ratio,
+                    "max_diff_ratio": full_max,
+                }
+            )
+        for region in record.get("critical_region_results") or []:
+            if not isinstance(region, dict):
+                continue
+            ratio = region.get("diff_ratio")
+            maximum = region.get("max_diff_ratio")
+            if isinstance(ratio, (int, float)) and isinstance(maximum, (int, float)) and ratio > maximum:
+                rows.append(
+                    {
+                        **common,
+                        "scope": "critical_region",
+                        "region_id": region.get("region_id"),
+                        "diff_ratio": ratio,
+                        "max_diff_ratio": maximum,
+                    }
+                )
+    return rows
 
 
 def normalize_visual_policy(
@@ -577,6 +660,7 @@ def _validate_task_unit(
 
     critical_results: list[dict[str, Any]] = []
     full_surface_diff_ratio: float | None = None
+    pixel_diff_artifact_path: str | None = None
     if prototype_image is not None and production_image is not None:
         if (
             prototype_image["width"] != production_image["width"]
@@ -589,6 +673,11 @@ def _validate_task_unit(
                 unit_key=key,
             )
         else:
+            pixel_diff_artifact_path = _write_pixel_diff_artifact(
+                project_root,
+                prototype_image,
+                production_image,
+            )
             prototype_regions = {
                 region.get("region_id"): region
                 for region in unit.get("prototype_regions", [])
@@ -691,6 +780,7 @@ def _validate_task_unit(
             visual_policy.get("full_surface_max_diff_ratio", 0.05)
         ),
         "critical_region_results": critical_results,
+        "pixel_diff_artifact_path": pixel_diff_artifact_path,
         "failure_codes": _failure_codes(local_failures),
     }
 
@@ -1126,6 +1216,48 @@ def _paeth_predictor(left: int, above: int, upper_left: int) -> int:
     if above_distance <= upper_left_distance:
         return above
     return upper_left
+
+
+def _write_pixel_diff_artifact(
+    project_root: str | Path,
+    prototype: dict[str, Any],
+    production: dict[str, Any],
+) -> str:
+    relative = (
+        ".product-delivery/artifacts/task-conformance/"
+        f"pixel-diff-{prototype['sha256'][:10]}-{production['sha256'][:10]}.png"
+    )
+    path = Path(project_root) / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    width = int(prototype["width"])
+    height = int(prototype["height"])
+    before = prototype["pixels"]
+    after = production["pixels"]
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)
+        for x in range(width):
+            index = (y * width + x) * 4
+            changed = before[index : index + 4] != after[index : index + 4]
+            rows.extend((255, 0, 0, 255) if changed else (0, 0, 0, 0))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    image = b"\x89PNG\r\n\x1a\n"
+    image += chunk(
+        b"IHDR",
+        struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0),
+    )
+    image += chunk(b"IDAT", zlib.compress(bytes(rows)))
+    image += chunk(b"IEND", b"")
+    path.write_bytes(image)
+    return relative
 
 
 def _pixel_diff_ratio(

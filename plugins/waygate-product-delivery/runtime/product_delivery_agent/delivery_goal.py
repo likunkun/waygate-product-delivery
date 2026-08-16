@@ -430,9 +430,18 @@ def _validate_task_prototype_conformance(
     conformance = state.get("task_prototype_conformance") or {}
     records = conformance.get("records") or {}
     record = records.get(planned_task.get("task_id")) if isinstance(records, dict) else None
-    if not isinstance(record, dict) or record.get("status") != "passed":
+    if not isinstance(record, dict) or record.get("status") not in {
+        "passed",
+        "accepted_by_user",
+    }:
         raise DeliveryGoalError(
-            "passed task prototype conformance is required before TASK completion"
+            "passed or user-adjudicated task prototype conformance is required before TASK completion"
+        )
+    if record.get("status") == "accepted_by_user" and not isinstance(
+        record.get("visual_adjudication"), dict
+    ):
+        raise DeliveryGoalError(
+            "user-adjudicated task prototype conformance requires adjudication evidence"
         )
     if record.get("implementation_baseline_sha256") != baseline.get(
         "baseline_sha256"

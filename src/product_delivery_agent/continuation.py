@@ -88,6 +88,22 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
             next_action="startup_mode_selection",
         )
 
+    visual_decisions = [
+        key
+        for key, value in pending_decisions.items()
+        if key.startswith("task_visual_conformance:")
+        and isinstance(value, dict)
+        and value.get("status") == "pending"
+    ]
+    if visual_decisions:
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="pixel thresholds remain exceeded after two remediation rounds",
+            blockers=[f"pending_user_decision:{key}" for key in visual_decisions],
+            next_action="task_visual_conformance_adjudication",
+        )
+
     pending = _pending_confirmation_blockers(state)
     if pending:
         return _decision(

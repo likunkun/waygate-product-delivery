@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.30
+
+- Requires execution-stage `test_implementation` and `ui_conformance` reviewers to finish one shared-snapshot discovery round before the coordinator freezes findings, batch-remediates them, and runs one unified re-review.
+- Keeps the 2% critical-region and 5% full-surface pixel targets, but performs two distinct systematic remediation rounds before proactively requesting a user decision.
+- Adds canonical `record_task_visual_conformance_adjudication()` evidence for explicit pixel-only acceptance; structural, semantic, geometry, interaction, unstable-environment, and missing-evidence failures remain non-overridable.
+- Persists visual retry attempts, stable pending decisions, pixel-diff PNGs, adjudication artifacts, and hash-linked transition evidence while invalidating them on baseline, task, policy, or implementation changes.
+- Requires final `ui_conformance.accepted_visual_deviations` to match every current user-adjudicated deviation and keeps closure schema `v0.11`.
+
 ## 1.0.29
 
 - Derives the authoritative TASK queue from planned E2E obligations by user journey instead of extracting coverage-matrix TASK numbers.
