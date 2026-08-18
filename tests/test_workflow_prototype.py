@@ -149,13 +149,14 @@ class WorkflowPrototypeTests(unittest.TestCase):
             self.assertFalse(resumed["paused"])
             self.assertEqual(resumed["stage"], "product_blueprint")
 
-            stopped = workflow.stop()
-            self.assertFalse(stopped["active"])
+            # stop() is retired; verify it raises
+            with self.assertRaisesRegex(WorkflowError, "retired"):
+                workflow.stop()
+            # Use pause_delivery for deactivation
+            stopped = workflow.pause_delivery()
+            self.assertTrue(stopped["active"])  # paused but still active
             self.assertFalse(stopped["intervention_enabled"])
-            self.assertEqual(
-                stopped["multi_agent_policy"]["execution_authorization"],
-                "invalidated",
-            )
+            self.assertTrue(stopped["paused"])
             self.assertEqual(artifact.read_text(encoding="utf-8"), "preserve\n")
 
     def test_start_can_explicitly_authorize_spawned_subagents(self):

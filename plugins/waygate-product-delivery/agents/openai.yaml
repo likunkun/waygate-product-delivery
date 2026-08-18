@@ -1,0 +1,6 @@
+interface:
+  display_name: Waygate Product Delivery
+  short_description: Parameterized product delivery lifecycle
+  default_prompt: '$waygate-product-delivery {"schema_version":"v1","action":"inspect"}'
+policy:
+  allow_implicit_invocation: false

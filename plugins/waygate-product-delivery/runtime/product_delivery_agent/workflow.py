@@ -17,6 +17,7 @@ from product_delivery_agent.artifact_protocol import (
     CORE_ARTIFACTS,
     current_runtime_provenance,
     initialize_workspace,
+    lifecycle_state_hash,
     load_state,
     new_delivery_state,
     runtime_status,
@@ -190,6 +191,9 @@ class ProductDeliveryWorkflow:
             current_feature = state.get("feature_slug")
             terminal = state.get("status") in TERMINAL_STATUSES or (
                 raw_state.get("status") in TERMINAL_STATUSES
+            ) or state.get("status") == "abandoned" or (
+                (state.get("delivery_lifecycle") or {}).get("status")
+                in {"closed", "abandoned"}
             )
             same_feature = feature_slug is None or feature_slug == current_feature
             current_runtime_status = runtime_status(state, raw_state)
@@ -264,7 +268,7 @@ class ProductDeliveryWorkflow:
         startup = self.inspect_startup_request(feature_slug=feature_slug)
         if startup["action"] == "blocked_by_active_delivery":
             raise WorkflowError(
-                "a different active delivery already exists; close or stop it before starting another feature"
+                "a different active delivery already exists; close or abandon it before starting another feature"
             )
         if startup["action"] == "legacy_recovery_required":
             raise WorkflowError(
@@ -275,6 +279,19 @@ class ProductDeliveryWorkflow:
             if multi_agent_mode is not None or allow_review_degradation:
                 raise WorkflowError(
                     "current delivery is already active; use authorize_multi_agent_mode instead of start"
+                )
+            existing_state = self._migrate_current_legacy_layout(existing_state)
+            if existing_state.get("paused"):
+                existing_state["paused"] = False
+                existing_state["intervention_enabled"] = True
+                self._set_delivery_lifecycle(
+                    existing_state, "active", intervention_enabled=True
+                )
+                existing_state = append_transition(
+                    existing_state,
+                    "delivery_resumed",
+                    feature_slug=existing_state.get("feature_slug"),
+                    runtime_version=PLUGIN_VERSION,
                 )
             return write_state(self.project_root, existing_state)
 
@@ -330,6 +347,33 @@ class ProductDeliveryWorkflow:
             previous_state=raw_state,
         )
 
+    def _migrate_current_legacy_layout(
+        self,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        from product_delivery_agent.artifact_store import (
+            ArtifactStoreError,
+            detect_legacy_layout,
+            migrate_legacy_layout,
+        )
+
+        if not detect_legacy_layout(self.project_root)["migration_required"]:
+            return state
+        try:
+            migration = migrate_legacy_layout(self.project_root, state)
+        except ArtifactStoreError as error:
+            raise WorkflowError(f"legacy artifact migration failed: {error}") from error
+        return append_transition(
+            state,
+            "legacy_layout_migrated",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            metadata={
+                "copied": list(migration.get("copied") or []),
+                "unbound": list(migration.get("unbound") or []),
+            },
+        )
+
     def _start_fresh_delivery(
         self,
         *,
@@ -337,6 +381,8 @@ class ProductDeliveryWorkflow:
         multi_agent_mode: str | None,
         previous_state: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        if previous_state and previous_state.get("delivery_id"):
+            previous_state = self._migrate_current_legacy_layout(previous_state)
         previous_delivery = self._archive_previous_delivery(previous_state)
         initialize_workspace(self.project_root)
         state = new_delivery_state()
@@ -453,6 +499,13 @@ class ProductDeliveryWorkflow:
             }
             state["next_gate"] = "multi_agent_mode_selection"
         state["delivery_goal"] = None
+        state["delivery_lifecycle"] = {
+            "schema_version": "v1",
+            "status": "active",
+            "intervention_enabled": True,
+            "updated_at": self._timestamp_from_state(state),
+        }
+        state["pending_abandon_tokens"] = {}
         state["required_skill_gates"] = {
             "active_mode_startup": required_skills_for_stage("active_mode_startup"),
             "open_spec_planning": required_skills_for_stage("open_spec_planning"),
@@ -466,6 +519,24 @@ class ProductDeliveryWorkflow:
         if feature_slug:
             state["required_artifacts"].append(f"docs/open-spec/{feature_slug}/")
         state["runtime_provenance"] = current_runtime_provenance()
+        if previous_delivery:
+            state = append_transition(
+                state,
+                "delivery_archived",
+                feature_slug=feature_slug,
+                runtime_version=PLUGIN_VERSION,
+                metadata={
+                    "previous_delivery_id": previous_delivery["delivery_id"],
+                    "previous_feature_slug": previous_delivery.get("feature_slug"),
+                },
+            )
+        state = append_transition(
+            state,
+            "current_pointer_switched",
+            feature_slug=feature_slug,
+            runtime_version=PLUGIN_VERSION,
+            metadata={"delivery_id": state["delivery_id"]},
+        )
         state = append_transition(
             state,
             "delivery_activated",
@@ -550,10 +621,12 @@ class ProductDeliveryWorkflow:
             )
         validate_scenario_matrix(rows)
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        matrix_path = artifacts_dir / "scope-scenario-matrix.md"
-        matrix_path.write_text(render_scenario_matrix(rows), encoding="utf-8")
+        matrix_path = self._write_delivery_artifact(
+            state,
+            "scope_scenario_matrix",
+            "scope-scenario-matrix.md",
+            render_scenario_matrix(rows),
+        )
 
         state["open_spec_draft_ready"] = True
         state["scenario_matrix_draft_ready"] = True
@@ -698,11 +771,13 @@ class ProductDeliveryWorkflow:
             raise ReviewGateError(
                 f"role_simulation review rejected by {policy_mode} policy"
             )
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
         artifact_name = f"multi-agent-{review_type}-review.md"
-        review_path = artifacts_dir / artifact_name
-        review_path.write_text(render_multi_agent_review(review), encoding="utf-8")
+        review_path = self._write_delivery_artifact(
+            state,
+            f"multi_agent_{review_type}_review",
+            artifact_name,
+            render_multi_agent_review(review),
+        )
 
         state.setdefault("multi_agent_reviews", {})
         state["multi_agent_reviews"][review_type] = {
@@ -1012,12 +1087,11 @@ class ProductDeliveryWorkflow:
                 )
         artifact_name = f"product-baseline-{pending['nonce']}.md"
         relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
-        confirmations_dir = (
-            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
-        )
-        confirmations_dir.mkdir(parents=True, exist_ok=True)
-        (confirmations_dir / artifact_name).write_text(
-            render_user_confirmation(confirmation), encoding="utf-8"
+        confirmation_path = self._write_delivery_artifact(
+            state,
+            f"product_baseline_confirmation_{pending['nonce']}",
+            f"user-confirmations/{artifact_name}",
+            render_user_confirmation(confirmation),
         )
         logical = {
             **confirmation,
@@ -1065,17 +1139,16 @@ class ProductDeliveryWorkflow:
                     )
                 except ImplementationBaselineError as cause:
                     raise ConfirmationError(str(cause)) from cause
-                artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-                artifacts_dir.mkdir(parents=True, exist_ok=True)
-                baseline_path = artifacts_dir / "implementation-baseline.json"
-                baseline_path.write_text(
+                baseline_path = self._write_delivery_artifact(
+                    state,
+                    "implementation_baseline",
+                    "implementation-baseline.json",
                     json.dumps(
                         implementation_baseline,
                         indent=2,
                         sort_keys=True,
                     )
                     + "\n",
-                    encoding="utf-8",
                 )
                 state["implementation_baseline"] = {
                     **implementation_baseline,
@@ -1240,12 +1313,11 @@ class ProductDeliveryWorkflow:
         }
         artifact_name = f"test-coverage-plan-{pending['nonce']}.md"
         relative_artifact_path = f"artifacts/user-confirmations/{artifact_name}"
-        confirmations_dir = (
-            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
-        )
-        confirmations_dir.mkdir(parents=True, exist_ok=True)
-        (confirmations_dir / artifact_name).write_text(
-            render_user_confirmation(confirmation), encoding="utf-8"
+        confirmation_path = self._write_delivery_artifact(
+            state,
+            f"test_coverage_confirmation_{pending['nonce']}",
+            f"user-confirmations/{artifact_name}",
+            render_user_confirmation(confirmation),
         )
         logical = {
             **confirmation,
@@ -1326,36 +1398,147 @@ class ProductDeliveryWorkflow:
         return state
 
     def pause(self) -> dict[str, Any]:
-        state = self._require_started(
-            allow_pending_authorization=True,
-            host_goal_transition=True,
-        )
-        state["paused"] = True
-        state["intervention_enabled"] = False
-        return write_state(self.project_root, state)
+        """Compatibility alias for :meth:`pause_delivery`."""
+        return self.pause_delivery()
 
     def resume(self) -> dict[str, Any]:
+        """Compatibility alias for :meth:`resume_delivery`."""
+        return self.resume_delivery()
+
+    def stop(self, user_message: str | None = None) -> dict[str, Any]:
+        """Retired: use pause_delivery, abandon_delivery, or close_delivery.
+
+        The old ``stop`` relied on string-matching ``user_message`` for
+        Chinese keywords like "停止交付".  This is error-prone and has
+        been retired.  Callers must use the explicit lifecycle methods
+        via the parameterized control interface instead.
+        """
+        raise WorkflowError(
+            "legacy stop() is retired; use pause_delivery, abandon_delivery, "
+            "or close_delivery via $waygate-product-delivery with action=pause, "
+            "action=abandon, or action=close"
+        )
+
+    # ------------------------------------------------------------------
+    # V1.0.31 delivery lifecycle: pause / resume / abandon / close
+    # ------------------------------------------------------------------
+
+    def _set_delivery_lifecycle(
+        self,
+        state: dict[str, Any],
+        status: str,
+        *,
+        intervention_enabled: bool | None = None,
+    ) -> dict[str, Any]:
+        lifecycle = state.setdefault(
+            "delivery_lifecycle",
+            {"schema_version": "v1", "status": "active", "intervention_enabled": True},
+        )
+        lifecycle["status"] = status
+        if intervention_enabled is not None:
+            lifecycle["intervention_enabled"] = intervention_enabled
+        lifecycle["updated_at"] = self._timestamp_from_state(state)
+        return state
+
+    def pause_delivery(self) -> dict[str, Any]:
+        """Pause intervention after a fresh Host Goal reconciliation."""
         state = self._require_started(
             allow_pending_authorization=True,
             host_goal_transition=True,
         )
-        state["paused"] = False
-        state["intervention_enabled"] = True
+        if state.get("paused"):
+            return state
+        binding = state.get("host_goal_binding") or {}
+        if binding.get("status") == "active":
+            binding["delivery_pause_status"] = "paused_by_user"
+            binding["paused_at"] = self._timestamp_from_state(state)
+            state["host_goal_binding"] = binding
+        state["paused"] = True
+        state["intervention_enabled"] = False
+        self._set_delivery_lifecycle(state, "paused", intervention_enabled=False)
+        state = append_transition(
+            state,
+            "delivery_paused",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+        )
         return write_state(self.project_root, state)
 
-    def stop(self, user_message: str | None = None) -> dict[str, Any]:
-        state = self._state()
-        if not state:
-            state = initialize_workspace(self.project_root)
-        elif host_goal_required(state):
-            normalized_message = (user_message or "").strip()
-            if not any(
-                marker in normalized_message
-                for marker in ("停止交付", "终止交付")
-            ):
-                raise WorkflowError(
-                    "explicit user stop is required for an active Host Goal delivery"
-                )
+    def resume_delivery(self) -> dict[str, Any]:
+        """Resume a paused delivery after a fresh Host Goal reconciliation."""
+        state = self._require_started(
+            allow_pending_authorization=True,
+            host_goal_transition=True,
+        )
+        state = self._migrate_current_legacy_layout(state)
+        if not state.get("paused"):
+            return state
+        binding = state.get("host_goal_binding") or {}
+        binding.pop("delivery_pause_status", None)
+        binding.pop("paused_at", None)
+        if binding:
+            binding["resumed_at"] = self._timestamp_from_state(state)
+            state["host_goal_binding"] = binding
+        state["paused"] = False
+        state["intervention_enabled"] = True
+        self._set_delivery_lifecycle(state, "active", intervention_enabled=True)
+        state = append_transition(
+            state,
+            "delivery_resumed",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+        )
+        return write_state(self.project_root, state)
+
+    def record_pending_abandon_token(self, token_info: dict[str, Any]) -> dict[str, Any]:
+        """Store a pending abandon token in state for two-phase confirmation."""
+        state = self._require_started(allow_pending_authorization=True)
+        tokens = {}
+        state["pending_abandon_tokens"] = tokens
+        tokens[token_info["confirmation_token"]] = {
+            "action": token_info.get("action", "abandon"),
+            "delivery_id": token_info["delivery_id"],
+            "feature_slug": token_info["feature_slug"],
+            "state_hash": token_info["state_hash"],
+            "expires_at": token_info["expires_at"],
+            "reason": token_info.get("reason"),
+        }
+        return write_state(self.project_root, state)
+
+    def abandon_delivery(self, confirmation_token: str) -> dict[str, Any]:
+        """Permanently abandon the current delivery after token verification.
+
+        Archives the complete delivery evidence, marks it as abandoned
+        (terminal), and invalidates review authorization.  The
+        delivery_id is preserved in history and never reused.
+        """
+        state = self._require_started(allow_pending_authorization=True)
+        pending = state.get("pending_abandon_tokens") or {}
+        record = pending.get(confirmation_token)
+        if not record:
+            raise WorkflowError("invalid or missing abandon confirmation token")
+        if record.get("action") != "abandon":
+            raise WorkflowError("confirmation token is not bound to abandon")
+        from datetime import datetime, timezone
+
+        try:
+            expires_at = datetime.fromisoformat(record.get("expires_at", ""))
+        except (ValueError, TypeError) as exc:
+            raise WorkflowError("malformed token expiry") from exc
+        if datetime.now(timezone.utc) > expires_at:
+            raise WorkflowError("abandon confirmation token has expired")
+        current_hash = lifecycle_state_hash(state)
+        if record.get("state_hash") != current_hash:
+            raise WorkflowError(
+                "state has changed since prepare_abandon; token is invalid"
+            )
+        if record.get("delivery_id") != state.get("delivery_id"):
+            raise WorkflowError("token delivery_id does not match current delivery")
+
+        # Handle Host Goal binding if present.
+        feature_slug = state.get("feature_slug")
+        delivery_id = state.get("delivery_id")
+        if host_goal_required(state):
             binding_status = (state.get("host_goal_binding") or {}).get("status")
             if binding_status == "active":
                 try:
@@ -1365,41 +1548,76 @@ class ProductDeliveryWorkflow:
                     )
                 except HostGoalError as error:
                     raise WorkflowError(str(error)) from error
-                transition = (
-                    (state.get("host_goal_binding") or {}).get(
-                        "last_consumed_transition"
-                    )
-                    or {}
-                )
-                if transition.get("operation") != "stop_delivery":
-                    raise WorkflowError(
-                        "fresh stop_delivery Host Goal reconciliation is required"
-                    )
-                stop_reconciliation_status = "observed_active"
-            else:
-                stop_reconciliation_status = f"binding_{binding_status or 'missing'}"
             binding = state.setdefault("host_goal_binding", {})
-            binding["status"] = "stopped_by_user"
-            binding["stopped_at"] = self._timestamp_from_state(state)
-            binding["stop_reconciliation_status"] = stop_reconciliation_status
-            binding["stop_message_sha256"] = host_goal_stable_hash(
-                normalized_message
-            )
+            binding["status"] = "abandoned_by_user"
+            binding["abandoned_at"] = self._timestamp_from_state(state)
             binding["authorized_transition"] = None
-            state["status"] = "stopped"
-            state["stage"] = "stopped_by_user"
-            state["next_gate"] = "stopped"
-        elif state.get("delivery_goal") or state.get("handoff"):
-            self.assert_goal_can_stop()
-            state = self._state()
+
+        # Mark terminal before freezing the final snapshot.
         state["active"] = False
         state["paused"] = False
         state["intervention_enabled"] = False
+        state["status"] = "abandoned"
+        state["stage"] = "delivery_abandoned"
+        state["next_gate"] = "abandoned"
+        self._set_delivery_lifecycle(state, "abandoned", intervention_enabled=False)
         policy = state.setdefault("multi_agent_policy", {})
         policy["execution_authorization"] = "invalidated"
         policy["authorized_review_types"] = []
-        state.setdefault("pending_user_decisions", {}).pop("multi_agent_mode", None)
-        return write_state(self.project_root, state)
+        pending.pop(confirmation_token, None)
+        state = append_transition(
+            state,
+            "delivery_abandoned",
+            feature_slug=feature_slug,
+            runtime_version=PLUGIN_VERSION,
+        )
+        persisted = write_state(self.project_root, state)
+        if feature_slug and delivery_id:
+            from product_delivery_agent.artifact_store import freeze_delivery
+
+            freeze_delivery(self.project_root, feature_slug, delivery_id)
+        return persisted
+
+    def close_delivery(self) -> dict[str, Any]:
+        """Close a delivery after canonical closure has passed.
+
+        Requires closure_validation.status=passed,
+        feature_closure.status=passed, and delivery_goal.status=complete.
+        """
+        state = self._require_started(
+            allow_pending_authorization=True,
+        )
+        cv = state.get("closure_validation") or {}
+        fc = state.get("feature_closure") or {}
+        dg = state.get("delivery_goal") or {}
+        if not (
+            cv.get("status") == "passed"
+            and fc.get("status") == "passed"
+            and dg.get("status") == "complete"
+        ):
+            raise WorkflowError(
+                "canonical closure has not passed; close is not allowed"
+            )
+        feature_slug = state.get("feature_slug")
+        delivery_id = state.get("delivery_id")
+        state["active"] = False
+        state["paused"] = False
+        state["intervention_enabled"] = False
+        state["status"] = "closed"
+        state["stage"] = "delivery_closed"
+        self._set_delivery_lifecycle(state, "closed", intervention_enabled=False)
+        state = append_transition(
+            state,
+            "delivery_closed",
+            feature_slug=feature_slug,
+            runtime_version=PLUGIN_VERSION,
+        )
+        persisted = write_state(self.project_root, state)
+        if feature_slug and delivery_id:
+            from product_delivery_agent.artifact_store import freeze_delivery
+
+            freeze_delivery(self.project_root, feature_slug, delivery_id)
+        return persisted
 
     @staticmethod
     def _multi_agent_policy(
@@ -1588,10 +1806,12 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "missing UI prototype review fields: " + ", ".join(missing)
             )
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        review_path = artifacts_dir / CORE_ARTIFACTS["ui_prototype_review"]
-        review_path.write_text(render_ui_prototype_review(review), encoding="utf-8")
+        review_path = self._write_delivery_artifact(
+            state,
+            "ui_prototype_review",
+            CORE_ARTIFACTS["ui_prototype_review"],
+            render_ui_prototype_review(review),
+        )
         artifact_hash = bundle["artifact_metadata"]["clean_prototype"]["sha256"]
         revision_number = (
             int(state.get("ui_prototype", {}).get("revision_number") or 0) + 1
@@ -1638,10 +1858,11 @@ class ProductDeliveryWorkflow:
             ),
             "annotation_separation": deepcopy(review["annotation_separation"]),
         }
-        contract_path = artifacts_dir / "ui-prototype-contract.json"
-        contract_path.write_text(
+        contract_path = self._write_delivery_artifact(
+            state,
+            "ui_prototype_contract",
+            "ui-prototype-contract.json",
             json.dumps(prototype_contract, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
         state["prototype_contract"] = {
             **prototype_contract,
@@ -1782,14 +2003,11 @@ class ProductDeliveryWorkflow:
             "decision": "approved",
             "user_message": user_message,
         }
-        confirmations_dir = (
-            self.project_root / ARTIFACT_ROOT / "artifacts" / "user-confirmations"
-        )
-        confirmations_dir.mkdir(parents=True, exist_ok=True)
-        confirmation_path = confirmations_dir / "ui_prototype.md"
-        confirmation_path.write_text(
+        confirmation_path = self._write_delivery_artifact(
+            state,
+            "ui_prototype_confirmation",
+            "user-confirmations/ui_prototype.md",
             render_user_confirmation(confirmation),
-            encoding="utf-8",
         )
 
         state["ui_prototype"] = {
@@ -2008,17 +2226,17 @@ class ProductDeliveryWorkflow:
             "prototype_contract": prototype_contract,
             "design_audit_sha256": design_audit_sha256,
         }
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        bundle_path = artifacts_dir / "prototype-design-bundle.json"
-        bundle_path.write_text(
+        bundle_path = self._write_delivery_artifact(
+            state,
+            "prototype_design_bundle",
+            "prototype-design-bundle.json",
             json.dumps(canonical_bundle, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
-        contract_path = artifacts_dir / "ui-prototype-contract.json"
-        contract_path.write_text(
+        contract_path = self._write_delivery_artifact(
+            state,
+            "ui_prototype_contract",
+            "ui-prototype-contract.json",
             json.dumps(prototype_contract, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
 
         state["prototype_design_bundle"] = {
@@ -2114,12 +2332,11 @@ class ProductDeliveryWorkflow:
                 "missing non-UI behavior contract fields: " + ", ".join(missing)
             )
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        contract_path = artifacts_dir / CORE_ARTIFACTS["non_ui_behavior_contract"]
-        contract_path.write_text(
+        contract_path = self._write_delivery_artifact(
+            state,
+            "non_ui_behavior_contract",
+            CORE_ARTIFACTS["non_ui_behavior_contract"],
             render_non_ui_behavior_contract(contract),
-            encoding="utf-8",
         )
         artifact_hash = self._artifact_hash(str(contract_path))
 
@@ -2222,10 +2439,12 @@ class ProductDeliveryWorkflow:
                 "confirmed test coverage semantics require user change authorization"
             )
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        audit_path = artifacts_dir / CORE_ARTIFACTS["test_coverage_audit"]
-        audit_path.write_text(render_coverage_audit(audit), encoding="utf-8")
+        audit_path = self._write_delivery_artifact(
+            state,
+            "test_coverage_audit",
+            CORE_ARTIFACTS["test_coverage_audit"],
+            render_coverage_audit(audit),
+        )
 
         state["test_coverage_audit"] = {
             **audit,
@@ -2295,12 +2514,11 @@ class ProductDeliveryWorkflow:
                 "confirmed test coverage semantics require user change authorization"
             )
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        planned_path = artifacts_dir / "planned-e2e-obligations.md"
-        planned_path.write_text(
+        planned_path = self._write_delivery_artifact(
+            state,
+            "planned_e2e_obligations",
+            "planned-e2e-obligations.md",
             self._render_planned_e2e_obligations(planned),
-            encoding="utf-8",
         )
 
         state["planned_e2e_obligations"] = {
@@ -2402,12 +2620,11 @@ class ProductDeliveryWorkflow:
             allow_extra_records=journey_slice_tasks_required(state),
         )
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        evidence_path = artifacts_dir / "executed-browser-evidence.md"
-        evidence_path.write_text(
+        evidence_path = self._write_delivery_artifact(
+            state,
+            "executed_browser_evidence",
+            "executed-browser-evidence.md",
             self._render_executed_browser_evidence(evidence),
-            encoding="utf-8",
         )
 
         state["executed_browser_evidence"] = {
@@ -2473,17 +2690,17 @@ class ProductDeliveryWorkflow:
         except Exception as cause:
             raise WorkflowError(str(cause)) from cause
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        json_path = artifacts_dir / "prototype-production-conformance.json"
-        json_path.write_text(
+        json_path = self._write_delivery_artifact(
+            state,
+            "prototype_production_conformance",
+            "prototype-production-conformance.json",
             json.dumps(evidence, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
-        markdown_path = artifacts_dir / "prototype-production-conformance.md"
-        markdown_path.write_text(
+        markdown_path = self._write_delivery_artifact(
+            state,
+            "prototype_production_conformance_report",
+            "prototype-production-conformance.md",
             self._render_prototype_production_conformance(evidence),
-            encoding="utf-8",
         )
         state["prototype_production_conformance"] = {
             **evidence,
@@ -2653,20 +2870,30 @@ class ProductDeliveryWorkflow:
             launch_package_hash=package["launch_package_hash"],
         )
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        handoff_path = artifacts_dir / CORE_ARTIFACTS["handoff"]
-        goal_path = artifacts_dir / "codex-goal-prompt.md"
-        implementation_goal_path = artifacts_dir / "implementation-goal.md"
-        task_queue_path = artifacts_dir / "task-queue.md"
-        current_task_prompt_path = artifacts_dir / "current-task-prompt.md"
-        handoff_path.write_text(render_handoff_document(handoff), encoding="utf-8")
-        goal_path.write_text(handoff["codex_goal_prompt"], encoding="utf-8")
-        implementation_goal_path.write_text(
-            render_implementation_goal(delivery_goal),
-            encoding="utf-8",
+        handoff_path = self._write_delivery_artifact(
+            state,
+            "handoff",
+            CORE_ARTIFACTS["handoff"],
+            render_handoff_document(handoff),
         )
-        task_queue_path.write_text(render_task_queue(delivery_goal), encoding="utf-8")
+        goal_path = self._write_delivery_artifact(
+            state,
+            "codex_goal_prompt",
+            "codex-goal-prompt.md",
+            handoff["codex_goal_prompt"],
+        )
+        implementation_goal_path = self._write_delivery_artifact(
+            state,
+            "implementation_goal",
+            "implementation-goal.md",
+            render_implementation_goal(delivery_goal),
+        )
+        task_queue_path = self._write_delivery_artifact(
+            state,
+            "task_queue",
+            "task-queue.md",
+            render_task_queue(delivery_goal),
+        )
         current_task_id = delivery_goal["current_task_cursor"]
         if current_task_id is None:
             current_task_prompt = (
@@ -2683,9 +2910,11 @@ class ProductDeliveryWorkflow:
                 current_task,
                 implementation_baseline,
             )
-        current_task_prompt_path.write_text(
+        current_task_prompt_path = self._write_delivery_artifact(
+            state,
+            "current_task_prompt",
+            "current-task-prompt.md",
             current_task_prompt,
-            encoding="utf-8",
         )
 
         state["handoff"] = {
@@ -3128,17 +3357,16 @@ class ProductDeliveryWorkflow:
         except Exception as cause:
             raise WorkflowError(str(cause)) from cause
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
         task_file_identity = hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
         artifact_name = (
             f"task-prototype-conformance-{task_file_identity}-"
             f"{evidence['evidence_sha256'][:12]}.json"
         )
-        artifact_path = artifacts_dir / artifact_name
-        artifact_path.write_text(
+        artifact_path = self._write_delivery_artifact(
+            state,
+            f"task_prototype_conformance_{task_file_identity}",
+            artifact_name,
             json.dumps(evidence, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
         artifact_sha256 = self._artifact_hash(str(artifact_path))
         current = deepcopy(state.get("task_prototype_conformance") or {})
@@ -3390,8 +3618,6 @@ class ProductDeliveryWorkflow:
             state["task_prototype_conformance"] = conformance
             return write_state(self.project_root, state)
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
         adjudication_body = {
             "schema_version": "task-visual-conformance-adjudication-v1",
             "decision_id": effective_decision_id,
@@ -3419,10 +3645,11 @@ class ProductDeliveryWorkflow:
             + effective_decision_id.removeprefix("visual-decision-")
             + ".json"
         )
-        adjudication_path = artifacts_dir / adjudication_name
-        adjudication_path.write_text(
+        adjudication_path = self._write_delivery_artifact(
+            state,
+            f"task_visual_adjudication_{hashlib.sha256(task_id.encode('utf-8')).hexdigest()[:16]}",
+            adjudication_name,
             json.dumps(adjudication_body, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
         adjudication_sha256 = self._artifact_hash(str(adjudication_path))
         adjudication_ref = {
@@ -3448,10 +3675,11 @@ class ProductDeliveryWorkflow:
             f"task-prototype-conformance-{task_identity}-"
             f"{accepted_record['evidence_sha256'][:12]}.json"
         )
-        accepted_path = artifacts_dir / accepted_name
-        accepted_path.write_text(
+        accepted_path = self._write_delivery_artifact(
+            state,
+            f"task_prototype_conformance_accepted_{task_identity}",
+            accepted_name,
             json.dumps(accepted_record, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
         accepted_sha256 = self._artifact_hash(str(accepted_path))
         records[task_id] = {
@@ -3595,12 +3823,11 @@ class ProductDeliveryWorkflow:
             "status": "in_progress",
             "records": stored,
         }
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        artifact_path = artifacts_dir / f"task-slice-evidence-{task_id.lower()}.md"
-        artifact_path.write_text(
+        artifact_path = self._write_delivery_artifact(
+            state,
+            f"task_slice_evidence_{task_id.lower()}",
+            f"task-slice-evidence-{task_id.lower()}.md",
             self._render_executed_browser_evidence(evidence),
-            encoding="utf-8",
         )
         return write_state(self.project_root, state)
 
@@ -3651,9 +3878,6 @@ class ProductDeliveryWorkflow:
             "current_task": goal.get("current_task_cursor") or "TASKS_COMPLETE",
             "completed_tasks": list(goal.get("completed_tasks", [])),
         }
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        current_task_prompt_path = artifacts_dir / "current-task-prompt.md"
         current_task_id = goal.get("current_task_cursor")
         if current_task_id:
             current_task = next(
@@ -3670,9 +3894,11 @@ class ProductDeliveryWorkflow:
                 "# Current Prototype-Bound TASK\n\n"
                 "All planned TASKs are complete.\n"
             )
-        current_task_prompt_path.write_text(
+        current_task_prompt_path = self._write_delivery_artifact(
+            next_state,
+            "current_task_prompt",
+            "current-task-prompt.md",
             current_task_prompt,
-            encoding="utf-8",
         )
         next_state["current_task_prompt"] = current_task_prompt
         next_state["current_task_prompt_path"] = "artifacts/current-task-prompt.md"
@@ -3734,8 +3960,6 @@ class ProductDeliveryWorkflow:
 
     def assert_goal_can_stop(self) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
         try:
             result = assert_delivery_goal_can_stop(state)
         except DeliveryGoalError as error:
@@ -3746,17 +3970,21 @@ class ProductDeliveryWorkflow:
                     task["task_id"] for task in derive_goal_remaining_tasks(state)
                 ],
             }
-            (artifacts_dir / "stop-guard-result.md").write_text(
+            self._write_delivery_artifact(
+                state,
+                "stop_guard_result",
+                "stop-guard-result.md",
                 render_stop_guard_result(stop_result),
-                encoding="utf-8",
             )
             state["stop_guard"] = stop_result
             write_state(self.project_root, state)
             raise WorkflowError(str(error)) from error
 
-        (artifacts_dir / "stop-guard-result.md").write_text(
+        self._write_delivery_artifact(
+            state,
+            "stop_guard_result",
+            "stop-guard-result.md",
             render_stop_guard_result(result),
-            encoding="utf-8",
         )
         state["stop_guard"] = result
         return write_state(self.project_root, state)
@@ -4019,14 +4247,16 @@ class ProductDeliveryWorkflow:
             state.pop("status", None)
             state["stage"] = "closure_failed"
             state["next_gate"] = "feature_closure_after_implementation"
-            self._write_closure_validator_result("closure_failed", [str(error)])
+            self._write_closure_validator_result(state, "closure_failed", [str(error)])
             write_state(self.project_root, state)
             raise
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        closure_path = artifacts_dir / "feature-closure.md"
-        closure_path.write_text(render_feature_closure(closure), encoding="utf-8")
+        closure_path = self._write_delivery_artifact(
+            state,
+            "feature_closure",
+            "feature-closure.md",
+            render_feature_closure(closure),
+        )
         canonical_hash = source_artifact_sha256 or self._stable_hash(closure_artifact)
         canonical_source = source_artifact_path or "inline:record_feature_closure"
 
@@ -4046,7 +4276,9 @@ class ProductDeliveryWorkflow:
             "closure_artifact_sha256": canonical_hash,
             "result_artifact": ".product-delivery/artifacts/closure-validator-result.md",
         }
-        self._write_closure_validator_result("passed", [])
+        closure_result_path = self._write_closure_validator_result(
+            state, "passed", []
+        )
         try:
             state = mark_goal_complete(
                 state,
@@ -4061,7 +4293,7 @@ class ProductDeliveryWorkflow:
             state.pop("status", None)
             state["stage"] = "closure_failed"
             state["next_gate"] = "feature_closure_after_implementation"
-            self._write_closure_validator_result("closure_failed", [str(error)])
+            self._write_closure_validator_result(state, "closure_failed", [str(error)])
             write_state(self.project_root, state)
             raise WorkflowError(str(error)) from error
         state["implementation"] = {
@@ -4079,7 +4311,7 @@ class ProductDeliveryWorkflow:
             output_artifact_hashes={
                 "artifacts/feature-closure.md": self._artifact_hash(str(closure_path)),
                 "artifacts/closure-validator-result.md": self._artifact_hash(
-                    str(artifacts_dir / "closure-validator-result.md")
+                    str(closure_result_path)
                 ),
             },
             metadata={
@@ -4114,16 +4346,21 @@ class ProductDeliveryWorkflow:
                 + ", ".join(missing)
             )
 
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        self._write_artifact_if_missing(
-            artifacts_dir / CORE_ARTIFACTS["test_coverage_audit"],
-            "# Test Coverage Audit\n\nStatus: Draft\n\n",
-        )
-        self._write_artifact_if_missing(
-            artifacts_dir / CORE_ARTIFACTS["handoff"],
-            "# Codex Goal Handoff Draft\n\nStatus: Draft\n\n",
-        )
+        refs = state.get("artifact_refs") or {}
+        if "test_coverage_audit" not in refs:
+            self._write_delivery_artifact(
+                state,
+                "test_coverage_audit",
+                CORE_ARTIFACTS["test_coverage_audit"],
+                "# Test Coverage Audit\n\nStatus: Draft\n\n",
+            )
+        if "handoff" not in refs:
+            self._write_delivery_artifact(
+                state,
+                "handoff",
+                CORE_ARTIFACTS["handoff"],
+                "# Codex Goal Handoff Draft\n\nStatus: Draft\n\n",
+            )
 
         state["stage"] = "handoff_draft_ready"
         state["next_gate"] = "test_coverage_audit"
@@ -4137,8 +4374,24 @@ class ProductDeliveryWorkflow:
             state.get(key) for key in ("feature_slug", "status", "activation_source")
         ):
             return None
+        initial_hash = stable_state_hash(state)
+        delivery_id = str(state.get("delivery_id") or f"legacy-{initial_hash[:16]}")
+        feature_slug = str(state.get("feature_slug") or "")
+
+        # Freeze delivery-scoped evidence before recording the archive snapshot.
+        if feature_slug and delivery_id:
+            from product_delivery_agent.artifact_store import (
+                ArtifactStoreError,
+                freeze_delivery,
+            )
+
+            try:
+                freeze_delivery(self.project_root, feature_slug, delivery_id)
+            except ArtifactStoreError as error:
+                raise WorkflowError(
+                    f"failed to freeze previous delivery evidence: {error}"
+                ) from error
         state_hash = stable_state_hash(state)
-        delivery_id = str(state.get("delivery_id") or f"legacy-{state_hash[:16]}")
         archive_dir = self.project_root / ARTIFACT_ROOT / "history" / delivery_id
         archive_dir.mkdir(parents=True, exist_ok=True)
         snapshot_path = archive_dir / "state.json"
@@ -4503,6 +4756,55 @@ class ProductDeliveryWorkflow:
                 request["status"] = "consumed"
                 request["consumed_at"] = closed_at
 
+    def _write_delivery_artifact(
+        self,
+        state: dict[str, Any],
+        artifact_type: str,
+        filename: str,
+        content: str,
+        *,
+        transition_name: str | None = None,
+    ) -> Path:
+        """Write canonical delivery evidence and refresh the compatibility view."""
+        from product_delivery_agent.artifact_store import write_artifact
+
+        feature_slug = str(state.get("feature_slug") or "_unscoped")
+        delivery_id = str(state.get("delivery_id") or "")
+        if not delivery_id:
+            raise WorkflowError(
+                "delivery-scoped artifact write requires delivery_id"
+            )
+        ref = write_artifact(
+            self.project_root,
+            feature_slug,
+            delivery_id,
+            artifact_type,
+            filename,
+            content,
+            transition_name=transition_name or "artifact_written",
+        )
+        state.setdefault("artifact_refs", {})[artifact_type] = {
+            "canonical_path": ref["canonical_path"],
+            "compatibility_path": ref["compatibility_path"],
+            "sha256": ref["sha256"],
+            "feature_slug": feature_slug,
+            "delivery_id": delivery_id,
+        }
+        transitioned = append_transition(
+            state,
+            "artifact_written",
+            feature_slug=feature_slug,
+            runtime_version=PLUGIN_VERSION,
+            output_artifact_hashes={ref["canonical_path"]: ref["sha256"]},
+            metadata={
+                "artifact_type": artifact_type,
+                "compatibility_path": ref["compatibility_path"],
+            },
+        )
+        state.clear()
+        state.update(transitioned)
+        return self.project_root / ARTIFACT_ROOT / ref["compatibility_path"]
+
     @staticmethod
     def _write_artifact_if_missing(path: Path, content: str) -> None:
         if not path.exists():
@@ -4510,18 +4812,19 @@ class ProductDeliveryWorkflow:
 
     def _write_closure_validator_result(
         self,
+        state: dict[str, Any],
         status: str,
         errors: list[str],
-    ) -> None:
-        artifacts_dir = self.project_root / ARTIFACT_ROOT / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        (artifacts_dir / "closure-validator-result.md").write_text(
+    ) -> Path:
+        return self._write_delivery_artifact(
+            state,
+            "closure_validator_result",
+            "closure-validator-result.md",
             render_closure_validator_result(
                 status,
                 errors,
-                feature_slug=self._state().get("feature_slug"),
+                feature_slug=state.get("feature_slug"),
             ),
-            encoding="utf-8",
         )
 
 
@@ -4712,19 +5015,14 @@ class ProductDeliveryWorkflow:
             or "Runtime auto-authorization after required user confirmation gates passed.",
             "nonce": package["nonce"],
         }
-        launch_path = (
-            self.project_root
-            / ARTIFACT_ROOT
-            / "artifacts"
-            / "implementation-launch-authorization.md"
-        )
-        launch_path.parent.mkdir(parents=True, exist_ok=True)
-        launch_path.write_text(
+        launch_path = self._write_delivery_artifact(
+            state,
+            "implementation_launch_authorization",
+            "implementation-launch-authorization.md",
             self._render_implementation_launch_authorization(
                 package,
                 authorization,
             ),
-            encoding="utf-8",
         )
 
         state["implementation_launch_authorization"] = {

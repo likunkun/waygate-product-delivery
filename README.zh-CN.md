@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.30-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.31-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -28,8 +28,8 @@ Waygate Product Delivery 把这些失败模式变成明确的门禁。
 
 | 能力 | 结果 |
 | --- | --- |
-| 默认休眠 | 插件不会自动介入，必须显式说 `启动交付` 或 `start`。 |
-| 文件化状态 | `.product-delivery/state.json` 和 artifacts 可以跨上下文压缩恢复。 |
+| 仅显式参数控制 | 生命周期变更必须显式调用 `$waygate-product-delivery` 并提交严格 JSON；普通聊天不会修改交付状态。 |
+| 按 delivery 隔离证据 | `.product-delivery/state.json` 可跨上下文恢复，权威 artifacts 存储在 `deliveries/<feature_slug>/<delivery_id>/`。 |
 | 强制技能门禁 | 按阶段检查 Product Delivery、Open Spec、planning files、UI/UX、浏览器测试和闭包技能。 |
 | 分层产品确认 | 先确认需求范围和 UI 原型或非 UI 行为契约，再生成详细测试设计。 |
 | 原型设计完整性 | 纯净产品表面必须继承全局产品上下文，评审标注只能放在独立评审页。 |
@@ -54,23 +54,13 @@ cd waygate-product-delivery
 bash scripts/install_waygate_product_delivery.sh
 ```
 
-安装后新开一个 Codex thread，然后在要交付的项目中启动：
+安装后新开一个 Codex thread，然后显式调用 Skill，并只提交一个严格 JSON 对象：
 
 ```text
-启动交付
+$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}
 ```
 
-普通启动会立即询问评审执行模式。要为当前 delivery 显式授权在结构化评审门禁自动启动 subagents，使用：
-
-```text
-启动交付，多 Agent 模式
-```
-
-如果 subagents 不可用，并且你明确接受较弱证据，使用：
-
-```text
-启动交付，允许降级评审
-```
+新建 delivery 时可使用 `spawned_subagents_authorized` 授权结构化 subagent 评审；只有明确接受降级证据时才使用 `role_simulation_allowed`。同一未完成 feature 再次使用 `resume_or_create` 会恢复原 `delivery_id`。
 
 ## 安装
 
@@ -112,19 +102,20 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.30.tar.gz
+dist/waygate-product-delivery-1.0.31.tar.gz
 ```
 
 ## Codex 使用方式
 
-| 启动语 | 作用 |
+| JSON action | 作用 |
 | --- | --- |
-| `启动交付` | 开启 Product Delivery，并立即等待用户选择评审执行模式。 |
-| `启动交付，多 Agent 模式` | 开启 Product Delivery，并授权当前 delivery 在结构化评审门禁自动启动 2–3 个 subagents。 |
-| `启动交付，允许降级评审` | 开启 Product Delivery，并在真实 subagents 不可用时显式允许 role-simulation 弱证据评审。 |
-| `查看状态` | 查看当前阶段、阻塞项和下一门禁。 |
-| `验证闭包` | 对当前 artifacts 执行正式闭包验证。 |
-| `停止交付` | 退出当前项目的 Product Delivery 干预。 |
+| `inspect` / `status` | 只读查看启动判定、当前阶段、阻塞项、迁移状态和 artifact 身份。 |
+| `start` | 按 `resume_or_create`、`resume_only` 或 `create_only` 创建或恢复 delivery。 |
+| `pause` / `resume` | 临时关闭或恢复主动介入，保留原 `delivery_id`、确认和证据。 |
+| `prepare_abandon` / `abandon` | 使用绑定当前 state 且会过期的两阶段 token 永久废弃 delivery。 |
+| `close` | 仅在 canonical closure、feature closure 和 delivery goal 全部通过后关闭。 |
+
+`stop()` 已退役；非 JSON 请求和未知字段不会触发任何状态变更。
 
 进入实现前必须完成：
 

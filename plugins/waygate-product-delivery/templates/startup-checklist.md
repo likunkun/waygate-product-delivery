@@ -7,9 +7,9 @@
 - Call `inspect_startup_request(feature_slug=...)` before startup; a new feature never reuses a previous delivery authorization.
 - For an active pre-v1.0.22 state with `execution_model_policy`, call `retire_model_execution_policy()`; do not edit state or restart the delivery.
 - Record the current feature slug and blocked gates in state.
-- Plain startup enters `multi_agent_mode_selection` and asks for the review mode immediately.
-- `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.
-- `启动交付，允许降级评审` explicitly allows structured role simulation when subagents are unavailable.
+- `action=start` with `review_mode_if_created=pending_selection` enters `multi_agent_mode_selection`.
+- `review_mode_if_created=spawned_subagents_authorized` authorizes spawned subagents only when a new delivery is created.
+- `review_mode_if_created=role_simulation_allowed` explicitly allows degraded structured review only for a newly created delivery.
 - Draft Open Spec, scenario matrix, and the UI prototype or non-UI behavior contract before asking for product confirmation.
 - For UI work, call `record_ui_prototype_design_bundle()` after the prototype draft and before product/scenario review.
 - The bundle must keep the product-facing `clean_surface` separate from the optional external `review_annotation_set` and prove all six product-context dimensions.

@@ -109,7 +109,7 @@ def initialize_workspace(
             raw_state = {}
         terminal_history = (
             isinstance(raw_state, dict)
-            and raw_state.get("status") in TERMINAL_STATUSES
+            and raw_state.get("status") in (TERMINAL_STATUSES | {"abandoned"})
         )
     existing_state = load_state(root)
     if existing_state:
@@ -150,7 +150,24 @@ def write_state(project_root: str | Path, state: dict[str, Any]) -> dict[str, An
         json.dump(next_state, state_file, indent=2, sort_keys=True)
         state_file.write("\n")
     os.replace(temp_path, state_path)
+    if next_state.get("delivery_id") and (next_state.get("feature_slug") or next_state.get("active")):
+        # Local import avoids a module cycle: artifact_store depends on
+        # protocol constants but state persistence owns layout refresh.
+        from product_delivery_agent.artifact_store import ensure_delivery_layout
+
+        ensure_delivery_layout(project_root, next_state)
     return next_state
+
+
+def lifecycle_state_hash(state: dict[str, Any]) -> str:
+    """Hash lifecycle-relevant state while excluding write-only volatility."""
+    material = json.loads(json.dumps(state, default=str))
+    material.pop("updated_at", None)
+    material.pop("runtime_status", None)
+    material.pop("pending_abandon_tokens", None)
+    return hashlib.sha256(
+        json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def new_delivery_state(project_type: str | None = None) -> dict[str, Any]:
@@ -248,6 +265,12 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
         "user_change_requests": [],
         "pending_user_decisions": {},
         "delivery_goal": None,
+        "delivery_lifecycle": {
+            "schema_version": "v1",
+            "status": "active",
+            "intervention_enabled": True,
+        },
+        "pending_abandon_tokens": {},
         "host_goal_authorization": {
             "status": "not_authorized",
         },
@@ -283,7 +306,7 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
 
 
 def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
-    is_terminal_history = state.get("status") in TERMINAL_STATUSES
+    is_terminal_history = state.get("status") in (TERMINAL_STATUSES | {"abandoned"})
     merged = normalize_state_protocol(dict(state))
     if not is_terminal_history:
         merged.setdefault("delivery_id", _legacy_delivery_id(merged))
@@ -460,6 +483,11 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     merged.setdefault("user_change_requests", [])
     merged.setdefault("pending_user_decisions", {})
     merged.setdefault("delivery_goal", None)
+    merged.setdefault(
+        "delivery_lifecycle",
+        {"schema_version": "v1", "status": "active", "intervention_enabled": True},
+    )
+    merged.setdefault("pending_abandon_tokens", {})
     if "host_goal_authorization" not in merged:
         merged["host_goal_authorization"] = {
             "status": (

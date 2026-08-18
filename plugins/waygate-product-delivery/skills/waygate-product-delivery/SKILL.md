@@ -5,7 +5,9 @@ description: Codex-native product delivery workflow.
 
 # Product Delivery Agent
 
-默认休眠。说 `启动交付` 激活当前项目的产品交付模式，并立即进入 `multi_agent_mode_selection` 等待评审模式选择；说 `启动交付，多 Agent 模式` 显式授权当前 delivery 在结构化 review gate 自动启动 2–3 个独立 subagents；只有在真实 subagents 不可用时，才使用 `启动交付，允许降级评审` 显式允许 role_simulation 弱证据；说 `停止交付` 或使用 `stop` 退出干预。底层命令仍保留 `start` / `stop`。
+默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 `$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 `scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。支持 `inspect`、`status`、`start`、`pause`、`resume`、`prepare_abandon`、`abandon` 和 `close`。`review_mode_if_created=pending_selection` 会进入 `multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。
+
+示例：`$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}`。
 
 ## Active Mode Hard Rules
 
@@ -74,7 +76,7 @@ handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，
 
 `wait_for_user` 必须生成并复用稳定 `decision_id`、prompt hash 和 blocker fingerprint；同一问题只展示一次，自动 Goal turn 不得重复提问，也不得修改产品、测试、证据或 closure。用户回复必须匹配当前 `decision_id`，并通过 `user_resume` 再次观察 Host Goal active 后才能继续。只有三个不同 `host_turn_id` 连续观察到相同 blocker，才允许调用 `update_goal(status=blocked)`。
 
-canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。Goal 曾经 active 后若 missing 或提前 complete，禁止静默创建 replacement，必须调用 `authorize_host_goal_reactivation()` 取得新的用户授权。`停止交付` 需要 `stop_delivery` 对账，停止后 binding 标记为 `stopped_by_user`，不得自动恢复。
+canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。Goal 曾经 active 后若 missing 或提前 complete，禁止静默创建 replacement，必须调用 `authorize_host_goal_reactivation()` 取得新的用户授权。`action=abandon` 需要 `stop_delivery` 对账，停止后 binding 标记为 `stopped_by_user`，不得自动恢复。
 
 V1.0.25 起，Goal 尚未 ever active 且 activation checkpoint 因后续合法 transition 过期时，必须调用 `recover_stale_host_goal_checkpoint(checkpoint_id)`。runtime 会验证 delivery、feature、authorization、generation、nonce、objective 和 journal hash chain，归档旧 checkpoint，追加 `host_goal_checkpoint_superseded` transition，并以相同 binding identity 重新签发 `inspect_before_activation` checkpoint。不得手改 state、重新 start delivery 或重放旧 checkpoint。
 
@@ -102,11 +104,11 @@ V1.0.30 起，执行期 `test_implementation` 和 `ui_conformance` multi-agent r
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.30`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.31`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 
-multi-agent review 必须记录 `review_mode`。`spawned_subagents` 是强证据；该模式还必须记录 2–3 个唯一的 `reviewer_agent_ids` 和真实 `reviewer_spawn_source`；模型名称不是 review evidence。它只在 `execution_authorization` 对 `authorization_scope=current_delivery` 有效时可接受。授权只覆盖 scenario、test、test_coverage、test_implementation、ui_conformance 结构化 review gate，不授权普通实现、文件读取或串行修复自动并行。`role_simulation` 是弱证据，只有使用 `启动交付，允许降级评审` 后才允许；`blocked_with_reason` 不能通过 handoff。
+multi-agent review 必须记录 `review_mode`。`spawned_subagents` 是强证据；该模式还必须记录 2–3 个唯一的 `reviewer_agent_ids` 和真实 `reviewer_spawn_source`；模型名称不是 review evidence。它只在 `execution_authorization` 对 `authorization_scope=current_delivery` 有效时可接受。授权只覆盖 scenario、test、test_coverage、test_implementation、ui_conformance 结构化 review gate，不授权普通实现、文件读取或串行修复自动并行。`role_simulation` 是弱证据，只有新建 delivery 时显式设置 `review_mode_if_created=role_simulation_allowed` 才允许；`blocked_with_reason` 不能通过 handoff。
 
 进入实现前必须记录 canonical `implementation_launch_authorization`，但它是 runtime 自动授权 artifact，不是用户确认 gate。授权必须绑定当前 `feature_slug`、review mode、prototype hash、planned E2E、TASK queue、required commands 和 nonce/hash。scope、TASK、review mode、prototype 或 planned E2E 改变后必须自动刷新授权并继续 handoff。
 

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT
+from product_delivery_agent.control import dispatch
 from product_delivery_agent.hooks import (
     build_prompt_context,
     build_resume_context,
@@ -148,9 +149,28 @@ class HooksRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             workflow = ProductDeliveryWorkflow(project_root)
-            workflow.start(
-                multi_agent_mode="spawned_subagents_authorized")
-            workflow.stop()
+            started = workflow.start(
+                feature_slug="feature-a",
+                multi_agent_mode="spawned_subagents_authorized",
+            )
+            prepared = dispatch(
+                project_root,
+                {
+                    "schema_version": "v1",
+                    "action": "prepare_abandon",
+                    "delivery_id": started["delivery_id"],
+                    "reason": "hook silence regression",
+                },
+            )
+            dispatch(
+                project_root,
+                {
+                    "schema_version": "v1",
+                    "action": "abandon",
+                    "delivery_id": started["delivery_id"],
+                    "confirmation_token": prepared["confirmation_token"],
+                },
+            )
 
             for hook_result in (
                 build_resume_context(project_root),

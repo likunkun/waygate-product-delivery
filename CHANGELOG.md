@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.31
+
+- Stores authoritative delivery evidence under `.product-delivery/deliveries/<feature_slug>/<delivery_id>/` with a hashed manifest, a machine-readable `current.json` pointer, and a best-effort `current` symlink.
+- Preserves completed, abandoned, and superseded delivery evidence while keeping `.product-delivery/artifacts/` as a hash-checked compatibility view rather than gate authority.
+- Adds strict JSON lifecycle control through `scripts/waygate-control.py`; implicit natural-language activation is disabled with `agents/openai.yaml`.
+- Separates resumable `pause`/`resume` from two-phase `prepare_abandon`/`abandon`, retires string-matched `stop()`, and preserves the same `delivery_id` across interruptions and resumes.
+- Adds fail-closed artifact owner, manifest, canonical hash, and compatibility-mirror validation plus lossless legacy-layout migration.
+
 ## 1.0.30
 
 - Requires execution-stage `test_implementation` and `ui_conformance` reviewers to finish one shared-snapshot discovery round before the coordinator freezes findings, batch-remediates them, and runs one unified re-review.

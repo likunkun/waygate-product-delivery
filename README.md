@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.30-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.31-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -28,8 +28,8 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 
 | Capability | Result |
 | --- | --- |
-| Dormant-by-default activation | The plugin does nothing until the project explicitly says `启动交付` or `start`. |
-| File-backed workflow state | `.product-delivery/state.json` and artifacts outlive chat context and compaction. |
+| Explicit-only lifecycle control | Lifecycle changes require `$waygate-product-delivery` with a strict JSON request; ordinary chat never mutates delivery state. |
+| Delivery-isolated evidence | `.product-delivery/state.json` survives compaction while authoritative artifacts live under `deliveries/<feature_slug>/<delivery_id>/`. |
 | Required skill gates | Product Delivery, Open Spec, planning files, UI/UX, browser testing, and closure skills are checked by stage. |
 | Layered product confirmation | Product scope and the UI prototype or non-UI behavior contract are confirmed before detailed test design. |
 | Prototype design integrity | Clean product surfaces must inherit the global product context, while review annotations remain on an external review-only surface. |
@@ -56,23 +56,13 @@ Install or update the local Codex plugin:
 bash scripts/install_waygate_product_delivery.sh
 ```
 
-Start a new Codex thread after installation, then activate the workflow inside the project you want to deliver:
+Start a new Codex thread after installation, then invoke the skill explicitly with one strict JSON object:
 
 ```text
-启动交付
+$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}
 ```
 
-Plain startup immediately asks which review execution mode to use. To explicitly authorize automatic subagent startup at structured review gates for this delivery, start with:
-
-```text
-启动交付，多 Agent 模式
-```
-
-If subagents are unavailable and you explicitly accept weaker evidence, start with:
-
-```text
-启动交付，允许降级评审
-```
+Use `spawned_subagents_authorized` to authorize structured subagent reviews when a new delivery is created, or `role_simulation_allowed` only when degraded evidence is explicitly accepted. Repeating `resume_or_create` for the same unfinished feature resumes the existing `delivery_id`.
 
 ## Install
 
@@ -114,19 +104,20 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.30.tar.gz
+dist/waygate-product-delivery-1.0.31.tar.gz
 ```
 
 ## Use In Codex
 
-| Prompt | Meaning |
+| JSON action | Meaning |
 | --- | --- |
-| `启动交付` | Activate Product Delivery and immediately wait for review-mode selection. |
-| `启动交付，多 Agent 模式` | Activate Product Delivery and authorize 2–3 spawned subagents at structured review gates for the current delivery. |
-| `启动交付，允许降级评审` | Activate Product Delivery and explicitly allow role-simulation review only when spawned subagents are unavailable. |
-| `查看状态` | Show the current Product Delivery stage, blockers, and next gate. |
-| `验证闭包` | Run formal closure validation against current artifacts. |
-| `停止交付` | Exit Product Delivery intervention for the current project. |
+| `inspect` / `status` | Read startup intent, current stage, blockers, migration status, and artifact identity without changing lifecycle state. |
+| `start` | Create or resume according to `start_mode`: `resume_or_create`, `resume_only`, or `create_only`. |
+| `pause` / `resume` | Temporarily disable or restore intervention while preserving the same `delivery_id` and evidence. |
+| `prepare_abandon` / `abandon` | Permanently abandon a delivery through a state-bound, expiring two-phase token. |
+| `close` | Close only after canonical closure, feature closure, and the delivery goal have passed. |
+
+`stop()` is retired. Non-JSON requests and unknown fields are rejected without changing state.
 
 Implementation must not begin until the current feature has:
 

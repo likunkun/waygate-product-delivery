@@ -1,7 +1,22 @@
 {
-  "activation_command": "start",
+  "actions": [
+    "inspect",
+    "status",
+    "start",
+    "pause",
+    "resume",
+    "prepare_abandon",
+    "abandon",
+    "close"
+  ],
   "artifact_root": ".product-delivery/",
+  "control_script": "scripts/waygate-control.py",
   "current_project_only": true,
-  "deactivation_command": "stop",
-  "dormant_by_default": true
+  "delivery_root": ".product-delivery/deliveries/<feature_slug>/<delivery_id>/",
+  "dormant_by_default": true,
+  "explicit_invocation_required": true,
+  "request_schema_version": "v1",
+  "retired_actions": [
+    "stop"
+  ]
 }

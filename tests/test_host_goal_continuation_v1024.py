@@ -12,6 +12,7 @@ from product_delivery_agent.artifact_protocol import (
     write_state,
 )
 from product_delivery_agent.continuation import derive_continuation_status
+from product_delivery_agent.control import dispatch
 from product_delivery_agent.gatekeeper import (
     CANONICAL_SCHEMA_VERSION,
     CANONICAL_VALIDATOR,
@@ -582,11 +583,12 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
 
     def test_explicit_user_stop_requires_fresh_goal_reconciliation(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = handed_off_workflow(Path(tmp))
+            project_root = Path(tmp)
+            workflow = handed_off_workflow(project_root)
             active = activate_host_goal(workflow)
 
-            with self.assertRaisesRegex(WorkflowError, "explicit user stop"):
-                workflow.stop()
+            with self.assertRaisesRegex(WorkflowError, "retired"):
+                workflow.stop(user_message="停止交付")
 
             checkpoint = workflow.prepare_host_goal_reconciliation(
                 "stop_delivery",
@@ -601,22 +603,40 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                 },
             )
 
-            stopped = workflow.stop(user_message="停止交付")
+            prepared = dispatch(
+                project_root,
+                {
+                    "schema_version": "v1",
+                    "action": "prepare_abandon",
+                    "delivery_id": active["delivery_id"],
+                    "reason": "user explicitly abandoned delivery",
+                },
+            )
+            dispatch(
+                project_root,
+                {
+                    "schema_version": "v1",
+                    "action": "abandon",
+                    "delivery_id": active["delivery_id"],
+                    "confirmation_token": prepared["confirmation_token"],
+                },
+            )
+            stopped = workflow.status()
 
             self.assertFalse(stopped["active"])
-            self.assertEqual(stopped["status"], "stopped")
+            self.assertEqual(stopped["status"], "abandoned")
             self.assertEqual(
-                stopped["host_goal_binding"]["status"], "stopped_by_user"
+                stopped["host_goal_binding"]["status"], "abandoned_by_user"
             )
-            self.assertEqual(stopped["next_gate"], "stopped")
+            self.assertEqual(stopped["next_gate"], "abandoned")
             with self.assertRaisesRegex(WorkflowError, "not active"):
-                ProductDeliveryWorkflow(Path(tmp)).recover_host_goal_binding(
+                ProductDeliveryWorkflow(project_root).recover_host_goal_binding(
                     "继续交付并启用 Goal 自动推进"
                 )
-
     def test_explicit_user_stop_can_terminate_an_unavailable_goal_binding(self):
         with tempfile.TemporaryDirectory() as tmp:
-            workflow = handed_off_workflow(Path(tmp))
+            project_root = Path(tmp)
+            workflow = handed_off_workflow(project_root)
             checkpoint = workflow.prepare_host_goal_activation()
             workflow.record_host_goal_observation(
                 checkpoint["checkpoint_id"],
@@ -628,19 +648,32 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                     "error_message": "Goal tools are unavailable",
                 },
             )
-
-            stopped = workflow.stop(user_message="停止交付")
+            current = workflow.status()
+            prepared = dispatch(
+                project_root,
+                {
+                    "schema_version": "v1",
+                    "action": "prepare_abandon",
+                    "delivery_id": current["delivery_id"],
+                    "reason": "user explicitly abandoned unavailable goal delivery",
+                },
+            )
+            dispatch(
+                project_root,
+                {
+                    "schema_version": "v1",
+                    "action": "abandon",
+                    "delivery_id": current["delivery_id"],
+                    "confirmation_token": prepared["confirmation_token"],
+                },
+            )
+            stopped = workflow.status()
 
             self.assertFalse(stopped["active"])
-            self.assertEqual(stopped["status"], "stopped")
+            self.assertEqual(stopped["status"], "abandoned")
             self.assertEqual(
-                stopped["host_goal_binding"]["status"], "stopped_by_user"
+                stopped["host_goal_binding"]["status"], "abandoned_by_user"
             )
-            self.assertEqual(
-                stopped["host_goal_binding"]["stop_reconciliation_status"],
-                "binding_unavailable",
-            )
-
     def test_internal_closure_waits_for_verified_host_goal_completion(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

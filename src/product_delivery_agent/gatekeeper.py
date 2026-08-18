@@ -38,7 +38,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.0.30"
+PLUGIN_VERSION = "1.0.31"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -751,6 +751,25 @@ def derive_blockers(
     """Derive current blockers from structured state, ignoring hand-edited lists."""
     normalized = normalize_state_protocol(state)
     blockers: list[str] = []
+    if project_root is not None:
+        try:
+            from product_delivery_agent.artifact_store import (
+                ArtifactStoreError,
+                validate_current_artifact_identity,
+            )
+
+            identity_blockers = validate_current_artifact_identity(
+                project_root, normalized
+            )
+            for identity_blocker in identity_blockers:
+                _append_if(blockers, True, identity_blocker)
+            if any(
+                blocker.startswith("stale_compat_mirror:")
+                for blocker in identity_blockers
+            ):
+                _append_if(blockers, True, "artifact_identity_mismatch")
+        except ArtifactStoreError:
+            _append_if(blockers, True, "artifact_identity_mismatch")
     for error in normalized.get("protocol_errors", []):
         _append_if(blockers, True, error)
     closure_validation = _as_dict(normalized.get("closure_validation"))

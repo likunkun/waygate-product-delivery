@@ -14,12 +14,10 @@
     ],
     "category": "Productivity",
     "defaultPrompt": [
-      "\u542f\u52a8\u4ea4\u4ed8",
-      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u591a Agent \u6a21\u5f0f",
-      "\u542f\u52a8\u4ea4\u4ed8\uff0c\u5141\u8bb8\u964d\u7ea7\u8bc4\u5ba1",
-      "\u67e5\u770b\u72b6\u6001",
-      "\u9a8c\u8bc1\u95ed\u5305",
-      "\u505c\u6b62\u4ea4\u4ed8"
+      "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"inspect\"}",
+      "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"status\"}",
+      "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"start\",\"feature_slug\":\"<feature-slug>\",\"start_mode\":\"resume_or_create\",\"review_mode_if_created\":\"pending_selection\"}",
+      "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"pause\"}"
     ],
     "developerName": "Waygate Product Delivery Maintainers",
     "displayName": "Waygate Product Delivery",
@@ -39,5 +37,5 @@
   "name": "waygate-product-delivery",
   "repository": "https://example.com/waygate-product-delivery.git",
   "skills": "./skills/",
-  "version": "1.0.30+codex.20260816234423"
+  "version": "1.0.31+codex.20260817061448"
 }

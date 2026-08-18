@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.30")
+            self.assertEqual(manifest["version"], "1.0.31")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -35,15 +35,13 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertEqual(
                 manifest["interface"]["defaultPrompt"],
                 [
-                    "启动交付",
-                    "启动交付，多 Agent 模式",
-                    "启动交付，允许降级评审",
-                    "查看状态",
-                    "验证闭包",
-                    "停止交付",
+                    '$waygate-product-delivery {"schema_version":"v1","action":"inspect"}',
+                    '$waygate-product-delivery {"schema_version":"v1","action":"status"}',
+                    '$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"<feature-slug>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}',
+                    '$waygate-product-delivery {"schema_version":"v1","action":"pause"}',
                 ],
             )
-            self.assertIn("启动交付", manifest_text)
+            self.assertIn("$waygate-product-delivery", manifest_text)
 
     def test_packaging_removes_legacy_plugin_package(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -93,7 +91,9 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/task-queue.md",
                 "templates/stop-guard-result.md",
                 "scripts/validate-closure-artifact.py",
+                "scripts/waygate-control.py",
                 "scripts/formal-gate-validation-plan.md",
+                "agents/openai.yaml",
                 "runtime/product_delivery_agent/finalization.py",
                 "runtime/product_delivery_agent/gatekeeper.py",
                 "runtime/product_delivery_agent/continuation.py",
@@ -113,12 +113,12 @@ class PluginPackagingTests(unittest.TestCase):
             skill_markdown = (
                 root / "skills" / "waygate-product-delivery" / "SKILL.md"
             ).read_text("utf-8")
-            self.assertIn("启动交付", skill_markdown)
-            self.assertIn("启动交付，多 Agent 模式", skill_markdown)
-            self.assertNotIn("启动交付，自动模式，多 Agent 模式", skill_markdown)
-            self.assertNotIn("启动交付，全速模式，多 Agent 模式", skill_markdown)
-            self.assertIn("停止交付", skill_markdown)
-            self.assertIn("`start` / `stop`", skill_markdown)
+            self.assertIn("$waygate-product-delivery", skill_markdown)
+            self.assertIn("严格 JSON", skill_markdown)
+            self.assertIn("禁止自然语言隐式触发", skill_markdown)
+            self.assertIn("prepare_abandon", skill_markdown)
+            self.assertIn("旧 `stop()` 已退役", skill_markdown)
+            self.assertNotIn("说 `启动交付`", skill_markdown)
             self.assertIn("planning-with-files", skill_markdown)
             self.assertIn("open-spec", skill_markdown)
             self.assertIn("ui-ux-pro-max", skill_markdown)
@@ -162,7 +162,7 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("missing goal", skill_markdown)
             self.assertIn("review_mode", skill_markdown)
             self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
-            self.assertIn("启动交付，允许降级评审", skill_markdown)
+            self.assertIn("review_mode_if_created=role_simulation_allowed", skill_markdown)
             self.assertIn("multi_agent_mode_selection", skill_markdown)
             self.assertEqual(skill_markdown.count("execution_model_policy"), 1)
             self.assertNotIn("model-profiles.json", skill_markdown)
@@ -346,7 +346,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.30")
+            self.assertEqual(closure_template["plugin_version"], "1.0.31")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -367,6 +367,9 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("run_finalize_cli", validator_script)
             self.assertIn("product_delivery_agent.finalization", validator_script)
             self.assertNotIn("Import and call validate_feature_closure", validator_script)
+            control_script = (root / "scripts" / "waygate-control.py").read_text("utf-8")
+            self.assertIn("run_control_cli", control_script)
+            self.assertIn("RUNTIME_DIR", control_script)
             hooks_readme = (root / "hooks" / "README.md").read_text("utf-8")
             self.assertIn("does not provide a timed continuation hook", hooks_readme)
             self.assertIn("Codex Host Goal", hooks_readme)
@@ -416,7 +419,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.30.tar.gz",
+                "waygate-product-delivery-1.0.31.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 
@@ -430,9 +433,16 @@ class PluginPackagingTests(unittest.TestCase):
             )
 
             self.assertTrue(policy["dormant_by_default"])
-            self.assertEqual(policy["activation_command"], "start")
-            self.assertEqual(policy["deactivation_command"], "stop")
+            self.assertTrue(policy["explicit_invocation_required"])
+            self.assertEqual(policy["control_script"], "scripts/waygate-control.py")
+            self.assertIn("start", policy["actions"])
+            self.assertIn("abandon", policy["actions"])
+            self.assertEqual(policy["retired_actions"], ["stop"])
             self.assertTrue(policy["current_project_only"])
+            openai_config = (
+                result["plugin_root"] / "agents" / "openai.yaml"
+            ).read_text("utf-8")
+            self.assertIn("allow_implicit_invocation: false", openai_config)
 
     def test_upgrade_policy_preserves_product_delivery_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:

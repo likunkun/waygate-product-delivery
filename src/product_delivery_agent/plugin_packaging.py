@@ -30,6 +30,7 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     templates_dir = plugin_root / "templates"
     scripts_dir = plugin_root / "scripts"
     policies_dir = plugin_root / "policies"
+    agents_dir = plugin_root / "agents"
     runtime_dir = plugin_root / "runtime" / "product_delivery_agent"
 
     for directory in (
@@ -39,6 +40,7 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
         templates_dir,
         scripts_dir,
         policies_dir,
+        agents_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
     _copy_runtime_package(runtime_dir)
@@ -53,6 +55,12 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
         encoding="utf-8",
     )
     validator_path.chmod(0o755)
+    control_path = scripts_dir / "waygate-control.py"
+    control_path.write_text(_control_script(), encoding="utf-8")
+    control_path.chmod(0o755)
+    (agents_dir / "openai.yaml").write_text(
+        _openai_agent_config(), encoding="utf-8"
+    )
     (scripts_dir / "formal-gate-validation-plan.md").write_text(
         _formal_gate_plan(),
         encoding="utf-8",
@@ -127,12 +135,10 @@ def _plugin_manifest() -> dict[str, Any]:
             "privacyPolicyURL": "https://example.com/privacy",
             "termsOfServiceURL": "https://example.com/terms",
             "defaultPrompt": [
-                "启动交付",
-                "启动交付，多 Agent 模式",
-                "启动交付，允许降级评审",
-                "查看状态",
-                "验证闭包",
-                "停止交付",
+                '$waygate-product-delivery {"schema_version":"v1","action":"inspect"}',
+                '$waygate-product-delivery {"schema_version":"v1","action":"status"}',
+                '$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"<feature-slug>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}',
+                '$waygate-product-delivery {"schema_version":"v1","action":"pause"}',
             ],
             "brandColor": "#2563EB",
         },
@@ -257,9 +263,9 @@ def _write_templates(templates_dir: Path) -> None:
             "- Call `inspect_startup_request(feature_slug=...)` before startup; a new feature never reuses a previous delivery authorization.\n"
             "- For an active pre-v1.0.22 state with `execution_model_policy`, call `retire_model_execution_policy()`; do not edit state or restart the delivery.\n"
             "- Record the current feature slug and blocked gates in state.\n"
-            "- Plain startup enters `multi_agent_mode_selection` and asks for the review mode immediately.\n"
-            "- `启动交付，多 Agent 模式` authorizes spawned subagents for structured review gates in the current delivery.\n"
-            "- `启动交付，允许降级评审` explicitly allows structured role simulation when subagents are unavailable.\n"
+            "- `action=start` with `review_mode_if_created=pending_selection` enters `multi_agent_mode_selection`.\n"
+            "- `review_mode_if_created=spawned_subagents_authorized` authorizes spawned subagents only when a new delivery is created.\n"
+            "- `review_mode_if_created=role_simulation_allowed` explicitly allows degraded structured review only for a newly created delivery.\n"
             "- Draft Open Spec, scenario matrix, and the UI prototype or non-UI behavior contract before asking for product confirmation.\n"
             "- For UI work, call `record_ui_prototype_design_bundle()` after the prototype draft and before product/scenario review.\n"
             "- The bundle must keep the product-facing `clean_surface` separate from the optional external `review_annotation_set` and prove all six product-context dimensions.\n"
@@ -621,13 +627,16 @@ def _skill_markdown() -> str:
         "description: Codex-native product delivery workflow.\n"
         "---\n\n"
         "# Product Delivery Agent\n\n"
-        "默认休眠。说 `启动交付` 激活当前项目的产品交付模式，并立即进入 "
-        "`multi_agent_mode_selection` 等待评审模式选择；说 `启动交付，多 Agent 模式` "
-        "显式授权当前 delivery 在结构化 review gate 自动启动 2–3 个独立 subagents；"
-        "只有在真实 subagents 不可用时，才使用 `启动交付，允许降级评审` "
-        "显式允许 role_simulation 弱证据；"
-        "说 `停止交付` 或使用 `stop` 退出干预。底层命令仍保留 "
-        "`start` / `stop`。\n\n"
+        "默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 "
+        "`$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 "
+        "`scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。"
+        "支持 `inspect`、`status`、`start`、`pause`、`resume`、`prepare_abandon`、"
+        "`abandon` 和 `close`。`review_mode_if_created=pending_selection` 会进入 "
+        "`multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。\n\n"
+        "示例：`$waygate-product-delivery {\"schema_version\":\"v1\","
+        "\"action\":\"start\",\"feature_slug\":\"v0-5-5-flow-preview\","
+        "\"start_mode\":\"resume_or_create\","
+        "\"review_mode_if_created\":\"spawned_subagents_authorized\"}`。\n\n"
         "## Active Mode Hard Rules\n\n"
         "启动后必须创建或恢复 `.product-delivery/state.json`，并把它作为当前项目的权威状态。"
         "聊天总结、旧版本文档和 `progress.md` 都不能替代 gate evidence。\n\n"
@@ -804,7 +813,7 @@ def _skill_markdown() -> str:
         "canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，"
         "再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。"
         "Goal 曾经 active 后若 missing 或提前 complete，禁止静默创建 replacement，必须调用 "
-        "`authorize_host_goal_reactivation()` 取得新的用户授权。`停止交付` 需要 `stop_delivery` 对账，"
+        "`authorize_host_goal_reactivation()` 取得新的用户授权。`action=abandon` 需要 `stop_delivery` 对账，"
         "停止后 binding 标记为 `stopped_by_user`，不得自动恢复。\n\n"
         "V1.0.25 起，Goal 尚未 ever active 且 activation checkpoint 因后续合法 transition 过期时，"
         "必须调用 `recover_stale_host_goal_checkpoint(checkpoint_id)`。runtime 会验证 delivery、feature、"
@@ -910,7 +919,7 @@ def _skill_markdown() -> str:
         "授权只覆盖 scenario、test、test_coverage、test_implementation、ui_conformance "
         "结构化 review gate，不授权普通实现、文件读取或串行修复自动并行。"
         "`role_simulation` 是弱证据，"
-        "只有使用 `启动交付，允许降级评审` 后才允许；"
+        "只有新建 delivery 时显式设置 `review_mode_if_created=role_simulation_allowed` 才允许；"
         "`blocked_with_reason` 不能通过 handoff。\n\n"
         "进入实现前必须记录 canonical `implementation_launch_authorization`，"
         "但它是 runtime 自动授权 artifact，不是用户确认 gate。"
@@ -978,6 +987,31 @@ def _hooks_readme() -> str:
     )
 
 
+def _control_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        "\"\"\"Strict JSON lifecycle control for Waygate Product Delivery.\"\"\"\n\n"
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.control import run_control_cli\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(run_control_cli())\n"
+    )
+
+
+def _openai_agent_config() -> str:
+    return (
+        "interface:\n"
+        "  display_name: Waygate Product Delivery\n"
+        "  short_description: Parameterized product delivery lifecycle\n"
+        "  default_prompt: '$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"inspect\"}'\n"
+        "policy:\n"
+        "  allow_implicit_invocation: false\n"
+    )
+
+
 def _validation_script() -> str:
     return (
         "#!/usr/bin/env python3\n"
@@ -1006,10 +1040,17 @@ def _formal_gate_plan() -> str:
 def _lifecycle_policy() -> dict[str, Any]:
     return {
         "dormant_by_default": True,
-        "activation_command": "start",
-        "deactivation_command": "stop",
+        "explicit_invocation_required": True,
+        "control_script": "scripts/waygate-control.py",
+        "request_schema_version": "v1",
+        "actions": [
+            "inspect", "status", "start", "pause", "resume",
+            "prepare_abandon", "abandon", "close",
+        ],
+        "retired_actions": ["stop"],
         "current_project_only": True,
         "artifact_root": ".product-delivery/",
+        "delivery_root": ".product-delivery/deliveries/<feature_slug>/<delivery_id>/",
     }
 
 

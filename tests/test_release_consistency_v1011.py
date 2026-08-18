@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.30"
+EXPECTED_VERSION = "1.0.31"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
