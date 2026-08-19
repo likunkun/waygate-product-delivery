@@ -1,12 +1,12 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.31-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.32-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
 
-Waygate Product Delivery 是一个面向 Codex 的产品交付插件，用来把一个产品想法推进到产品定义、Open Spec、场景评审、UI 或非 UI 门禁、实现移交，以及正式闭包证据。
+Waygate Product Delivery 是一个面向 Codex 的产品交付插件，用来把一个产品想法推进到产品定义、Open Spec、场景评审、UI 或非 UI 门禁、实现移交，以及正式闭包证据。简写命令：`start <slug> [multi-agent|role-play]`、`status`、`pause`、`resume`、`close`、`abandon`、`inspect`。
 
 它适合希望“AI 可以写代码，但不能绕过交付流程”的团队：每个关键阶段都要有本地 artifact、用户确认、评审记录、测试义务和 canonical closure validator。
 
@@ -54,11 +54,30 @@ cd waygate-product-delivery
 bash scripts/install_waygate_product_delivery.sh
 ```
 
-安装后新开一个 Codex thread，然后显式调用 Skill，并只提交一个严格 JSON 对象：
+安装后新开一个 Codex thread，然后使用简写命令：
 
 ```text
-$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}
+$waygate-product-delivery start v0-5-5-flow-preview multi-agent
 ```
+
+或使用完整 JSON 格式：
+
+```text
+$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}
+```
+
+**可用简写命令：**
+
+- `start <slug>` — 启动，进入评审模式选择
+- `start <slug> multi-agent` — 启动，多 Agent 模式（强证据）
+- `start <slug> role-play` — 启动，角色扮演模拟（弱证据）
+- `status` — 查看当前交付状态
+- `pause` — 暂停当前交付
+- `resume` — 恢复暂停的交付
+- `close` — 关闭已完成的交付
+- `abandon` — 放弃当前交付（两步操作）
+- `inspect` — 检查启动请求
+
 
 新建 delivery 时可使用 `spawned_subagents_authorized` 授权结构化 subagent 评审；只有明确接受降级证据时才使用 `role_simulation_allowed`。同一未完成 feature 再次使用 `resume_or_create` 会恢复原 `delivery_id`。
 
@@ -102,7 +121,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.31.tar.gz
+dist/waygate-product-delivery-1.0.32.tar.gz
 ```
 
 ## Codex 使用方式

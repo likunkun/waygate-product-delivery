@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.31")
+            self.assertEqual(manifest["version"], "1.0.32")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -39,6 +39,10 @@ class PluginPackagingTests(unittest.TestCase):
                     '$waygate-product-delivery {"schema_version":"v1","action":"status"}',
                     '$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"<feature-slug>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}',
                     '$waygate-product-delivery {"schema_version":"v1","action":"pause"}',
+                    '$waygate-product-delivery start <feature-slug> multi-agent',
+                    '$waygate-product-delivery status',
+                    '$waygate-product-delivery pause',
+                    '$waygate-product-delivery close',
                 ],
             )
             self.assertIn("$waygate-product-delivery", manifest_text)
@@ -161,6 +165,9 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("closure-like", skill_markdown)
             self.assertIn("missing goal", skill_markdown)
             self.assertIn("review_mode", skill_markdown)
+            self.assertIn("Shorthand Commands", skill_markdown)
+            self.assertIn("start <slug> multi-agent", skill_markdown)
+            self.assertIn("start <slug> role-play", skill_markdown)
             self.assertNotIn("启动交付，允许多Agent评审", skill_markdown)
             self.assertIn("review_mode_if_created=role_simulation_allowed", skill_markdown)
             self.assertIn("multi_agent_mode_selection", skill_markdown)
@@ -346,7 +353,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.31")
+            self.assertEqual(closure_template["plugin_version"], "1.0.32")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -419,7 +426,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.31.tar.gz",
+                "waygate-product-delivery-1.0.32.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

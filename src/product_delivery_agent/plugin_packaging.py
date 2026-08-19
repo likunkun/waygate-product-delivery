@@ -104,7 +104,7 @@ def _plugin_manifest() -> dict[str, Any]:
     return {
         "name": PLUGIN_NAME,
         "version": PLUGIN_VERSION,
-        "description": "Codex-native product delivery workflow plugin.",
+        "description": "Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
         "author": {
             "name": "Waygate Product Delivery Maintainers",
             "email": "maintainers@example.com",
@@ -139,6 +139,10 @@ def _plugin_manifest() -> dict[str, Any]:
                 '$waygate-product-delivery {"schema_version":"v1","action":"status"}',
                 '$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"<feature-slug>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}',
                 '$waygate-product-delivery {"schema_version":"v1","action":"pause"}',
+                '$waygate-product-delivery start <feature-slug> multi-agent',
+                '$waygate-product-delivery status',
+                '$waygate-product-delivery pause',
+                '$waygate-product-delivery close',
             ],
             "brandColor": "#2563EB",
         },
@@ -624,7 +628,7 @@ def _skill_markdown() -> str:
     return (
         "---\n"
         f"name: {PLUGIN_NAME}\n"
-        "description: Codex-native product delivery workflow.\n"
+        "description: Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect\n"
         "---\n\n"
         "# Product Delivery Agent\n\n"
         "默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 "
@@ -637,6 +641,45 @@ def _skill_markdown() -> str:
         "\"action\":\"start\",\"feature_slug\":\"v0-5-5-flow-preview\","
         "\"start_mode\":\"resume_or_create\","
         "\"review_mode_if_created\":\"spawned_subagents_authorized\"}`。\n\n"
+        "## Shorthand Commands\n\n"
+        "V1.0.32 起，`$waygate-product-delivery` 支持简写命令。"
+        "Codex 必须在内部将简写展开为严格 JSON 后再传给 `scripts/waygate-control.py`；"
+        "control.py 仍然只接受 v1 严格 JSON，不做任何改动。\n\n"
+        "**识别规则：**\n"
+        "- 如果 `$waygate-product-delivery` 后面跟 `{...}`（合法 JSON 对象），"
+        "则原样传给 control.py（现有行为不变）。\n"
+        "- 如果后面跟非 JSON 文本，则按以下 shorthand 表展开为完整 JSON，"
+        "再传给 control.py 校验和执行。\n"
+        "- 展开过程对用户透明：Codex 内部完成翻译，只展示 control.py 的返回结果。\n\n"
+        "**Shorthand 命令表：**\n\n"
+        "| Shorthand | 展开后 JSON |\n"
+        "|---|---|\n"
+        "| `start <slug>` | `{\"schema_version\":\"v1\",\"action\":\"start\","
+        "\"feature_slug\":\"<slug>\",\"start_mode\":\"resume_or_create\","
+        "\"review_mode_if_created\":\"pending_selection\"}` |\n"
+        "| `start <slug> multi-agent` | 同上，`review_mode_if_created` "
+        "改为 `\"spawned_subagents_authorized\"` |\n"
+        "| `start <slug> role-play` | 同上，`review_mode_if_created` "
+        "改为 `\"role_simulation_allowed\"` |\n"
+        "| `status` | `{\"schema_version\":\"v1\",\"action\":\"status\"}` |\n"
+        "| `inspect` | `{\"schema_version\":\"v1\",\"action\":\"inspect\"}` |\n"
+        "| `inspect <slug>` | `{\"schema_version\":\"v1\",\"action\":\"inspect\","
+        "\"feature_slug\":\"<slug>\"}` |\n"
+        "| `pause` | `{\"schema_version\":\"v1\",\"action\":\"pause\"}` |\n"
+        "| `resume` | `{\"schema_version\":\"v1\",\"action\":\"resume\","
+        "\"delivery_id\":\"<current>\"}` — "
+        "Codex 必须先读 `.product-delivery/state.json` 取当前 `delivery_id` |\n"
+        "| `close` | `{\"schema_version\":\"v1\",\"action\":\"close\"}` |\n"
+        "| `abandon` | 两步自动串联：先展开为 `prepare_abandon`"
+        "（reason 默认为 `user_requested`），拿到 `confirmation_token` "
+        "后自动展开为 `abandon` |\n\n"
+        "**硬约束：**\n"
+        "- 展开后 JSON 与手写等价，仍通过 `validate_request()` 校验。\n"
+        "- 不支持的 shorthand 参数直接拒绝，不做猜测。\n"
+        "- `stop` 已退役，shorthand 也不支持。\n"
+        "- 不支持的关键词（如 `help`、`list`、`config`）直接拒绝并提示可用命令。\n"
+        "- `<slug>` 必须是合法的 feature slug"
+        "（字母、数字、连字符、点、下划线）。\n\n"
         "## Active Mode Hard Rules\n\n"
         "启动后必须创建或恢复 `.product-delivery/state.json`，并把它作为当前项目的权威状态。"
         "聊天总结、旧版本文档和 `progress.md` 都不能替代 gate evidence。\n\n"

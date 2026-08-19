@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.32
+
+- Adds shorthand command layer to SKILL.md so users can type `$waygate-product-delivery start <slug> multi-agent` instead of the full JSON object. Codex expands shorthand to strict v1 JSON before passing to `scripts/waygate-control.py`; control.py remains unchanged.
+- Supports `start`, `start <slug> multi-agent`, `start <slug> role-play`, `status`, `inspect`, `pause`, `resume`, `close`, and `abandon` shorthand commands.
+- `resume` shorthand reads `.product-delivery/state.json` to resolve the current `delivery_id` automatically.
+- `abandon` shorthand auto-chains `prepare_abandon` and `abandon` into a single user-facing command.
+- Unsupported shorthand parameters fail closed; `stop` remains retired.
+- Updates `defaultPrompt` in plugin.json to include shorthand examples.
+- Updates README.md and README.zh-CN.md to document shorthand commands with usage examples.
+
 ## 1.0.31
 
 - Stores authoritative delivery evidence under `.product-delivery/deliveries/<feature_slug>/<delivery_id>/` with a hashed manifest, a machine-readable `current.json` pointer, and a best-effort `current` symlink.
