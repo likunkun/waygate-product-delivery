@@ -628,7 +628,7 @@ def _skill_markdown() -> str:
     return (
         "---\n"
         f"name: {PLUGIN_NAME}\n"
-        "description: Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect\n"
+        'description: "Codex-native product delivery workflow with shorthand commands for start, status, inspect, pause, resume, close, and abandon."\n'
         "---\n\n"
         "# Product Delivery Agent\n\n"
         "默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 "
@@ -926,6 +926,14 @@ def _skill_markdown() -> str:
         "稳定用户 decision 并主动询问；用户也可提前主动裁决。只有像素差异可调用 "
         "`record_task_visual_conformance_adjudication()`，结构、语义、geometry、交互和证据失败不得豁免。"
         "接受的差异必须在最终 `ui_conformance.accepted_visual_deviations` 中逐项引用。\n\n"
+        "V1.0.33 起，视觉裁决使用统一失败分类器，不再把可裁决视觉差异限定为 pixel-only。"
+        "像素阈值失败、`geometry_mismatch`，以及元素仍可见且视口溢出不超过 4 CSS px 或 viewport 1%"
+        "（取较大值）的受控 `geometry_invalid`，统一标记为 `visual_adjudicable` 并共用两轮修复计数。"
+        "缺失、非数值、NaN、零尺寸、不可见或明显离屏的 geometry，以及结构、语义、交互和证据错误，"
+        "必须标记为 `hard_blocking`，不得裁决。相同证据或 inconclusive 环境不计轮次；两轮后只生成一个"
+        "稳定 decision，用户可提前主动接受，拒绝后开启新的两轮周期。接受记录必须逐项保存 pixel/geometry "
+        "deviation，并由最终 `ui_conformance.accepted_visual_deviations` 引用；裁决不得修改冻结原型或重开"
+        "产品基线。\n\n"
         "不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。"
         "插件 hook 只能读取状态并提供 guardrail；真正的跨 turn 续跑必须由 Codex Host Goal 调度。"
         "只有真实宿主 smoke 证明无需用户发送 `继续` 也会进入下一 turn，才可以宣称自动续跑。\n\n"

@@ -188,6 +188,13 @@ class VisualConformanceAdjudicationV1030Tests(unittest.TestCase):
             self.assertEqual(record["status"], "accepted_by_user")
             adjudication = record["visual_adjudication"]
             self.assertEqual(adjudication["source"], "user_initiated")
+            deviations = accepted["task_prototype_conformance"][
+                "visual_adjudications"
+            ]["TASK-001"]["deviations"]
+            self.assertTrue(deviations)
+            self.assertTrue(
+                all(row["deviation_type"] == "pixel" for row in deviations)
+            )
             self.assertTrue(
                 (root / ".product-delivery" / adjudication["artifact_path"]).is_file()
             )
@@ -231,7 +238,7 @@ class VisualConformanceAdjudicationV1030Tests(unittest.TestCase):
                 changed["task_prototype_conformance"].get("visual_adjudications"), {}
             )
 
-    def test_non_visual_failure_cannot_be_user_adjudicated(self):
+    def test_hard_failure_cannot_be_user_adjudicated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workflow = self._workflow(root)
@@ -243,7 +250,7 @@ class VisualConformanceAdjudicationV1030Tests(unittest.TestCase):
             workflow.record_task_prototype_conformance("TASK-001", payload)
 
             reconcile_host_goal(workflow)
-            with self.assertRaisesRegex(WorkflowError, "pixel-only"):
+            with self.assertRaisesRegex(WorkflowError, "adjudicable visual"):
                 workflow.record_task_visual_conformance_adjudication(
                     "TASK-001",
                     decision="accept",

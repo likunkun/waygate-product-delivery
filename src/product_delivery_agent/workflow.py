@@ -125,7 +125,7 @@ from product_delivery_agent.implementation_baseline import (
     build_task_prototype_conformance,
     implementation_baseline_required,
     normalize_visual_policy,
-    task_conformance_is_visual_only_failure,
+    task_conformance_is_adjudicable_visual_failure,
     task_conformance_visual_deviations,
     validate_implementation_baseline,
     validate_task_prototype_conformance,
@@ -3387,7 +3387,7 @@ class ProductDeliveryWorkflow:
             visual_adjudications.pop(task_id, None)
             pending_decisions.pop(decision_key, None)
             self._remove_blockers(state, "task_visual_conformance_adjudication")
-        elif task_conformance_is_visual_only_failure(evidence):
+        elif task_conformance_is_adjudicable_visual_failure(evidence):
             tracker = visual_retry.get(task_id) or {}
             identity_matches = (
                 tracker.get("implementation_baseline_sha256")
@@ -3447,7 +3447,7 @@ class ProductDeliveryWorkflow:
                         "decision_id": decision_id,
                         "status": "pending",
                         "task_id": task_id,
-                        "reason": "pixel thresholds remain exceeded after two remediation rounds",
+                        "reason": "visual conformance remains outside accepted pixel or geometry tolerances after two remediation rounds",
                         "attempt_artifact_sha256s": [
                             attempt["artifact_sha256"] for attempt in attempts
                         ],
@@ -3475,6 +3475,14 @@ class ProductDeliveryWorkflow:
                                 for item in evidence.get("records") or []
                                 if isinstance(item, dict)
                                 and item.get("pixel_diff_artifact_path")
+                            ],
+                            "geometry_deviations": [
+                                deviation
+                                for deviation in task_conformance_visual_deviations(
+                                    evidence,
+                                    adjudication_artifact_sha256="pending",
+                                )
+                                if deviation.get("deviation_type") == "geometry"
                             ],
                         },
                         "created_at": self._timestamp_from_state(state),
@@ -3525,7 +3533,7 @@ class ProductDeliveryWorkflow:
         user_message: str,
         decision_id: str | None = None,
     ) -> dict[str, Any]:
-        """Record an exceptional user decision for pixel-only task conformance."""
+        """Record an exceptional user decision for adjudicable visual conformance."""
         state = self._require_started(host_goal_transition=True)
         if decision not in {"accept", "continue_remediation"}:
             raise WorkflowError("visual adjudication decision must be accept or continue_remediation")
@@ -3548,8 +3556,10 @@ class ProductDeliveryWorkflow:
         conformance = deepcopy(state.get("task_prototype_conformance") or {})
         records = dict(conformance.get("records") or {})
         record = records.get(task_id)
-        if not isinstance(record, dict) or not task_conformance_is_visual_only_failure(record):
-            raise WorkflowError("visual adjudication requires current pixel-only conformance failure")
+        if not isinstance(record, dict) or not task_conformance_is_adjudicable_visual_failure(record):
+            raise WorkflowError(
+                "visual adjudication requires current adjudicable visual conformance failure"
+            )
         if (
             record.get("implementation_baseline_sha256")
             != implementation_baseline.get("baseline_sha256")
@@ -3619,7 +3629,7 @@ class ProductDeliveryWorkflow:
             return write_state(self.project_root, state)
 
         adjudication_body = {
-            "schema_version": "task-visual-conformance-adjudication-v1",
+            "schema_version": "task-visual-conformance-adjudication-v2",
             "decision_id": effective_decision_id,
             "decision": "accept",
             "source": "prompted" if prompted else "user_initiated",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.33
+
+- Classifies pixel failures, geometry mismatches, and small visible viewport-boundary overflows as `visual_adjudicable`, while keeping missing, non-finite, zero-sized, invisible, and clearly offscreen geometry `hard_blocking`.
+- Uses one two-round remediation window for pixel and controlled geometry deviations, supports early user acceptance, and preserves stable decisions plus reset-on-rejection behavior.
+- Writes task conformance and visual-adjudication v2 evidence with geometry bounds, deltas, tolerances, overflow, failure classification, and accepted `deviation_type`, while retaining read compatibility for v1 pixel-only artifacts.
+- Requires final `ui_conformance.accepted_visual_deviations` to reference accepted pixel and geometry rows without changing the frozen prototype or reopening the product baseline.
+- Keeps canonical closure schema `v0.11` and updates runtime provenance, generated plugin assets, and release packaging to `1.0.33`.
+
 ## 1.0.32
 
 - Adds shorthand command layer to SKILL.md so users can type `$waygate-product-delivery start <slug> multi-agent` instead of the full JSON object. Codex expands shorthand to strict v1 JSON before passing to `scripts/waygate-control.py`; control.py remains unchanged.

@@ -3,6 +3,6 @@
 - status: not_run
 - validator: product_delivery_agent.finalization
 - canonical_schema_version: v0.11
-- plugin_version: 1.0.32
+- plugin_version: 1.0.33
 - feature_slug:
 - errors: []

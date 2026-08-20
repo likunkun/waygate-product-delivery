@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.32")
+            self.assertEqual(manifest["version"], "1.0.33")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -117,6 +117,10 @@ class PluginPackagingTests(unittest.TestCase):
             skill_markdown = (
                 root / "skills" / "waygate-product-delivery" / "SKILL.md"
             ).read_text("utf-8")
+            self.assertIn(
+                'description: "Codex-native product delivery workflow with shorthand commands for start, status, inspect, pause, resume, close, and abandon."',
+                skill_markdown,
+            )
             self.assertIn("$waygate-product-delivery", skill_markdown)
             self.assertIn("严格 JSON", skill_markdown)
             self.assertIn("禁止自然语言隐式触发", skill_markdown)
@@ -353,7 +357,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.32")
+            self.assertEqual(closure_template["plugin_version"], "1.0.33")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -426,7 +430,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.32.tar.gz",
+                "waygate-product-delivery-1.0.33.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

@@ -1,6 +1,6 @@
 ---
 name: waygate-product-delivery
-description: Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect
+description: "Codex-native product delivery workflow with shorthand commands for start, status, inspect, pause, resume, close, and abandon."
 ---
 
 # Product Delivery Agent
@@ -129,13 +129,15 @@ V1.0.29 起，权威 TASK 队列由 runtime 从 planned E2E obligations 按 Jour
 
 V1.0.30 起，执行期 `test_implementation` 和 `ui_conformance` multi-agent review 必须实行批次屏障：同轮 2–3 个评审者基于同一输入快照独立完成 positions、cross challenges 和 revisions，全部评审者返回前不得修改评审对象；汇总者先去重并冻结完整问题清单，再批量修复本轮全部已接受问题，完成后只做一次统一复验。评审者失败必须重试、替换或记录 `blocked_with_reason`，不得收到一个问题就修改并重启评审。UI TASK 像素比较仍以关键区域 2% 和完整页面 5% 为自动通过目标。首次纯像素失败后必须使用 `superpowers:systematic-debugging` 连续完成两轮真实修复复验；相同证据、inconclusive 环境或非像素失败不计数。两轮仍失败才创建稳定用户 decision 并主动询问；用户也可提前主动裁决。只有像素差异可调用 `record_task_visual_conformance_adjudication()`，结构、语义、geometry、交互和证据失败不得豁免。接受的差异必须在最终 `ui_conformance.accepted_visual_deviations` 中逐项引用。
 
+V1.0.33 起，视觉裁决使用统一失败分类器，不再把可裁决视觉差异限定为 pixel-only。像素阈值失败、`geometry_mismatch`，以及元素仍可见且视口溢出不超过 4 CSS px 或 viewport 1%（取较大值）的受控 `geometry_invalid`，统一标记为 `visual_adjudicable` 并共用两轮修复计数。缺失、非数值、NaN、零尺寸、不可见或明显离屏的 geometry，以及结构、语义、交互和证据错误，必须标记为 `hard_blocking`，不得裁决。相同证据或 inconclusive 环境不计轮次；两轮后只生成一个稳定 decision，用户可提前主动接受，拒绝后开启新的两轮周期。接受记录必须逐项保存 pixel/geometry deviation，并由最终 `ui_conformance.accepted_visual_deviations` 引用；裁决不得修改冻结原型或重开产品基线。
+
 不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。插件 hook 只能读取状态并提供 guardrail；真正的跨 turn 续跑必须由 Codex Host Goal 调度。只有真实宿主 smoke 证明无需用户发送 `继续` 也会进入下一 turn，才可以宣称自动续跑。
 
 ## Goal-Driven Closure
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.32`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.33`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 

@@ -33,7 +33,8 @@ class _PNGResourceLimitError(ImplementationBaselineError):
 
 BASELINE_VERSION = "v1"
 VISUAL_POLICY_VERSION = "v1"
-TASK_CONFORMANCE_VERSION = "v1"
+TASK_CONFORMANCE_VERSION = "v2"
+LEGACY_TASK_CONFORMANCE_VERSIONS = frozenset({"v1", TASK_CONFORMANCE_VERSION})
 TASK_SEMANTIC_SNAPSHOT_VERSION = "task-production-semantic-snapshot-v1"
 DEFAULT_VISUAL_POLICY = {
     "policy_version": VISUAL_POLICY_VERSION,
@@ -47,6 +48,11 @@ DEFAULT_VISUAL_POLICY = {
 VISUAL_PIXEL_FAILURE_CODES = frozenset(
     {"critical_region_pixel_diff", "full_surface_pixel_diff"}
 )
+VISUAL_ADJUDICABLE_FAILURE_CODES = frozenset(
+    {*VISUAL_PIXEL_FAILURE_CODES, "geometry_mismatch"}
+)
+VISUAL_ADJUDICABLE = "visual_adjudicable"
+HARD_BLOCKING = "hard_blocking"
 
 _THRESHOLD_FIELDS = (
     "critical_region_max_diff_ratio",
@@ -122,7 +128,7 @@ def validate_task_prototype_conformance(value: dict[str, Any]) -> dict[str, Any]
         raise ImplementationBaselineError(
             "canonical task prototype conformance evidence hash is invalid"
         )
-    if value.get("conformance_version") != TASK_CONFORMANCE_VERSION:
+    if value.get("conformance_version") not in LEGACY_TASK_CONFORMANCE_VERSIONS:
         raise ImplementationBaselineError(
             "canonical task prototype conformance version is invalid"
         )
@@ -135,9 +141,9 @@ def validate_task_prototype_conformance(value: dict[str, Any]) -> dict[str, Any]
             "canonical task prototype conformance passed status is inconsistent"
         )
     if value.get("status") == "accepted_by_user":
-        if not task_conformance_is_visual_only_failure(value):
+        if not task_conformance_is_adjudicable_visual_failure(value):
             raise ImplementationBaselineError(
-                "user-adjudicated task conformance must contain pixel-only failures"
+                "user-adjudicated task conformance must contain only adjudicable visual failures"
             )
         adjudication = value.get("visual_adjudication")
         if not isinstance(adjudication, dict) or not all(
@@ -155,16 +161,43 @@ def validate_task_prototype_conformance(value: dict[str, Any]) -> dict[str, Any]
     return deepcopy(value)
 
 
-def task_conformance_is_visual_only_failure(value: dict[str, Any]) -> bool:
-    """Return whether stable, complete conformance failed only on pixel ratios."""
+def task_conformance_is_adjudicable_visual_failure(value: dict[str, Any]) -> bool:
+    """Return whether stable conformance failed only on user-adjudicable visuals."""
     codes = value.get("failure_codes")
-    return bool(
+    if not (
         isinstance(value, dict)
         and value.get("environment_status") == "stable"
         and isinstance(codes, list)
         and codes
-        and set(codes).issubset(VISUAL_PIXEL_FAILURE_CODES)
+    ):
+        return False
+    if value.get("conformance_version") == "v1":
+        return set(codes).issubset(VISUAL_PIXEL_FAILURE_CODES)
+    eligibility = value.get("adjudication_eligibility")
+    failures = value.get("failures")
+    if not (
+        isinstance(failures, list)
+        and failures
+        and all(
+            isinstance(failure, dict)
+            and failure.get("failure_class") == VISUAL_ADJUDICABLE
+            for failure in failures
+        )
+    ):
+        return False
+    visual_codes = _failure_codes(failures)
+    return bool(
+        isinstance(eligibility, dict)
+        and eligibility.get("eligible") is True
+        and eligibility.get("visual_failure_codes") == visual_codes
+        and not eligibility.get("hard_failure_codes")
+        and codes == visual_codes
     )
+
+
+def task_conformance_is_visual_only_failure(value: dict[str, Any]) -> bool:
+    """Compatibility alias for the broadened visual-adjudication predicate."""
+    return task_conformance_is_adjudicable_visual_failure(value)
 
 
 def task_conformance_visual_deviations(
@@ -173,8 +206,9 @@ def task_conformance_visual_deviations(
     adjudication_artifact_sha256: str,
 ) -> list[dict[str, Any]]:
     """Render normalized visual deviations for final UI review evidence."""
-    if not task_conformance_is_visual_only_failure(value):
+    if not task_conformance_is_adjudicable_visual_failure(value):
         return []
+    is_v2 = value.get("conformance_version") == TASK_CONFORMANCE_VERSION
     rows: list[dict[str, Any]] = []
     for record in value.get("records") or []:
         if not isinstance(record, dict):
@@ -192,6 +226,7 @@ def task_conformance_visual_deviations(
             rows.append(
                 {
                     **common,
+                    **({"deviation_type": "pixel"} if is_v2 else {}),
                     "scope": "full_surface",
                     "region_id": None,
                     "diff_ratio": full_ratio,
@@ -207,10 +242,40 @@ def task_conformance_visual_deviations(
                 rows.append(
                     {
                         **common,
+                        **({"deviation_type": "pixel"} if is_v2 else {}),
                         "scope": "critical_region",
                         "region_id": region.get("region_id"),
                         "diff_ratio": ratio,
                         "max_diff_ratio": maximum,
+                    }
+                )
+        if is_v2:
+            for geometry in record.get("geometry_results") or []:
+                if (
+                    not isinstance(geometry, dict)
+                    or geometry.get("failure_class") != VISUAL_ADJUDICABLE
+                ):
+                    continue
+                rows.append(
+                    {
+                        **common,
+                        "deviation_type": "geometry",
+                        "scope": "geometry_region",
+                        "region_id": geometry.get("region_id"),
+                        "prototype_bounds": deepcopy(
+                            geometry.get("prototype_bounds")
+                        ),
+                        "production_bounds": deepcopy(
+                            geometry.get("production_bounds")
+                        ),
+                        "delta": deepcopy(geometry.get("delta")),
+                        "tolerance": deepcopy(geometry.get("tolerance")),
+                        "viewport_overflow": deepcopy(
+                            geometry.get("viewport_overflow")
+                        ),
+                        "classification_reason": geometry.get(
+                            "classification_reason"
+                        ),
                     }
                 )
     return rows
@@ -659,6 +724,7 @@ def _validate_task_unit(
         )
 
     critical_results: list[dict[str, Any]] = []
+    geometry_results: list[dict[str, Any]] = []
     full_surface_diff_ratio: float | None = None
     pixel_diff_artifact_path: str | None = None
     if prototype_image is not None and production_image is not None:
@@ -744,7 +810,7 @@ def _validate_task_unit(
                     )
 
     if snapshot is not None and production_image is not None:
-        _validate_task_semantics(
+        geometry_results = _validate_task_semantics(
             snapshot,
             unit=unit,
             binding=binding,
@@ -780,6 +846,7 @@ def _validate_task_unit(
             visual_policy.get("full_surface_max_diff_ratio", 0.05)
         ),
         "critical_region_results": critical_results,
+        "geometry_results": geometry_results,
         "pixel_diff_artifact_path": pixel_diff_artifact_path,
         "failure_codes": _failure_codes(local_failures),
     }
@@ -793,8 +860,9 @@ def _validate_task_semantics(
     production_image: dict[str, Any],
     visual_policy: dict[str, Any],
     failures: list[dict[str, Any]],
-) -> None:
+) -> list[dict[str, Any]]:
     key = _unit_key(unit)
+    geometry_results: list[dict[str, Any]] = []
     if snapshot.get("schema_version") != TASK_SEMANTIC_SNAPSHOT_VERSION:
         _record_failure(
             failures,
@@ -956,26 +1024,33 @@ def _validate_task_semantics(
             )
         box = observed.get("bounding_box")
         prototype_box = prototype.get("bounds")
-        if not _valid_box(box, viewport) or not isinstance(prototype_box, dict):
+        geometry = _assess_geometry(
+            prototype_box,
+            box,
+            viewport,
+            visual_policy,
+            visible=observed.get("visible") is True,
+        )
+        geometry_results.append({"region_id": region_id, **geometry})
+        if geometry["classification"] in {"soft_invalid", "hard_invalid"}:
             _record_failure(
                 failures,
                 "geometry_invalid",
                 f"production region geometry is invalid: {region_id}",
                 unit_key=key,
                 region_id=region_id,
+                failure_class=geometry["failure_class"],
+                classification_reason=geometry["classification_reason"],
             )
-        elif not _geometry_matches(
-            prototype_box,
-            box,
-            viewport,
-            visual_policy,
-        ):
+        elif geometry["classification"] == "mismatch":
             _record_failure(
                 failures,
                 "geometry_mismatch",
                 f"production region geometry exceeds frozen tolerance: {region_id}",
                 unit_key=key,
                 region_id=region_id,
+                failure_class=VISUAL_ADJUDICABLE,
+                classification_reason=geometry["classification_reason"],
             )
 
     bound_regions = set(binding.get("region_ids") or [])
@@ -1036,6 +1111,7 @@ def _validate_task_semantics(
                 f"production interaction result differs from prototype: {interaction_id}",
                 unit_key=key,
             )
+    return geometry_results
 
 
 def _validate_computed_style_comparisons(
@@ -1309,46 +1385,153 @@ def _integer_box(
     return left, top, right, bottom
 
 
-def _valid_box(box: Any, viewport: dict[str, Any]) -> bool:
-    if not isinstance(box, dict):
-        return False
-    values = [box.get(field) for field in ("x", "y", "width", "height")]
-    if not all(
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        for value in values
-    ):
-        return False
-    x, y, width, height = values
-    return bool(
-        x >= 0
-        and y >= 0
-        and width > 0
-        and height > 0
-        and x + width <= viewport.get("width", -1)
-        and y + height <= viewport.get("height", -1)
-    )
-
-
-def _geometry_matches(
-    prototype: dict[str, Any],
-    production: dict[str, Any],
+def _assess_geometry(
+    prototype: Any,
+    production: Any,
     viewport: dict[str, Any],
     visual_policy: dict[str, Any],
-) -> bool:
+    *,
+    visible: bool,
+) -> dict[str, Any]:
     fixed = float(visual_policy.get("geometry_tolerance_px", 4))
     ratio = float(visual_policy.get("geometry_tolerance_viewport_ratio", 0.01))
     horizontal_tolerance = max(fixed, float(viewport["width"]) * ratio)
     vertical_tolerance = max(fixed, float(viewport["height"]) * ratio)
-    return bool(
-        abs(float(prototype["x"]) - float(production["x"])) <= horizontal_tolerance
-        and abs(float(prototype["width"]) - float(production["width"]))
-        <= horizontal_tolerance
-        and abs(float(prototype["y"]) - float(production["y"])) <= vertical_tolerance
-        and abs(float(prototype["height"]) - float(production["height"]))
-        <= vertical_tolerance
+    tolerance = {
+        "horizontal_px": horizontal_tolerance,
+        "vertical_px": vertical_tolerance,
+    }
+    empty_overflow = {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+    base = {
+        "prototype_bounds": _normalized_geometry_box(prototype),
+        "production_bounds": _normalized_geometry_box(production),
+        "delta": {"x": None, "y": None, "width": None, "height": None},
+        "tolerance": tolerance,
+        "viewport_overflow": empty_overflow,
+    }
+    if not isinstance(prototype, dict) or any(
+        value is None for value in base["prototype_bounds"].values()
+    ):
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "prototype_bounds_invalid",
+        }
+    if not isinstance(production, dict):
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "bounds_missing",
+        }
+    raw_values = [production.get(field) for field in ("x", "y", "width", "height")]
+    if not all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in raw_values
+    ):
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "bounds_not_numeric",
+        }
+    if not all(math.isfinite(float(value)) for value in raw_values):
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "non_finite_bounds",
+        }
+    x, y, width, height = (float(value) for value in raw_values)
+    if width <= 0 or height <= 0:
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "non_positive_size",
+        }
+    if not visible:
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "region_not_visible",
+        }
+
+    prototype_values = base["prototype_bounds"]
+    delta = {
+        field: float(production[field]) - float(prototype_values[field])
+        for field in ("x", "y", "width", "height")
+    }
+    overflow = {
+        "left": max(0.0, -x),
+        "top": max(0.0, -y),
+        "right": max(0.0, x + width - float(viewport["width"])),
+        "bottom": max(0.0, y + height - float(viewport["height"])),
+    }
+    base = {**base, "delta": delta, "viewport_overflow": overflow}
+    has_overflow = any(value > 0 for value in overflow.values())
+    if has_overflow:
+        intersects_viewport = bool(
+            min(x + width, float(viewport["width"])) - max(x, 0.0) > 0
+            and min(y + height, float(viewport["height"])) - max(y, 0.0) > 0
+        )
+        within_tolerance = bool(
+            overflow["left"] <= horizontal_tolerance
+            and overflow["right"] <= horizontal_tolerance
+            and overflow["top"] <= vertical_tolerance
+            and overflow["bottom"] <= vertical_tolerance
+        )
+        if intersects_viewport and within_tolerance:
+            return {
+                **base,
+                "classification": "soft_invalid",
+                "failure_class": VISUAL_ADJUDICABLE,
+                "classification_reason": "viewport_boundary_overflow_within_tolerance",
+            }
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "outside_viewport_tolerance",
+        }
+
+    matches = bool(
+        abs(delta["x"]) <= horizontal_tolerance
+        and abs(delta["width"]) <= horizontal_tolerance
+        and abs(delta["y"]) <= vertical_tolerance
+        and abs(delta["height"]) <= vertical_tolerance
     )
+    if matches:
+        return {
+            **base,
+            "classification": "exact",
+            "failure_class": None,
+            "classification_reason": "within_geometry_tolerance",
+        }
+    return {
+        **base,
+        "classification": "mismatch",
+        "failure_class": VISUAL_ADJUDICABLE,
+        "classification_reason": "geometry_delta_exceeds_tolerance",
+    }
+
+
+def _normalized_geometry_box(value: Any) -> dict[str, float | None]:
+    if not isinstance(value, dict):
+        return {field: None for field in ("x", "y", "width", "height")}
+    result: dict[str, float | None] = {}
+    for field in ("x", "y", "width", "height"):
+        item = value.get(field)
+        result[field] = (
+            float(item)
+            if isinstance(item, (int, float))
+            and not isinstance(item, bool)
+            and math.isfinite(float(item))
+            else None
+        )
+    return result
 
 
 def _accessible_name_matches(value: Any, matcher: dict[str, Any]) -> bool:
@@ -1375,6 +1558,23 @@ def _finish_task_conformance(
     failures: list[dict[str, Any]],
     forced_status: str | None = None,
 ) -> dict[str, Any]:
+    visual_failures = [
+        failure
+        for failure in failures
+        if failure.get("failure_class") == VISUAL_ADJUDICABLE
+    ]
+    hard_failures = [
+        failure
+        for failure in failures
+        if failure.get("failure_class") == HARD_BLOCKING
+    ]
+    adjudication_eligibility = {
+        "eligible": bool(
+            environment_status == "stable" and visual_failures and not hard_failures
+        ),
+        "visual_failure_codes": _failure_codes(visual_failures),
+        "hard_failure_codes": _failure_codes(hard_failures),
+    }
     body = {
         "conformance_version": TASK_CONFORMANCE_VERSION,
         "implementation_baseline_sha256": baseline_hash,
@@ -1385,6 +1585,7 @@ def _finish_task_conformance(
         "records": records,
         "failures": failures,
         "failure_codes": _failure_codes(failures),
+        "adjudication_eligibility": adjudication_eligibility,
     }
     status = forced_status or ("failed" if failures else "passed")
     return {
@@ -1401,8 +1602,20 @@ def _record_failure(
     *,
     unit_key: tuple[Any, Any, Any] | None = None,
     region_id: str | None = None,
+    failure_class: str | None = None,
+    classification_reason: str | None = None,
 ) -> None:
-    failure = {"code": code, "message": message}
+    resolved_class = failure_class or (
+        VISUAL_ADJUDICABLE
+        if code in VISUAL_ADJUDICABLE_FAILURE_CODES
+        else HARD_BLOCKING
+    )
+    failure = {
+        "code": code,
+        "message": message,
+        "failure_class": resolved_class,
+        "classification_reason": classification_reason or code,
+    }
     if unit_key is not None:
         failure["surface_id"] = unit_key[0]
         failure["state_id"] = unit_key[1]
