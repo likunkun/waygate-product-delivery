@@ -236,6 +236,27 @@ def prototype_design_bundle_payload(
             "observations": preflight_observations,
         },
     )
+    acceptance_scan_path = (
+        ".product-delivery/artifacts/review-only/acceptance-content-scan.json"
+    )
+    _write_json(
+        project_root / acceptance_scan_path,
+        {
+            "schema_version": "prototype-acceptance-content-scan-v1",
+            "prototype_path": prototype_path,
+            "prototype_sha256": sha256_file(project_root / prototype_path),
+            "semantic_snapshot_sha256": semantic_snapshot_sha256,
+            "observations": [
+                {
+                    "surface_id": item["surface_id"],
+                    "state_id": item["state_id"],
+                    "viewport": item["viewport"],
+                    "findings": [],
+                }
+                for item in runtime_checks
+            ],
+        },
+    )
 
     coverage_rows = []
     for surface in contract["surfaces"]:
@@ -386,7 +407,7 @@ def prototype_design_bundle_payload(
     first_surface = contract["surfaces"][0]
     first_region = first_surface["critical_regions"][0]
     payload = {
-        "bundle_version": "v1",
+        "bundle_version": "v2",
         "ui_change_type": ui_change_type,
         "clean_surface": {
             "prototype_path": prototype_path,
@@ -409,6 +430,11 @@ def prototype_design_bundle_payload(
                 "region_id": first_region["region_id"],
             }
         ],
+        "acceptance_content_separation": {
+            "declared_absent": True,
+            "scan_report_path": acceptance_scan_path,
+            "product_content_mappings": [],
+        },
         "review_annotation_set": None,
     }
     if include_review_companion:

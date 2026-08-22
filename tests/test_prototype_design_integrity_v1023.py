@@ -729,7 +729,7 @@ class PrototypeDesignIntegrityV1023Tests(unittest.TestCase):
             prepare_project(root)
 
             for field, value, message in (
-                ("bundle_version", "v2", "bundle_version"),
+                ("bundle_version", "v3", "bundle_version"),
                 ("ui_change_type", "non_ui", "ui_change_type"),
             ):
                 with self.subTest(field=field):

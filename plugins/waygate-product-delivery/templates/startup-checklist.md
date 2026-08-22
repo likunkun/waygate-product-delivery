@@ -13,6 +13,7 @@
 - Draft Open Spec, scenario matrix, and the UI prototype or non-UI behavior contract before asking for product confirmation.
 - For UI work, call `record_ui_prototype_design_bundle()` after the prototype draft and before product/scenario review.
 - The bundle must keep the product-facing `clean_surface` separate from the optional external `review_annotation_set` and prove all six product-context dimensions.
+- New or reopened UI prototypes must use bundle v2, declare `acceptance_content_separation`, and bind a review-only `prototype-acceptance-content-scan-v1` report.
 - Run the internal `prototype_design_integrity` gate before multi-Agent judgment; a review cannot override a failed deterministic gate.
 - Run product/scenario review, then call `prepare_product_baseline_confirmation()` and `confirm_product_baseline()`.
 - Present only the clean product prototype and clean screenshots during `product_baseline`; never show the review-only annotation page as the product surface.

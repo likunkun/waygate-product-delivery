@@ -52,6 +52,8 @@ Missing required skills block installation. Missing file-specific skills for `.p
 
 After installation, start a new Codex thread so Codex loads the updated plugin.
 
+Version 1.0.34 writes prototype design bundle v2 for new or reopened UI prototypes. Existing v1 bundles remain readable and are not rewritten during installation; an already confirmed active delivery is revalidated under v2 only after its prototype is modified, replaced, or explicitly reopened.
+
 ## Manual Install
 
 If you need to run the steps manually:

@@ -273,6 +273,7 @@ def _write_templates(templates_dir: Path) -> None:
             "- Draft Open Spec, scenario matrix, and the UI prototype or non-UI behavior contract before asking for product confirmation.\n"
             "- For UI work, call `record_ui_prototype_design_bundle()` after the prototype draft and before product/scenario review.\n"
             "- The bundle must keep the product-facing `clean_surface` separate from the optional external `review_annotation_set` and prove all six product-context dimensions.\n"
+            "- New or reopened UI prototypes must use bundle v2, declare `acceptance_content_separation`, and bind a review-only `prototype-acceptance-content-scan-v1` report.\n"
             "- Run the internal `prototype_design_integrity` gate before multi-Agent judgment; a review cannot override a failed deterministic gate.\n"
             "- Run product/scenario review, then call `prepare_product_baseline_confirmation()` and `confirm_product_baseline()`.\n"
             "- Present only the clean product prototype and clean screenshots during `product_baseline`; never show the review-only annotation page as the product surface.\n"
@@ -310,6 +311,8 @@ def _write_templates(templates_dir: Path) -> None:
             "- `clean_surface` must bind the product HTML, prototype contract, clean PNGs, semantic snapshot, and browser checks for every required state and viewport.\n"
             "- `product_context_contract` must positively cover `global_shell`, `navigation`, `visual_language`, `information_density`, `component_system`, and `responsive_behavior`.\n"
             "- Review annotations belong in an independent `review_annotation_set`; the clean product page must not load review assets, overlays, annotation scripts, or an annotation query mode.\n"
+            "- High-fidelity product prototypes contain only real product content. Acceptance criteria, test steps/results, review status, evidence paths, and developer notes must move to review-only evidence.\n"
+            "- Acceptance-content contamination is a hard `prototype_design_integrity` failure and must not enter visual deviation adjudication.\n"
             "- Product guidance is allowed only as declared `intended_product_ui_callouts` bound to requirements, scenarios, triggers, lifecycle, and a contract region.\n"
             "- The `prototype_design_integrity` gate verifies these objective facts. Multi-Agent review judges whether the baseline is representative, globally coherent, and justified; it cannot override a failed gate.\n"
             "- Product/scenario review must pass before `prepare_product_baseline_confirmation()`.\n"
@@ -338,7 +341,7 @@ def _write_templates(templates_dir: Path) -> None:
         + "\n",
         "ui-prototype-design-bundle.json": json.dumps(
             {
-                "bundle_version": "v1",
+                "bundle_version": "v2",
                 "ui_change_type": "incremental_existing_surface",
                 "clean_surface": {
                     "prototype_path": "docs/prototypes/<feature-slug>-prototype.html",
@@ -389,7 +392,31 @@ def _write_templates(templates_dir: Path) -> None:
                     ],
                 },
                 "intended_product_ui_callouts": [],
+                "acceptance_content_separation": {
+                    "declared_absent": True,
+                    "scan_report_path": ".product-delivery/artifacts/review-only/<surface>-acceptance-content-scan.json",
+                    "product_content_mappings": [],
+                },
                 "review_annotation_set": None,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        "acceptance-content-scan-report.json": json.dumps(
+            {
+                "schema_version": "prototype-acceptance-content-scan-v1",
+                "prototype_path": "docs/prototypes/<feature-slug>-prototype.html",
+                "prototype_sha256": "<sha256>",
+                "semantic_snapshot_sha256": "<sha256>",
+                "observations": [
+                    {
+                        "surface_id": "",
+                        "state_id": "",
+                        "viewport": "desktop",
+                        "findings": [],
+                    }
+                ],
             },
             indent=2,
             sort_keys=True,
@@ -934,6 +961,16 @@ def _skill_markdown() -> str:
         "稳定 decision，用户可提前主动接受，拒绝后开启新的两轮周期。接受记录必须逐项保存 pixel/geometry "
         "deviation，并由最终 `ui_conformance.accepted_visual_deviations` 引用；裁决不得修改冻结原型或重开"
         "产品基线。\n\n"
+        "V1.0.34 起，高保真产品原型只能包含真实产品内容。新建或重开的 UI 原型必须使用 "
+        "bundle v2，提交 `acceptance_content_separation`，并绑定 review-only 的 "
+        "`prototype-acceptance-content-scan-v1` 报告。门禁同时扫描静态 DOM、渲染 DOM、semantic "
+        "snapshot、属性、资源和可激活 review mode；验收标准、测试步骤/预期结果、AC/TC/SC 编号、"
+        "评审意见、证据路径、mock/fixture/test-only 和开发说明都必须移出 clean surface。"
+        "不可见 `data-testid` 与稳定 ID 可以保留。可能属于真实产品的文案必须通过 "
+        "`product_content_mappings` 绑定到具备真实角色、需求、场景、触发和生命周期的 "
+        "`intended_product_ui_callouts`。污染属于 `prototype_design_integrity` 硬错误，不得进入视觉偏差裁决。"
+        "历史 v1 bundle 与已确认 active delivery 不自动重开；原型修改、替换或主动重开后必须升级 v2。"
+        "scan report、mapping 和验收说明只进入 review/integrity domain，不进入 `product_domain_hash`。\n\n"
         "不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。"
         "插件 hook 只能读取状态并提供 guardrail；真正的跨 turn 续跑必须由 Codex Host Goal 调度。"
         "只有真实宿主 smoke 证明无需用户发送 `继续` 也会进入下一 turn，才可以宣称自动续跑。\n\n"

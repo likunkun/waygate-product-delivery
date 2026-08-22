@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.33-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.34-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -123,7 +123,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.33.tar.gz
+dist/waygate-product-delivery-1.0.34.tar.gz
 ```
 
 ## Use In Codex
@@ -173,7 +173,9 @@ The key rule is simple: artifacts and state are authoritative; chat summaries ar
 
 ### Prototype Gate And Review
 
-For UI work, `record_ui_prototype_design_bundle()` runs before multi-agent product/scenario review. The deterministic gate rebuilds fixed-schema semantic snapshots and browser-preflight probe artifacts, verifies their snapshot/screenshot/region hashes for every required state and viewport, and ignores caller-reported pass flags. Each global shell, navigation, visual language, information density, component system, and responsive behavior row must bind a structured, hashed design-evidence artifact. The gate also enforces strict separation between the product-facing `clean_surface` and any external `review_annotation_set`.
+For UI work, `record_ui_prototype_design_bundle()` runs before multi-agent product/scenario review. The deterministic gate rebuilds fixed-schema semantic snapshots and browser-preflight probe artifacts, verifies their snapshot/screenshot/region hashes for every required state and viewport, and ignores caller-reported pass flags. Each global shell, navigation, visual language, information density, component system, and responsive behavior row must bind a structured, hashed design-evidence artifact.
+
+New or reopened prototypes use bundle v2 and `acceptance_content_separation`. A review-only `prototype-acceptance-content-scan-v1` report covers static and rendered DOM, semantic text, attributes, resources, and review modes. High-fidelity prototypes may contain only real product content: acceptance criteria, test instructions/results, review status, evidence paths, and developer notes must stay in review-only artifacts. Ambiguous real product copy is retained only when mapped to a lifecycle-bound `intended_product_ui_callout`; invisible `data-testid` selectors remain allowed. Contamination is a hard integrity failure and never enters visual-deviation adjudication.
 
 The gate verifies objective facts; multi-agent review judges design quality. Reviewers decide whether the baseline is representative, whether local polish remains coherent with the whole product, and whether an exception is justified. They cannot waive a failed gate, and empty findings are not a substitute for positive review coverage.
 

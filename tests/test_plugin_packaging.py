@@ -20,7 +20,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.33")
+            self.assertEqual(manifest["version"], "1.0.34")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -79,6 +79,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/ui-prototype-gate.md",
                 "templates/ui-prototype-contract.json",
                 "templates/ui-prototype-design-bundle.json",
+                "templates/acceptance-content-scan-report.json",
                 "templates/prototype-production-conformance.md",
                 "templates/scope-scenario-matrix.md",
                 "templates/multi-agent-scenario-review.md",
@@ -161,6 +162,10 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("prototype_design_integrity", skill_markdown)
             self.assertIn("clean_surface", skill_markdown)
             self.assertIn("review_annotation_set", skill_markdown)
+            self.assertIn("acceptance_content_separation", skill_markdown)
+            self.assertIn("高保真产品原型只能包含真实产品内容", skill_markdown)
+            self.assertIn("prototype-acceptance-content-scan-v1", skill_markdown)
+            self.assertIn("不得进入视觉偏差裁决", skill_markdown)
             self.assertIn("门禁验证客观事实", skill_markdown)
             self.assertIn("多 Agent 判断设计质量", skill_markdown)
             self.assertIn("不要在 TASK 未完成时停止", skill_markdown)
@@ -279,7 +284,7 @@ class PluginPackagingTests(unittest.TestCase):
                     "utf-8"
                 )
             )
-            self.assertEqual(design_bundle_template["bundle_version"], "v1")
+            self.assertEqual(design_bundle_template["bundle_version"], "v2")
             self.assertIn("clean_surface", design_bundle_template)
             self.assertIn(
                 "browser_preflight_probe_path",
@@ -294,6 +299,10 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("review_annotation_set", design_bundle_template)
             self.assertIn(
                 "intended_product_ui_callouts",
+                design_bundle_template,
+            )
+            self.assertIn(
+                "acceptance_content_separation",
                 design_bundle_template,
             )
             evidence_ref = design_bundle_template["product_context_contract"][
@@ -357,7 +366,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.33")
+            self.assertEqual(closure_template["plugin_version"], "1.0.34")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -430,7 +439,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.33.tar.gz",
+                "waygate-product-delivery-1.0.34.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

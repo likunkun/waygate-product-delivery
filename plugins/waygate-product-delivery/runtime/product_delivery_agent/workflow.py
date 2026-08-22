@@ -2190,6 +2190,10 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "prototype design bundle is only available for UI projects"
             )
+        if not isinstance(payload, dict) or payload.get("bundle_version") != "v2":
+            raise WorkflowError(
+                "new or reopened prototype design bundle_version must be v2"
+            )
         clean_surface = payload.get("clean_surface") if isinstance(payload, dict) else None
         contract_payload = (
             clean_surface.get("prototype_contract")
@@ -2241,6 +2245,7 @@ class ProductDeliveryWorkflow:
 
         state["prototype_design_bundle"] = {
             "status": "ready",
+            "bundle_version": bundle["bundle_version"],
             "artifact_path": "artifacts/prototype-design-bundle.json",
             "artifact_sha256": self._artifact_hash(str(bundle_path)),
             "bundle_sha256": bundle["bundle_sha256"],

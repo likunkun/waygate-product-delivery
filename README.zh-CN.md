@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.33-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.34-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -121,7 +121,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.33.tar.gz
+dist/waygate-product-delivery-1.0.34.tar.gz
 ```
 
 ## Codex 使用方式
@@ -171,7 +171,9 @@ flowchart LR
 
 ### 原型门禁与评审分工
 
-UI 原型生成后，先调用 `record_ui_prototype_design_bundle()`，再进入多 Agent 产品/场景评审。确定性门禁会重建固定 schema 的 semantic snapshot 与 browser-preflight probe artifact，逐个关键 state/viewport 校验 snapshot、截图和 region identity hash，不接受调用方自报 pass flag。全局框架、导航、视觉语言、信息密度、组件体系和响应式行为六个维度都必须绑定结构化、带 hash 的设计证据 artifact；产品 `clean_surface` 与外部 `review_annotation_set` 必须严格分离。
+UI 原型生成后，先调用 `record_ui_prototype_design_bundle()`，再进入多 Agent 产品/场景评审。确定性门禁会重建固定 schema 的 semantic snapshot 与 browser-preflight probe artifact，逐个关键 state/viewport 校验 snapshot、截图和 region identity hash，不接受调用方自报 pass flag。全局框架、导航、视觉语言、信息密度、组件体系和响应式行为六个维度都必须绑定结构化、带 hash 的设计证据 artifact。
+
+新建或重开的原型使用 bundle v2 和 `acceptance_content_separation`，并绑定 review-only 的 `prototype-acceptance-content-scan-v1` 报告。高保真产品原型只能包含真实产品内容；验收标准、测试步骤/预期结果、评审状态、证据路径和开发说明必须移到 review-only artifact。可能属于真实产品的文案只有映射到具备角色、触发和生命周期的 `intended_product_ui_callout` 后才能保留；不可见 `data-testid` 可以继续使用。内容污染属于原型完整性硬错误，不得进入视觉偏差裁决。
 
 门禁验证客观事实，多 Agent 判断设计质量。评审负责判断基线是否有代表性、局部精美是否与全局产品协调、例外是否合理；不能覆盖门禁失败，也不能用空 findings 代替完整正向评审。
 

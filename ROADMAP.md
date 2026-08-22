@@ -187,6 +187,17 @@ Scope:
 - Add a concise changelog / version ledger.
 - Keep behavior unchanged.
 
+### V1.0.34 - Prototype Acceptance-Content Separation
+
+Goal: keep the frozen high-fidelity prototype as a clean statement of the real product rather than a mixed product-and-acceptance surface.
+
+Scope:
+
+- Require new or reopened UI prototype bundles to use v2 and bind a review-only acceptance-content scan report.
+- Scan static/rendered DOM, semantic text, attributes, resources, and review modes for acceptance, test, review, evidence, and developer-only content.
+- Treat contamination as a hard integrity failure while preserving real product copy through lifecycle-bound callout mappings.
+- Keep historical v1 bundles and already confirmed active deliveries unchanged until the prototype is modified or reopened.
+
 ### V1.1 - Multi-Agent Review Orchestration
 
 Goal: productize multi-agent review as a reusable orchestration layer instead of loose templates and prose rules.
