@@ -1,0 +1,14 @@
+{
+  "observations": [
+    {
+      "findings": [],
+      "state_id": "",
+      "surface_id": "",
+      "viewport": "desktop"
+    }
+  ],
+  "prototype_path": "docs/prototypes/<feature-slug>-prototype.html",
+  "prototype_sha256": "<sha256>",
+  "schema_version": "prototype-acceptance-content-scan-v1",
+  "semantic_snapshot_sha256": "<sha256>"
+}

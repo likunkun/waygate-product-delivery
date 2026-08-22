@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import hashlib
 from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
@@ -19,7 +20,8 @@ from product_delivery_agent.evidence_artifacts import (
 )
 
 
-BUNDLE_VERSION = "v1"
+BUNDLE_VERSION = "v2"
+SUPPORTED_BUNDLE_VERSIONS = {"v1", BUNDLE_VERSION}
 UI_CHANGE_TYPES = {
     "incremental_existing_surface",
     "new_surface_in_existing_product",
@@ -42,6 +44,19 @@ SEMANTIC_SNAPSHOT_VERSION = "prototype-semantic-snapshot-v1"
 BROWSER_PREFLIGHT_VERSION = "prototype-browser-preflight-v1"
 DESIGN_EVIDENCE_VERSION = "prototype-design-evidence-v1"
 DESIGN_SYSTEM_VERSION = "prototype-design-system-v1"
+ACCEPTANCE_CONTENT_SCAN_VERSION = "prototype-acceptance-content-scan-v1"
+ACCEPTANCE_FINDING_CLASSIFICATIONS = {
+    "hard_blocking",
+    "product_content_candidate",
+}
+ACCEPTANCE_FINDING_SOURCES = {
+    "static_dom",
+    "rendered_dom",
+    "semantic_snapshot",
+    "attribute",
+    "resource",
+    "review_mode",
+}
 SEMANTIC_ROLES = {
     "alert",
     "banner",
@@ -74,6 +89,41 @@ FORBIDDEN_CLEAN_HTML_MARKERS = (
     ("data-annotation-", "annotation data attribute"),
     ("data-clean-region-id", "review anchor data attribute"),
     ("data-clean-surface-reference", "review anchor data attribute"),
+)
+HARD_ACCEPTANCE_CONTENT_PATTERNS = (
+    (re.compile(r"验收标准|acceptance\s+criteria", re.IGNORECASE), "acceptance-standard"),
+    (re.compile(r"测试步骤|test\s+steps?", re.IGNORECASE), "test-steps"),
+    (re.compile(r"预期结果|expected\s+results?", re.IGNORECASE), "expected-result"),
+    (
+        re.compile(
+            r"评审(?:意见|结论)|review\s+(?:comment|finding|conclusion)s?",
+            re.IGNORECASE,
+        ),
+        "review-finding",
+    ),
+    (re.compile(r"待验收|验收状态|acceptance\s+status", re.IGNORECASE), "acceptance-status"),
+    (re.compile(r"(?:测试|场景)覆盖|(?:test|scenario)\s+coverage", re.IGNORECASE), "test-coverage"),
+    (re.compile(r"证据路径|evidence\s+path", re.IGNORECASE), "evidence-path"),
+    (re.compile(r"开发说明|implementation\s+note|developer\s+note", re.IGNORECASE), "development-note"),
+    (
+        re.compile(r"(?<![A-Za-z0-9_])(?:AC|TC|SC)-\d+(?![A-Za-z0-9_])", re.IGNORECASE),
+        "acceptance-test-id",
+    ),
+    (re.compile(r"\b(?:mock|fixture|test-only)\b", re.IGNORECASE), "test-only-content"),
+)
+AMBIGUOUS_PRODUCT_CONTENT_PATTERNS = (
+    (re.compile(r"测试(?!步骤|用例|数据)"), "ambiguous-product-status"),
+    (
+        re.compile(
+            r"审核通过|(?:^|[\s：:，,。；;])(?:通过|不通过|passed|failed)(?:[\s：:，,。；;]|$)",
+            re.IGNORECASE,
+        ),
+        "ambiguous-product-status",
+    ),
+)
+HARD_ACCEPTANCE_ATTRIBUTE_PATTERNS = (
+    re.compile(r"^data-(?:acceptance|review|test-(?:note|instruction|result))"),
+    re.compile(r"^(?:acceptance|review|test)-(?:note|panel|overlay)$"),
 )
 
 
@@ -108,8 +158,11 @@ def _build_prototype_design_bundle(
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise PrototypeDesignError("prototype design payload must be an object")
-    if payload.get("bundle_version") != BUNDLE_VERSION:
-        raise PrototypeDesignError("prototype design bundle_version must be v1")
+    bundle_version = payload.get("bundle_version")
+    if bundle_version not in SUPPORTED_BUNDLE_VERSIONS:
+        raise PrototypeDesignError(
+            "prototype design bundle_version must be v1 or v2"
+        )
 
     ui_change_type = payload.get("ui_change_type")
     if ui_change_type not in UI_CHANGE_TYPES:
@@ -132,6 +185,26 @@ def _build_prototype_design_bundle(
         payload.get("intended_product_ui_callouts"),
         contract,
     )
+    acceptance_separation = None
+    acceptance_artifact = None
+    if bundle_version == "v2":
+        acceptance_separation, acceptance_artifact = (
+            _normalize_acceptance_content_separation(
+                project_root,
+                payload.get("acceptance_content_separation"),
+                prototype_path=clean_surface["prototype_path"],
+                prototype_resolved=clean_artifacts[
+                    "clean_prototype_resolved_path"
+                ],
+                prototype_sha256=clean_artifacts["clean_prototype"]["sha256"],
+                semantic_sha256=clean_artifacts["semantic_snapshot"]["sha256"],
+                semantic_states_by_key=clean_artifacts[
+                    "semantic_states_by_key"
+                ],
+                contract=contract,
+                callouts=callouts,
+            )
+        )
     review_annotation_set, review_artifact = _normalize_review_annotation_set(
         project_root,
         payload.get("review_annotation_set"),
@@ -141,13 +214,17 @@ def _build_prototype_design_bundle(
     )
 
     normalized_payload = {
-        "bundle_version": BUNDLE_VERSION,
+        "bundle_version": bundle_version,
         "ui_change_type": ui_change_type,
         "clean_surface": clean_surface,
         "product_context_contract": product_context,
         "intended_product_ui_callouts": callouts,
         "review_annotation_set": review_annotation_set,
     }
+    if bundle_version == "v2":
+        normalized_payload["acceptance_content_separation"] = (
+            acceptance_separation
+        )
     artifact_metadata = {
         "clean_prototype": clean_artifacts["clean_prototype"],
         "semantic_snapshot": clean_artifacts["semantic_snapshot"],
@@ -162,6 +239,10 @@ def _build_prototype_design_bundle(
         ],
         "review_annotation_artifact": review_artifact,
     }
+    if bundle_version == "v2":
+        artifact_metadata["acceptance_content_scan_report"] = (
+            acceptance_artifact
+        )
     required_coverage_matrix = _build_coverage_matrix(
         contract,
         clean_surface,
@@ -176,8 +257,10 @@ def _build_prototype_design_bundle(
 
     product_payload = dict(normalized_payload)
     product_payload.pop("review_annotation_set")
+    product_payload.pop("acceptance_content_separation", None)
     product_artifacts = dict(artifact_metadata)
     product_artifacts.pop("review_annotation_artifact")
+    product_artifacts.pop("acceptance_content_scan_report", None)
     product_domain = {
         "normalized_payload": product_payload,
         "artifact_metadata": product_artifacts,
@@ -196,6 +279,9 @@ def _build_prototype_design_bundle(
         if review_annotation_set is not None
         else None,
     }
+    if bundle_version == "v2":
+        review_domain["acceptance_content_separation"] = acceptance_separation
+        review_domain["acceptance_content_scan_report"] = acceptance_artifact
     review_domain_sha256 = stable_json_hash(review_domain)
     bundle_sha256 = stable_json_hash(
         {
@@ -204,7 +290,7 @@ def _build_prototype_design_bundle(
         }
     )
 
-    return {
+    result = {
         "bundle_version": normalized_payload["bundle_version"],
         "ui_change_type": normalized_payload["ui_change_type"],
         "clean_surface": deepcopy(normalized_payload["clean_surface"]),
@@ -227,6 +313,11 @@ def _build_prototype_design_bundle(
         "review_domain_sha256": review_domain_sha256,
         "bundle_sha256": bundle_sha256,
     }
+    if bundle_version == "v2":
+        result["acceptance_content_separation"] = deepcopy(
+            acceptance_separation
+        )
+    return result
 
 
 def _prototype_contract_identity(
@@ -496,6 +587,7 @@ def _normalize_clean_surface(
                 "schema_version": SEMANTIC_SNAPSHOT_VERSION,
                 "state_count": len(semantic_by_key),
             },
+            "semantic_states_by_key": semantic_by_key,
             "browser_preflight_probe": {
                 **probe_metadata,
                 "schema_version": BROWSER_PREFLIGHT_VERSION,
@@ -532,6 +624,642 @@ def _validate_clean_prototype_html(prototype_path: Path) -> None:
         raise PrototypeDesignError(
             "clean prototype contains forbidden review query mode"
         )
+
+
+class _CleanProductContentParser(HTMLParser):
+    def __init__(self, contract: dict[str, Any]) -> None:
+        super().__init__(convert_charrefs=True)
+        self.contract = contract
+        self.stack: list[tuple[str, str | None]] = []
+        self.findings: list[dict[str, str]] = []
+        self.ignored_depth = 0
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        attributes = {name.lower(): value or "" for name, value in attrs}
+        element_id = attributes.get("id") or None
+        self.stack.append((tag.lower(), element_id))
+        if tag.lower() in {"script", "style", "head"}:
+            self.ignored_depth += 1
+        location, region_id = self._location()
+        for name, value in attributes.items():
+            lowered_name = name.lower()
+            if lowered_name == "data-testid":
+                continue
+            if any(pattern.search(lowered_name) for pattern in HARD_ACCEPTANCE_ATTRIBUTE_PATTERNS):
+                self._record(
+                    rule_id="acceptance-only-attribute",
+                    classification="hard_blocking",
+                    source="attribute",
+                    location=f"{location}[@{lowered_name}]",
+                    region_id=region_id,
+                    text=f"{lowered_name}={value}"[:160],
+                )
+            if lowered_name in {"href", "src", "action", "formaction"} and re.search(
+                r"(?:review-only|acceptance|test-(?:fixture|evidence)|mock-data)",
+                value,
+                re.IGNORECASE,
+            ):
+                self._record(
+                    rule_id="acceptance-only-resource",
+                    classification="hard_blocking",
+                    source="resource",
+                    location=f"{location}[@{lowered_name}]",
+                    region_id=region_id,
+                    text=value[:160],
+                )
+            if lowered_name not in {
+                "id",
+                "class",
+                "style",
+                "href",
+                "src",
+                "action",
+                "formaction",
+            }:
+                for pattern, rule_id in HARD_ACCEPTANCE_CONTENT_PATTERNS:
+                    if not pattern.search(value):
+                        continue
+                    self._record(
+                        rule_id=rule_id,
+                        classification="hard_blocking",
+                        source="attribute",
+                        location=f"{location}[@{lowered_name}]",
+                        region_id=region_id,
+                        text=value[:160],
+                    )
+                    break
+
+    def handle_startendtag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered_tag = tag.lower()
+        if lowered_tag in {"script", "style", "head"} and self.ignored_depth:
+            self.ignored_depth -= 1
+        if self.stack:
+            self.stack.pop()
+
+    def handle_data(self, data: str) -> None:
+        if self.ignored_depth:
+            return
+        text = " ".join(data.split())
+        if not text:
+            return
+        location, region_id = self._location()
+        for pattern, rule_id in HARD_ACCEPTANCE_CONTENT_PATTERNS:
+            if pattern.search(text):
+                self._record(
+                    rule_id=rule_id,
+                    classification="hard_blocking",
+                    source="static_dom",
+                    location=location,
+                    region_id=region_id,
+                    text=text[:160],
+                )
+                return
+        for pattern, rule_id in AMBIGUOUS_PRODUCT_CONTENT_PATTERNS:
+            if pattern.search(text):
+                self._record(
+                    rule_id=rule_id,
+                    classification="product_content_candidate",
+                    source="static_dom",
+                    location=location,
+                    region_id=region_id,
+                    text=text[:160],
+                )
+                return
+
+    def _location(self) -> tuple[str, str]:
+        region_ids = set(self.contract["region_ids"])
+        for tag, element_id in reversed(self.stack):
+            if element_id:
+                return f"#{element_id}", (
+                    element_id if element_id in region_ids else "document"
+                )
+        tag = self.stack[-1][0] if self.stack else "document"
+        line, _ = self.getpos()
+        return f"{tag}:line-{line}", "document"
+
+    def _record(
+        self,
+        *,
+        rule_id: str,
+        classification: str,
+        source: str,
+        location: str,
+        region_id: str,
+        text: str,
+    ) -> None:
+        text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        finding_identity = "|".join(
+            (rule_id, source, location, region_id, text_sha256)
+        )
+        finding_id = "static-" + hashlib.sha256(
+            finding_identity.encode("utf-8")
+        ).hexdigest()[:16]
+        self.findings.append(
+            {
+                "finding_id": finding_id,
+                "rule_id": rule_id,
+                "classification": classification,
+                "source": source,
+                "location": location,
+                "region_id": region_id,
+                "text_excerpt": text,
+                "text_sha256": text_sha256,
+            }
+        )
+
+
+def _scan_static_product_content(
+    prototype_resolved: Path,
+    contract: dict[str, Any],
+) -> list[dict[str, str]]:
+    try:
+        html = prototype_resolved.read_text(encoding="utf-8")
+    except UnicodeDecodeError as cause:
+        raise PrototypeDesignError("clean prototype HTML must be UTF-8") from cause
+    parser = _CleanProductContentParser(contract)
+    parser.feed(html)
+    return parser.findings
+
+
+def _scan_semantic_product_content(
+    semantic_states_by_key: dict[tuple[str, str, str], dict[str, Any]],
+) -> list[tuple[tuple[str, str, str], dict[str, str]]]:
+    findings: list[tuple[tuple[str, str, str], dict[str, str]]] = []
+    for key, state in semantic_states_by_key.items():
+        for region in state["regions"]:
+            text = " ".join(str(region.get("accessible_name") or "").split())
+            if not text:
+                continue
+            for pattern, rule_id in HARD_ACCEPTANCE_CONTENT_PATTERNS:
+                if not pattern.search(text):
+                    continue
+                text_excerpt = text[:160]
+                text_sha256 = hashlib.sha256(
+                    text_excerpt.encode("utf-8")
+                ).hexdigest()
+                region_id = str(region["region_id"])
+                location = f"semantic:{region_id}.accessible_name"
+                identity = "|".join(
+                    (
+                        rule_id,
+                        "semantic_snapshot",
+                        location,
+                        region_id,
+                        text_sha256,
+                    )
+                )
+                findings.append(
+                    (
+                        key,
+                        {
+                            "finding_id": "semantic-"
+                            + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16],
+                            "rule_id": rule_id,
+                            "classification": "hard_blocking",
+                            "source": "semantic_snapshot",
+                            "location": location,
+                            "region_id": region_id,
+                            "text_excerpt": text_excerpt,
+                            "text_sha256": text_sha256,
+                        },
+                    )
+                )
+                break
+    return findings
+
+
+def _normalize_acceptance_content_separation(
+    project_root: str | Path,
+    value: Any,
+    *,
+    prototype_path: str,
+    prototype_resolved: Path,
+    prototype_sha256: str,
+    semantic_sha256: str,
+    semantic_states_by_key: dict[tuple[str, str, str], dict[str, Any]],
+    contract: dict[str, Any],
+    callouts: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(value, dict):
+        raise PrototypeDesignError(
+            "prototype design v2 requires acceptance_content_separation"
+        )
+    _require_exact_keys(
+        value,
+        {
+            "declared_absent",
+            "scan_report_path",
+            "product_content_mappings",
+            *(
+                {"scan_status", "finding_count", "mapped_product_content_count"}
+                if "scan_status" in value
+                else set()
+            ),
+        },
+        "acceptance_content_separation",
+    )
+    if value.get("declared_absent") is not True:
+        raise PrototypeDesignError(
+            "acceptance_content_separation declared_absent must be true"
+        )
+
+    static_findings = _scan_static_product_content(prototype_resolved, contract)
+    for finding in static_findings:
+        if finding["classification"] == "hard_blocking":
+            surface_id, state_id = _surface_state_for_region(
+                contract, finding["region_id"]
+            )
+            raise PrototypeDesignError(
+                "acceptance content is hard blocking at "
+                f"{surface_id}/{state_id} region {finding['region_id']} "
+                f"({finding['source']} {finding['location']}, rule "
+                f"{finding['rule_id']}); move it to review-only evidence"
+            )
+    semantic_findings = _scan_semantic_product_content(semantic_states_by_key)
+    if semantic_findings:
+        key, finding = semantic_findings[0]
+        raise PrototypeDesignError(
+            "acceptance content is hard blocking at "
+            f"{key[0]}/{key[1]} region {finding['region_id']} "
+            f"({finding['source']} {finding['location']}, rule "
+            f"{finding['rule_id']}); move it to review-only evidence"
+        )
+
+    scan_report_path = _normalized_path(
+        value.get("scan_report_path"),
+        "acceptance_content_separation scan_report_path is required",
+    )
+    scan_root = Path(".product-delivery/artifacts/review-only")
+    try:
+        Path(scan_report_path).relative_to(scan_root)
+    except ValueError as cause:
+        raise PrototypeDesignError(
+            "acceptance content scan report must be under "
+            ".product-delivery/artifacts/review-only"
+        ) from cause
+    try:
+        report_resolved = resolve_project_path(
+            project_root,
+            scan_report_path,
+            artifact_only=True,
+        )
+    except EvidenceArtifactError as cause:
+        raise PrototypeDesignError(str(cause)) from cause
+    resolved_review_root = (
+        Path(project_root).resolve()
+        / ".product-delivery"
+        / "artifacts"
+        / "review-only"
+    ).resolve()
+    try:
+        report_resolved.relative_to(resolved_review_root)
+    except ValueError as cause:
+        raise PrototypeDesignError(
+            "acceptance content scan report must resolve under "
+            ".product-delivery/artifacts/review-only"
+        ) from cause
+    try:
+        report, report_metadata = load_json_artifact(
+            project_root,
+            scan_report_path,
+        )
+    except EvidenceArtifactError as cause:
+        raise PrototypeDesignError(str(cause)) from cause
+    _require_exact_keys(
+        report,
+        {
+            "schema_version",
+            "prototype_path",
+            "prototype_sha256",
+            "semantic_snapshot_sha256",
+            "observations",
+        },
+        "acceptance content scan report",
+    )
+    if report.get("schema_version") != ACCEPTANCE_CONTENT_SCAN_VERSION:
+        raise PrototypeDesignError(
+            "acceptance content scan report schema_version must be "
+            f"{ACCEPTANCE_CONTENT_SCAN_VERSION}"
+        )
+    if report.get("prototype_path") != prototype_path:
+        raise PrototypeDesignError(
+            "acceptance content scan report prototype_path must match clean prototype"
+        )
+    if report.get("prototype_sha256") != prototype_sha256:
+        raise PrototypeDesignError(
+            "acceptance content scan report prototype_sha256 must match clean prototype"
+        )
+    if report.get("semantic_snapshot_sha256") != semantic_sha256:
+        raise PrototypeDesignError(
+            "acceptance content scan report semantic_snapshot_sha256 must match semantic snapshot"
+        )
+    if (
+        scan_report_path.lower() in prototype_resolved.read_text(encoding="utf-8").lower()
+        or Path(scan_report_path).name.lower()
+        in prototype_resolved.read_text(encoding="utf-8").lower()
+    ):
+        raise PrototypeDesignError(
+            "clean prototype must not import acceptance content scan evidence"
+        )
+
+    observations = report.get("observations")
+    if not isinstance(observations, list) or not observations:
+        raise PrototypeDesignError(
+            "acceptance content scan report requires observations"
+        )
+    observations_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+    findings_by_id: dict[str, dict[str, Any]] = {}
+    finding_contexts: dict[str, tuple[str, str]] = {}
+    for index, observation in enumerate(observations, start=1):
+        if not isinstance(observation, dict):
+            raise PrototypeDesignError(
+                f"acceptance content scan observation {index} must be an object"
+            )
+        _require_exact_keys(
+            observation,
+            {"surface_id", "state_id", "viewport", "findings"},
+            f"acceptance content scan observation {index}",
+        )
+        key = (
+            _required_string(
+                observation.get("surface_id"),
+                f"acceptance content scan observation {index} missing surface_id",
+            ),
+            _required_string(
+                observation.get("state_id"),
+                f"acceptance content scan observation {index} missing state_id",
+            ),
+            _required_string(
+                observation.get("viewport"),
+                f"acceptance content scan observation {index} missing viewport",
+            ),
+        )
+        if key not in contract["runtime_regions"]:
+            raise PrototypeDesignError(
+                f"acceptance content scan observation {index} is not in prototype contract: {key}"
+            )
+        if key in observations_by_key:
+            raise PrototypeDesignError(
+                f"duplicate acceptance content scan observation: {key}"
+            )
+        findings = observation.get("findings")
+        if not isinstance(findings, list):
+            raise PrototypeDesignError(
+                f"acceptance content scan observation {index} findings must be a list"
+            )
+        normalized_findings = []
+        for finding_index, finding in enumerate(findings, start=1):
+            normalized = _normalize_acceptance_finding(
+                finding,
+                label=(
+                    f"acceptance content scan observation {index} finding "
+                    f"{finding_index}"
+                ),
+                key=key,
+                contract=contract,
+            )
+            finding_id = normalized["finding_id"]
+            previous = findings_by_id.get(finding_id)
+            if previous is not None and previous != normalized:
+                raise PrototypeDesignError(
+                    f"acceptance content finding {finding_id} is inconsistent across observations"
+                )
+            findings_by_id[finding_id] = normalized
+            previous_context = finding_contexts.get(finding_id)
+            current_context = (key[0], key[1])
+            if previous_context is not None and previous_context != current_context:
+                raise PrototypeDesignError(
+                    f"acceptance content finding {finding_id} crosses surface/state boundaries"
+                )
+            finding_contexts[finding_id] = current_context
+            normalized_findings.append(normalized)
+            if normalized["classification"] == "hard_blocking":
+                raise PrototypeDesignError(
+                    f"acceptance content finding {finding_id} from "
+                    f"{normalized['source']} is hard blocking at "
+                    f"{key[0]}/{key[1]} region {normalized['region_id']} "
+                    f"({normalized['location']}, rule {normalized['rule_id']}); "
+                    "move it to review-only evidence"
+                )
+        observations_by_key[key] = {
+            "surface_id": key[0],
+            "state_id": key[1],
+            "viewport": key[2],
+            "findings": sorted(
+                normalized_findings, key=lambda item: item["finding_id"]
+            ),
+        }
+    missing = [key for key in contract["runtime_order"] if key not in observations_by_key]
+    if missing:
+        raise PrototypeDesignError(
+            "acceptance content scan report missing state/viewport coverage: "
+            + ", ".join(map(str, missing))
+        )
+
+    for static_finding in static_findings:
+        reported = findings_by_id.get(static_finding["finding_id"])
+        if reported != static_finding:
+            surface_id, state_id = _surface_state_for_region(
+                contract, static_finding["region_id"]
+            )
+            raise PrototypeDesignError(
+                "acceptance content scan report omitted static product-content "
+                f"candidate {static_finding['finding_id']} at "
+                f"{surface_id}/{state_id} region {static_finding['region_id']} "
+                f"({static_finding['source']} {static_finding['location']}, "
+                f"rule {static_finding['rule_id']}); add the exact finding and "
+                "map it to an intended_product_ui_callout"
+            )
+
+    mappings = _normalize_product_content_mappings(
+        value.get("product_content_mappings"),
+        findings_by_id=findings_by_id,
+        finding_contexts=finding_contexts,
+        callouts=callouts,
+    )
+    return (
+        {
+            "declared_absent": True,
+            "scan_report_path": scan_report_path,
+            "product_content_mappings": mappings,
+            "scan_status": "passed",
+            "finding_count": len(findings_by_id),
+            "mapped_product_content_count": len(mappings),
+        },
+        {
+            **report_metadata,
+            "schema_version": ACCEPTANCE_CONTENT_SCAN_VERSION,
+            "observation_count": len(observations_by_key),
+            "finding_count": len(findings_by_id),
+            "normalized_observations_sha256": stable_json_hash(
+                [observations_by_key[key] for key in contract["runtime_order"]]
+            ),
+        },
+    )
+
+
+def _normalize_acceptance_finding(
+    value: Any,
+    *,
+    label: str,
+    key: tuple[str, str, str],
+    contract: dict[str, Any],
+) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise PrototypeDesignError(f"{label} must be an object")
+    _require_exact_keys(
+        value,
+        {
+            "finding_id",
+            "rule_id",
+            "classification",
+            "source",
+            "location",
+            "region_id",
+            "text_excerpt",
+            "text_sha256",
+        },
+        label,
+    )
+    finding_id = _required_string(value.get("finding_id"), f"{label} missing finding_id")
+    classification = value.get("classification")
+    if classification not in ACCEPTANCE_FINDING_CLASSIFICATIONS:
+        raise PrototypeDesignError(f"{label} classification is invalid")
+    source = value.get("source")
+    if source not in ACCEPTANCE_FINDING_SOURCES:
+        raise PrototypeDesignError(f"{label} source is invalid")
+    region_id = _required_string(value.get("region_id"), f"{label} missing region_id")
+    if region_id != "document" and region_id not in contract["runtime_regions"][key]:
+        raise PrototypeDesignError(f"{label} region_id is not in the observation surface")
+    text_excerpt = _required_string(
+        value.get("text_excerpt"), f"{label} missing text_excerpt"
+    )
+    if len(text_excerpt) > 160:
+        raise PrototypeDesignError(f"{label} text_excerpt must not exceed 160 characters")
+    expected_hash = hashlib.sha256(text_excerpt.encode("utf-8")).hexdigest()
+    if value.get("text_sha256") != expected_hash:
+        raise PrototypeDesignError(f"{label} text_sha256 must match text_excerpt")
+    return {
+        "finding_id": finding_id,
+        "rule_id": _required_string(value.get("rule_id"), f"{label} missing rule_id"),
+        "classification": classification,
+        "source": source,
+        "location": _required_string(value.get("location"), f"{label} missing location"),
+        "region_id": region_id,
+        "text_excerpt": text_excerpt,
+        "text_sha256": expected_hash,
+    }
+
+
+def _normalize_product_content_mappings(
+    value: Any,
+    *,
+    findings_by_id: dict[str, dict[str, Any]],
+    finding_contexts: dict[str, tuple[str, str]],
+    callouts: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise PrototypeDesignError(
+            "acceptance_content_separation product_content_mappings must be a list"
+        )
+    callouts_by_id = {item["callout_id"]: item for item in callouts}
+    mappings_by_finding: dict[str, dict[str, str]] = {}
+    declared_finding_ids = [
+        item.get("finding_id")
+        for item in value
+        if isinstance(item, dict)
+    ]
+    duplicate_ids = sorted(
+        {
+            finding_id
+            for finding_id in declared_finding_ids
+            if finding_id is not None
+            and declared_finding_ids.count(finding_id) > 1
+        }
+    )
+    if duplicate_ids:
+        raise PrototypeDesignError(
+            "duplicate product content mapping finding_id: "
+            + ", ".join(str(item) for item in duplicate_ids)
+        )
+    for index, mapping in enumerate(value, start=1):
+        if not isinstance(mapping, dict):
+            raise PrototypeDesignError(f"product content mapping {index} must be an object")
+        _require_exact_keys(
+            mapping,
+            {"finding_id", "callout_id"},
+            f"product content mapping {index}",
+        )
+        finding_id = _required_string(
+            mapping.get("finding_id"),
+            f"product content mapping {index} missing finding_id",
+        )
+        if finding_id in mappings_by_finding:
+            raise PrototypeDesignError(
+                f"duplicate product content mapping finding_id: {finding_id}"
+            )
+        finding = findings_by_id.get(finding_id)
+        if finding is None:
+            raise PrototypeDesignError(
+                f"product content mapping references unknown finding: {finding_id}"
+            )
+        if finding["classification"] != "product_content_candidate":
+            raise PrototypeDesignError(
+                f"product content mapping {finding_id} cannot map a hard-blocking finding"
+            )
+        callout_id = _required_string(
+            mapping.get("callout_id"),
+            f"product content mapping {index} missing callout_id",
+        )
+        callout = callouts_by_id.get(callout_id)
+        if callout is None:
+            raise PrototypeDesignError(
+                f"product content mapping references unknown callout: {callout_id}"
+            )
+        if (
+            callout["state_id"] != finding_contexts[finding_id][1]
+            or callout["region_id"] != finding["region_id"]
+        ):
+            raise PrototypeDesignError(
+                f"product content mapping {finding_id} must match callout state and region"
+            )
+        mappings_by_finding[finding_id] = {
+            "finding_id": finding_id,
+            "callout_id": callout_id,
+        }
+    candidates = {
+        finding_id
+        for finding_id, finding in findings_by_id.items()
+        if finding["classification"] == "product_content_candidate"
+    }
+    missing = sorted(candidates - set(mappings_by_finding))
+    if missing:
+        raise PrototypeDesignError(
+            "product content candidate findings "
+            + ", ".join(missing)
+            + " require product_content_mappings"
+        )
+    return [mappings_by_finding[key] for key in sorted(mappings_by_finding)]
+def _surface_state_for_region(
+    contract: dict[str, Any],
+    region_id: str,
+) -> tuple[str, str]:
+    for surface_id, state_id in contract["surface_regions"]:
+        if region_id == "document" or region_id in contract["surface_regions"][(surface_id, state_id)]:
+            return surface_id, state_id
+    return contract["runtime_order"][0][0], contract["runtime_order"][0][1]
 
 
 def _normalize_semantic_snapshot(
@@ -1901,8 +2629,23 @@ def _build_design_audit(
         ),
         "mode_specific_product_context_valid": True,
     }
+    acceptance_separation = normalized_payload.get(
+        "acceptance_content_separation"
+    )
+    if normalized_payload["bundle_version"] == "v2":
+        deterministic_checks["acceptance_content_separated"] = bool(
+            acceptance_separation
+            and acceptance_separation.get("scan_status") == "passed"
+            and artifact_metadata.get("acceptance_content_scan_report", {}).get(
+                "sha256"
+            )
+        )
     return {
-        "audit_version": "prototype-design-integrity-v1",
+        "audit_version": (
+            "prototype-design-integrity-v2"
+            if normalized_payload["bundle_version"] == "v2"
+            else "prototype-design-integrity-v1"
+        ),
         "status": (
             "passed" if all(deterministic_checks.values()) else "failed"
         ),
@@ -1934,6 +2677,10 @@ def _build_design_audit(
             + len(artifact_metadata["design_evidence_artifacts"])
             + int(artifact_metadata["design_system_artifact"] is not None)
             + int(artifact_metadata["review_annotation_artifact"] is not None)
+            + int(
+                artifact_metadata.get("acceptance_content_scan_report")
+                is not None
+            )
         ),
         "required_coverage_matrix_sha256": stable_json_hash(
             required_coverage_matrix

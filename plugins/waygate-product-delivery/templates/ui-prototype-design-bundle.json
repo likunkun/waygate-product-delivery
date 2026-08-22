@@ -1,5 +1,10 @@
 {
-  "bundle_version": "v1",
+  "acceptance_content_separation": {
+    "declared_absent": true,
+    "product_content_mappings": [],
+    "scan_report_path": ".product-delivery/artifacts/review-only/<surface>-acceptance-content-scan.json"
+  },
+  "bundle_version": "v2",
   "clean_surface": {
     "browser_preflight_probe_path": ".product-delivery/artifacts/prototype-design/<surface>-browser-preflight.json",
     "prototype_contract": {},

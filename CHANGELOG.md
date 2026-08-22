@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.34
+
+- Adds prototype design bundle v2 with `acceptance_content_separation` and a review-only `prototype-acceptance-content-scan-v1` report.
+- Enforces that high-fidelity prototypes contain only real product content across static/rendered DOM, semantic snapshots, attributes, resources, and review modes.
+- Treats acceptance, review, test, evidence, mock/fixture, and developer-only content as a hard `prototype_design_integrity` failure that cannot enter visual adjudication.
+- Allows ambiguous real product copy only through `product_content_mappings` to lifecycle-bound `intended_product_ui_callouts`; invisible test selectors remain allowed.
+- Keeps v1 bundles readable and existing confirmed deliveries unchanged until their prototype is modified, replaced, or reopened.
+- Keeps scan evidence and mappings outside `product_domain_hash`, preserves closure schema `v0.11`, and updates runtime/package provenance to `1.0.34`.
+
 ## 1.0.33
 
 - Classifies pixel failures, geometry mismatches, and small visible viewport-boundary overflows as `visual_adjudicable`, while keeping missing, non-finite, zero-sized, invisible, and clearly offscreen geometry `hard_blocking`.

@@ -11,6 +11,8 @@
 - `clean_surface` must bind the product HTML, prototype contract, clean PNGs, semantic snapshot, and browser checks for every required state and viewport.
 - `product_context_contract` must positively cover `global_shell`, `navigation`, `visual_language`, `information_density`, `component_system`, and `responsive_behavior`.
 - Review annotations belong in an independent `review_annotation_set`; the clean product page must not load review assets, overlays, annotation scripts, or an annotation query mode.
+- High-fidelity product prototypes contain only real product content. Acceptance criteria, test steps/results, review status, evidence paths, and developer notes must move to review-only evidence.
+- Acceptance-content contamination is a hard `prototype_design_integrity` failure and must not enter visual deviation adjudication.
 - Product guidance is allowed only as declared `intended_product_ui_callouts` bound to requirements, scenarios, triggers, lifecycle, and a contract region.
 - The `prototype_design_integrity` gate verifies these objective facts. Multi-Agent review judges whether the baseline is representative, globally coherent, and justified; it cannot override a failed gate.
 - Product/scenario review must pass before `prepare_product_baseline_confirmation()`.
