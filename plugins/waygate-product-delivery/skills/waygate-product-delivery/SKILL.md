@@ -101,6 +101,14 @@ active mode 下每次准备 final summary、普通 stop guard 或交付总结前
 
 V1.0.24 起，内部 `delivery_goal` 只表示 TASK 计划，不得冒充 Codex Host Goal。第二次 `test_coverage_plan` 确认同时授权当前 delivery 创建和推进真实 Host Goal，runtime 使用独立 `host_goal_binding` 绑定 `delivery_id`、`feature_slug`、launch package、objective hash、binding generation 和宿主返回的稳定标识。
 
+### V1.0.34 Emergency Blocked-Goal Recovery
+
+仅 delivery `26a6049314fe48caa1e7d4dcdb45c171` 可使用 `scripts/recover-blocked-host-goal-v1034.py` 解除 1.0.34 blocked-binding 死锁。不得手改 `.product-delivery/state.json`，不得将该恢复器用于其他 delivery，也不得借此登记正式评审或 closure。
+
+必须回到冻结的 owner thread，先由用户恢复 Host Goal，再通过宿主 `get_goal` 取得 fresh、精确匹配且 `status=active` 的 observation。将严格 v1 JSON 通过 stdin 交给恢复器；先以 `dry_run=true` 执行并确认 state 字节未变化，再使用完全相同的 observation 以 `dry_run=false` 执行一次。恢复器会锁定冻结 state 文件 SHA-256、owner thread 和原始 `c7ee45f…f9234` runtime receipt，并验证 delivery、feature、binding nonce、objective hash、Goal identifiers、journal、stage、完整 TASK、browser evidence、review/closure 状态，以及不存在 `human_wait`、pending checkpoint 或 authorized transition。
+
+正式恢复只归档原 binding、记录 observation、追加 hash-linked `host_goal_blocked_binding_recovered` event，并把 binding 恢复为 `active`、`next_gate` 恢复为 `multi_agent_test_implementation_review`。任何 identity、状态或 runtime package hash 不匹配都必须 fail closed；重复执行必须拒绝。恢复后只运行 `status`、`inspect` 和 continuation guard 验证 `must_continue`，本次紧急恢复不得继续后续 review 或 closure。
+
 handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。
 
 每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 `get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。同一 stage 内低层文件写入不需要重复查询，但任何 canonical gate 写入都必须消费一条新鲜、目标 gate 匹配的一次性 observation。
