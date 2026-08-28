@@ -94,6 +94,7 @@ from product_delivery_agent.host_goal import (
     apply_owner_claim_observation,
     assert_host_goal_owner,
     build_host_goal_authorization,
+    build_host_goal_user_guidance,
     consume_authorized_transition,
     host_goal_required,
     initialize_host_goal_owner,
@@ -3154,6 +3155,10 @@ class ProductDeliveryWorkflow:
         if human_decision_id:
             response["decision_id"] = human_decision_id
             response["should_prompt"] = should_prompt
+            if should_prompt:
+                response["host_goal_user_guidance"] = (
+                    build_host_goal_user_guidance(required_now=False)
+                )
         return response
 
     def record_host_goal_observation(
@@ -3197,7 +3202,17 @@ class ProductDeliveryWorkflow:
                 ),
             },
         )
-        return write_state(self.project_root, next_state)
+        persisted_state = write_state(self.project_root, next_state)
+        from product_delivery_agent.continuation import derive_continuation_status
+
+        guidance = derive_continuation_status(persisted_state).get(
+            "host_goal_user_guidance"
+        )
+        if guidance is None:
+            return persisted_state
+        response = deepcopy(persisted_state)
+        response["host_goal_user_guidance"] = guidance
+        return response
 
     def recover_stale_host_goal_checkpoint(
         self,

@@ -20,6 +20,18 @@ HOST_GOAL_SCHEMA_VERSION = "v1"
 HOST_GOAL_SOURCE = "codex_goal_tool"
 CODEX_THREAD_ID_ENV = "CODEX_THREAD_ID"
 HOST_GOAL_OWNER_CLAIM_MESSAGE = "恢复交付主线程，接管当前 Host Goal"
+HOST_GOAL_BLOCKED_GUIDANCE_MESSAGE = (
+    "当前 Host Goal 仍为 Blocked。若要继续本次交付，请先选择 Resume（或执行 `/goal resume`）；"
+    "不要选择 Clear。Clear 只会移除 Host Goal，不会终止 Waygate 交付。Goal 恢复为 Active 后将"
+    "沿用当前 decision_id，已经提交的确认无需重答。若要终止交付，请执行 "
+    "`$waygate-product-delivery abandon`。"
+)
+HOST_GOAL_PREFLIGHT_GUIDANCE_MESSAGE = (
+    "提交本次确认后，如果 Host Goal 显示为 Blocked，若要继续本次交付，请选择 Resume（或执行 "
+    "`/goal resume`）；不要选择 Clear（`/goal clear`）。Clear 只会移除 Host Goal，不会终止 Waygate 交付。"
+    "Goal 恢复为 Active 后将沿用当前 decision_id，已经提交的确认无需重答。若要终止交付，"
+    "请执行 `$waygate-product-delivery abandon`。"
+)
 RECONCILIATION_OPERATIONS = {
     "turn_start",
     "stage_transition",
@@ -43,6 +55,24 @@ ACTIVATION_OPERATIONS = {
 
 class HostGoalError(RuntimeError):
     """Raised when Codex Host Goal evidence cannot authorize progression."""
+
+
+def build_host_goal_user_guidance(*, required_now: bool) -> dict[str, Any]:
+    """Return runtime-only instructions for a user-facing Host Goal pause."""
+    return {
+        "schema_version": "v1",
+        "required_now": required_now,
+        "recommended_action": "resume_current_host_goal",
+        "recommended_command": "/goal resume",
+        "avoid_action": "clear_current_host_goal",
+        "avoid_command": "/goal clear",
+        "stop_delivery_command": "$waygate-product-delivery abandon",
+        "display_message": (
+            HOST_GOAL_BLOCKED_GUIDANCE_MESSAGE
+            if required_now
+            else HOST_GOAL_PREFLIGHT_GUIDANCE_MESSAGE
+        ),
+    }
 
 
 def host_goal_required(state: dict[str, Any]) -> bool:

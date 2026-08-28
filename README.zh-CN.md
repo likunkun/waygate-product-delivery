@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.34-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.35-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -121,7 +121,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.34.tar.gz
+dist/waygate-product-delivery-1.0.35.tar.gz
 ```
 
 ## Codex 使用方式
@@ -190,6 +190,10 @@ handoff 后，Host Goal 激活必须遵循精确的 `get_goal -> create_goal -> 
 每个 delivery 启动时都会从 `CODEX_THREAD_ID` 冻结用户可见顶层 Codex 主线程作为 coordinator。Host Goal 激活、对账、观察、完成以及 handoff 后的 canonical 写入，必须同时匹配当前线程、已记录 owner、binding owner 和宿主 Goal 的 `threadId`。评审 subagent 只能生成 review artifact，禁止激活、恢复、接管或完成 delivery Host Goal。
 
 旧 active state 缺少 owner metadata 时迁移为 `legacy_unverified`，runtime 不会把旧 Goal binding 线程推断成 coordinator。必须新建一个没有 active/blocked Goal 的用户可见顶层线程，调用 `prepare_host_goal_owner_claim("恢复交付主线程，接管当前 Host Goal")`，执行返回要求的 `get_goal`，再调用 `record_host_goal_owner_claim_observation()`。只有 missing 或 complete Goal 允许 transfer；active 或 blocked Goal 必须 fail closed。成功后旧 binding 和 pending checkpoint 会完整归档，journal 只追加 `host_goal_owner_transferred`，然后以新 generation、nonce 和 objective 重新执行 `get_goal -> create_goal -> get_goal`，不会改写原 delivery 证据或旧 journal event。owner-claim checkpoint 若因合法 transition 过期，必须调用 `recover_stale_host_goal_owner_claim(checkpoint_id)`；runtime 会归档旧 claim 并追加 `host_goal_owner_claim_superseded`，不会让恢复永久卡死。
+
+### 恢复 Blocked Host Goal
+
+用户确认后如果 Host Goal 仍为 Blocked，Waygate 会显示结构化提醒。继续同一交付时应选择 Host Goal Resume 或执行 `/goal resume`；不要执行 `/goal clear`，因为 Clear 只会移除 Host Goal，不会终止 Waygate 交付。若要终止交付，执行 `$waygate-product-delivery abandon`。Waygate 不会替用户自动恢复 Goal，只有 fresh `get_goal` 返回 `active` 后才继续；原 `decision_id` 与已提交的确认继续有效，无需重答。
 
 ## 架构
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.35
+
+- Adds runtime-only `host_goal_user_guidance` for post-handoff human waits: a one-time preflight notice on the first prompt and a required reminder whenever the Host Goal remains `blocked`.
+- Directs users to Host Goal Resume or `/goal resume`, warns that `/goal clear` removes only the Host Goal, and reserves `$waygate-product-delivery abandon` for terminating delivery.
+- Requires a fresh `get_goal` observation with `status=active` before resolving the existing `human_wait`, clearing resolvable blockers, or authorizing the original gate; the original `decision_id` and submitted confirmation are reused.
+- Propagates the same structured guidance through continuation, session resume, prompt, stop, and final guard outputs without persisting it or changing state schema, hashes, fingerprints, or the three-turn blocked threshold.
+- Updates the generated Skill to display `display_message` and distinguish Host Goal resume/clear from Waygate resume/abandon.
+- Retires the two frozen v1.0.34-only recovery utilities from the current source and 1.0.35 package; they remain available only from the 1.0.34 history and release artifact.
+
 ## 1.0.34
 
 - Adds a fail-closed, one-shot `recover-blocked-host-goal-v1034.py` utility for delivery `26a6049314fe48caa1e7d4dcdb45c171`, preserving the 1.0.34 runtime package and provenance hash.
