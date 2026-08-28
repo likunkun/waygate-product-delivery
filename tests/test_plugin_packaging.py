@@ -247,7 +247,12 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("host_turn_id", skill_markdown)
             self.assertIn("decision_id", skill_markdown)
             self.assertIn("Goal 工具不可用", skill_markdown)
+            self.assertIn("recover-blocked-host-goal-v1034.py", skill_markdown)
             self.assertIn("不得使用 20 秒 watchdog", skill_markdown)
+            self.assertIn(
+                "recover-blocked-host-goal-current-task-v1034.py",
+                skill_markdown,
+            )
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")

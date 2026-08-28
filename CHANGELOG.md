@@ -3,6 +3,7 @@
 ## 1.0.34
 
 - Adds a fail-closed, one-shot `recover-blocked-host-goal-v1034.py` utility for delivery `26a6049314fe48caa1e7d4dcdb45c171`, preserving the 1.0.34 runtime package and provenance hash.
+- Adds a companion current-task recovery utility for other active 1.0.34 implementation deliveries whose blocked Goal binding has no human-wait checkpoint; it pins delivery, binding, frozen state, owner, runtime, and active Goal identity, and restores only the current unfinished TASK gate.
 - Pins the frozen state-file SHA-256, owner thread, delivery identity, and original `c7ee45f…f9234` runtime receipt, then requires a fresh, exact, active `get_goal` observation; dry-run and real recovery share all checks, while only real recovery archives the binding, appends a hash-linked recovery event, and restores `multi_agent_test_implementation_review`.
 - Rejects foreign threads, stale or mismatched Goal identity, human waits, pending checkpoints or transitions, unexpected stage/evidence/review state, repeated recovery, unknown JSON fields, and runtime hash drift.
 - Adds prototype design bundle v2 with `acceptance_content_separation` and a review-only `prototype-acceptance-content-scan-v1` report.

@@ -109,6 +109,8 @@ V1.0.24 起，内部 `delivery_goal` 只表示 TASK 计划，不得冒充 Codex 
 
 正式恢复只归档原 binding、记录 observation、追加 hash-linked `host_goal_blocked_binding_recovered` event，并把 binding 恢复为 `active`、`next_gate` 恢复为 `multi_agent_test_implementation_review`。任何 identity、状态或 runtime package hash 不匹配都必须 fail closed；重复执行必须拒绝。恢复后只运行 `status`、`inspect` 和 continuation guard 验证 `must_continue`，本次紧急恢复不得继续后续 review 或 closure。
 
+对于仍在 `implementation_in_progress` 的其他 1.0.34 delivery，如果 binding 为 `blocked` 且不存在 `human_wait`、pending checkpoint 或 authorized transition，可使用 `scripts/recover-blocked-host-goal-current-task-v1034.py`。它按请求锁定当前 delivery、feature、binding nonce、objective hash、state 文件 SHA-256、owner thread 和当前 runtime receipt，只接受 fresh、精确匹配且 `status=active` 的 `get_goal` observation，并只把 `next_gate` 恢复为当前未完成 TASK。必须先 `dry_run=true` 且 state 字节不变，再用同一 observation `dry_run=false` 一次；恢复后不得借此登记证据或完成 gate，只允许先验证 `status` / `inspect` / continuation guard。
+
 handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。
 
 每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 `get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。同一 stage 内低层文件写入不需要重复查询，但任何 canonical gate 写入都必须消费一条新鲜、目标 gate 匹配的一次性 observation。
