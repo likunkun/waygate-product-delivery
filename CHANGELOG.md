@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.37
+
+- Restores the 1.0.34 enhanced runtime behavior from `c49e902`, including both frozen blocked-Goal recovery utilities, while preserving the 1.0.35 release history.
+- Removes the 1.0.35 `host_goal_user_guidance` behavior and does not include the unpublished 1.0.36 Host Goal recovery draft.
+- Adds a strict, one-shot 1.0.36-to-1.0.37 runtime receipt recovery path for the existing Classroom delivery. It requires the exact known receipts, an intact `1.0.34 activation -> 1.0.36 recovery` journal chain, the original coordinator thread, current-delivery policy, and an active nonterminal delivery.
+- The receipt recovery semantically changes only `runtime_provenance` and appends a hash-linked `runtime_receipt_recovered` event. Protocol `updated_at` and canonical delivery-layout mirrors are refreshed as part of the atomic write, while delivery identity, Host Goal state, TASKs, confirmations, reviews, implementation evidence, and prior journal events remain unchanged.
+- Rejects unknown receipts, journal tampering, foreign threads, identity or policy mismatch, terminal deliveries, and replay. The frozen v1.0.34 utilities retain their original runtime checks.
+
 ## 1.0.35
 
 - Adds runtime-only `host_goal_user_guidance` for post-handoff human waits: a one-time preflight notice on the first prompt and a required reminder whenever the Host Goal remains `blocked`.

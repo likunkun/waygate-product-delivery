@@ -30,7 +30,6 @@ class HookResult:
     warnings: list[str] = field(default_factory=list)
     missing_items: list[str] = field(default_factory=list)
     passed: bool = True
-    host_goal_user_guidance: dict[str, Any] | None = None
 
 
 def build_resume_context(project_root: str | Path) -> HookResult:
@@ -45,7 +44,6 @@ def build_resume_context(project_root: str | Path) -> HookResult:
         active=True,
         silent=False,
         message=_state_summary(state, stage_label="stage"),
-        host_goal_user_guidance=_host_goal_user_guidance(state),
     )
 
 
@@ -61,7 +59,6 @@ def build_prompt_context(project_root: str | Path) -> HookResult:
         active=True,
         silent=False,
         message=_state_summary(state, stage_label="current_stage"),
-        host_goal_user_guidance=_host_goal_user_guidance(state),
     )
 
 
@@ -123,7 +120,6 @@ def check_stop_guardrail(project_root: str | Path) -> HookResult:
         return invalid
 
     continuation = derive_continuation_status(state)
-    guidance = continuation.get("host_goal_user_guidance")
     if continuation["status"] == "wait_for_user":
         return HookResult(
             active=True,
@@ -131,7 +127,6 @@ def check_stop_guardrail(project_root: str | Path) -> HookResult:
             passed=True,
             message="continuation_guard=wait_for_user",
             missing_items=continuation["blockers"],
-            host_goal_user_guidance=guidance,
         )
     if continuation["status"] == "complete":
         return HookResult(
@@ -139,7 +134,6 @@ def check_stop_guardrail(project_root: str | Path) -> HookResult:
             silent=False,
             passed=True,
             message="continuation_guard=complete",
-            host_goal_user_guidance=guidance,
         )
 
     missing = _missing_stop_items(Path(project_root), state)
@@ -156,7 +150,6 @@ def check_stop_guardrail(project_root: str | Path) -> HookResult:
         ),
         warnings=[] if not missing else [_stop_guard_warning(continuation)],
         missing_items=missing,
-        host_goal_user_guidance=guidance,
     )
 
 
@@ -167,10 +160,6 @@ def check_final_summary_guardrail(project_root: str | Path) -> HookResult:
 
 def _silent() -> HookResult:
     return HookResult(active=False, silent=True)
-
-
-def _host_goal_user_guidance(state: dict[str, Any]) -> dict[str, Any] | None:
-    return derive_continuation_status(state).get("host_goal_user_guidance")
 
 
 def _load_valid_state(project_root: str | Path) -> dict[str, Any]:
@@ -204,7 +193,6 @@ def _protocol_failure_result(state: dict[str, Any]) -> HookResult | None:
             message="product_delivery_implementation_state=blocked",
             warnings=["Product delivery implementation state is invalid."],
             missing_items=protocol_errors,
-            host_goal_user_guidance=_host_goal_user_guidance(state),
         )
 
     errors = list(state.get("closure_validation", {}).get("errors", []))
@@ -219,7 +207,6 @@ def _protocol_failure_result(state: dict[str, Any]) -> HookResult | None:
         message="product_delivery_closure_state=blocked",
         warnings=["Product delivery closure state is invalid."],
         missing_items=errors,
-        host_goal_user_guidance=_host_goal_user_guidance(state),
     )
 
 

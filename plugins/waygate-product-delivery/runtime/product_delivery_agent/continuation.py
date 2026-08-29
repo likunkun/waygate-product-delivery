@@ -14,10 +14,8 @@ from product_delivery_agent.gatekeeper import (
     implementation_integrity_errors,
 )
 from product_delivery_agent.host_goal import (
-    build_host_goal_user_guidance,
     canonical_closure_passed,
     current_codex_thread_id,
-    host_goal_required,
 )
 
 
@@ -49,17 +47,6 @@ USER_WAIT_MARKERS = (
 
 def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
     """Classify whether an active Product Delivery flow may stop."""
-    decision = _derive_continuation_status(state)
-    if host_goal_required(state) and (
-        state.get("host_goal_binding") or {}
-    ).get("status") == "blocked":
-        decision["host_goal_user_guidance"] = build_host_goal_user_guidance(
-            required_now=True
-        )
-    return decision
-
-
-def _derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
     if not state or not state.get("active"):
         return _decision(
             "inactive",

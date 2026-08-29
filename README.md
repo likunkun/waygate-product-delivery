@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.35-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.37-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -123,7 +123,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.35.tar.gz
+dist/waygate-product-delivery-1.0.37.tar.gz
 ```
 
 ## Use In Codex
@@ -192,10 +192,6 @@ Recovery preserves the delivery, artifacts, reviews, task state, and prior journ
 Each delivery captures its top-level Codex coordinator from `CODEX_THREAD_ID`. Host Goal activation, reconciliation, observation, completion, and every post-handoff canonical write require the current thread, stored owner, binding owner, and observed Goal `threadId` to match. Spawned review subagents may produce review artifacts, but they must never activate, recover, transfer, or complete the delivery Host Goal.
 
 Older active states without owner metadata migrate to `legacy_unverified`; the runtime does not infer ownership from an old Goal binding. Open a fresh user-visible top-level thread with no active or blocked Goal, then call `prepare_host_goal_owner_claim("恢复交付主线程，接管当前 Host Goal")`, run the requested `get_goal`, and record it with `record_host_goal_owner_claim_observation()`. A missing or completed Goal permits transfer; an active or blocked Goal fails closed. Successful transfer archives the old binding and pending checkpoint, appends `host_goal_owner_transferred`, and starts a fresh `get_goal -> create_goal -> get_goal` handshake without changing delivery evidence or prior journal events. If the owner-claim checkpoint becomes stale after a legal transition, call `recover_stale_host_goal_owner_claim(checkpoint_id)`; it archives the old claim and appends `host_goal_owner_claim_superseded` instead of leaving recovery permanently blocked.
-
-### Resuming A Blocked Host Goal
-
-When a user decision leaves the Host Goal blocked, Waygate shows structured guidance. Continue the same delivery with Host Goal Resume or `/goal resume`; do not use `/goal clear`, because Clear removes the Host Goal but does not terminate the Waygate delivery. To terminate delivery, use `$waygate-product-delivery abandon`. Waygate never resumes the Goal on the user's behalf and proceeds only after a fresh `get_goal` observation reports `active`; the existing `decision_id` and submitted confirmation remain valid.
 
 ## Architecture
 

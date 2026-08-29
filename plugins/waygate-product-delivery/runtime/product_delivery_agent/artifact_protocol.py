@@ -7,6 +7,8 @@ import hashlib
 import os
 import re
 import uuid
+import fcntl
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -136,10 +138,32 @@ def load_state(
     return dict(fallback_state or {})
 
 
-def write_state(project_root: str | Path, state: dict[str, Any]) -> dict[str, Any]:
-    """Atomically persist product-delivery state as formatted JSON."""
+@contextmanager
+def state_write_lock(project_root: str | Path):
+    """Serialize canonical state and layout writes on the stable workspace inode."""
     workspace = Path(project_root) / ARTIFACT_ROOT
     workspace.mkdir(parents=True, exist_ok=True)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory_fd = os.open(workspace, flags)
+    try:
+        fcntl.flock(directory_fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(directory_fd, fcntl.LOCK_UN)
+        os.close(directory_fd)
+
+
+def write_state(project_root: str | Path, state: dict[str, Any]) -> dict[str, Any]:
+    """Atomically persist product-delivery state as formatted JSON."""
+    with state_write_lock(project_root):
+        return _write_state_locked(project_root, state)
+
+
+def _write_state_locked(
+    project_root: str | Path,
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    workspace = Path(project_root) / ARTIFACT_ROOT
 
     next_state = normalize_state_protocol(dict(state))
     next_state["updated_at"] = _timestamp()

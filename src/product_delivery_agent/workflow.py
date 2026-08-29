@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import ctypes
+import stat
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -21,6 +23,7 @@ from product_delivery_agent.artifact_protocol import (
     load_state,
     new_delivery_state,
     runtime_status,
+    state_write_lock,
     write_state,
 )
 from product_delivery_agent.closure import (
@@ -78,6 +81,7 @@ from product_delivery_agent.gatekeeper import (
     requirements_e2e_confirmation_hash,
     render_closure_validator_result,
     review_input_hash,
+    normalize_state_protocol,
     stable_state_hash,
     surface_input_hash,
     test_coverage_plan_hash,
@@ -94,7 +98,6 @@ from product_delivery_agent.host_goal import (
     apply_owner_claim_observation,
     assert_host_goal_owner,
     build_host_goal_authorization,
-    build_host_goal_user_guidance,
     consume_authorized_transition,
     host_goal_required,
     initialize_host_goal_owner,
@@ -153,7 +156,10 @@ from product_delivery_agent.skill_gates import (
     required_skills_for_stage,
     validate_skill_gate,
 )
-from product_delivery_agent.transition_journal import append_transition
+from product_delivery_agent.transition_journal import (
+    append_transition,
+    journal_integrity_errors,
+)
 from product_delivery_agent.ui_prototype import (
     UIPrototypeError,
     build_prototype_contract,
@@ -164,6 +170,43 @@ from product_delivery_agent.ui_prototype import (
 
 class WorkflowError(RuntimeError):
     """Raised when a workflow transition is not allowed."""
+
+
+RUNTIME_RECEIPT_RECOVERY_MESSAGE = (
+    "用户确认恢复 1.0.36 runtime receipt 到 1.0.37"
+)
+WAYGATE_1034_RECEIPT = {
+    "plugin_name": "waygate-product-delivery",
+    "plugin_version": "1.0.34",
+    "package_root_sha256": (
+        "8632f3ab98351164a96014d42c4f7800a2a844f794ebb86c7ba7907ea22fbe12"
+    ),
+}
+WAYGATE_1036_RECEIPT = {
+    "plugin_name": "waygate-product-delivery",
+    "plugin_version": "1.0.36",
+    "package_root_sha256": (
+        "8fbaf18d7dcc83e5363325e2b9e5661e248b3293d288cff09b3b385ae8776f72"
+    ),
+}
+RUNTIME_RECEIPT_RECOVERY_TARGET_DELIVERY_ID = (
+    "552458d2ce704acca863fb515ba92024"
+)
+RUNTIME_RECEIPT_RECOVERY_TARGET_FEATURE_SLUG = (
+    "v1.6.4-brand-delivery-material-generation-layout-optimization"
+)
+RUNTIME_RECEIPT_RECOVERY_TARGET_OWNER_THREAD_ID = (
+    "01a03c49-d013-70f1-90c2-d85f03ded87f"
+)
+RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256 = (
+    "43920b8a0fad31ff7218f18666936d77c9f1cdf650a75299802dc02efbc5c572"
+)
+RUNTIME_RECEIPT_RECOVERY_TARGET_JOURNAL_EVENT_COUNT = 415
+RUNTIME_RECEIPT_RECOVERY_TARGET_JOURNAL_LAST_HASH = (
+    "9ffe608896eb6d9d946ad50bda40cf17ad83a650d0d3a5896515d903531bca66"
+)
+AT_FDCWD = -100
+RENAME_EXCHANGE = 2
 
 
 class ProductDeliveryWorkflow:
@@ -347,6 +390,399 @@ class ProductDeliveryWorkflow:
             multi_agent_mode=multi_agent_mode,
             previous_state=raw_state,
         )
+
+    def recover_runtime_receipt(self, user_message: str) -> dict[str, Any]:
+        """Upgrade the one known 1.0.36 receipt while preserving the delivery."""
+        if str(user_message or "").strip() != RUNTIME_RECEIPT_RECOVERY_MESSAGE:
+            raise WorkflowError(
+                "exact explicit user authorization is required for runtime receipt recovery"
+            )
+
+        state_path = self.project_root / ARTIFACT_ROOT / "state.json"
+        try:
+            with state_write_lock(self.project_root):
+                return self._recover_runtime_receipt_locked(state_path)
+        except WorkflowError:
+            raise
+        except OSError as error:
+            raise WorkflowError(
+                f"Waygate state workspace cannot be locked: {error}"
+            ) from error
+
+    def _recover_runtime_receipt_locked(self, state_path: Path) -> dict[str, Any]:
+        state_file_sha256 = hashlib.sha256(state_path.read_bytes()).hexdigest()
+        if state_file_sha256 != RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256:
+            raise WorkflowError(
+                "runtime receipt recovery is restricted to the frozen Classroom "
+                "delivery state"
+            )
+
+        raw_state = self._load_raw_state()
+        state = self._state()
+        lifecycle_status = (state.get("delivery_lifecycle") or {}).get("status")
+        if (
+            not raw_state.get("active")
+            or raw_state.get("status") in (TERMINAL_STATUSES | {"abandoned"})
+            or lifecycle_status in {"closed", "abandoned"}
+        ):
+            raise WorkflowError(
+                "runtime receipt recovery requires an active nonterminal delivery"
+            )
+        if runtime_status(state, raw_state) != "invalid_runtime":
+            raise WorkflowError(
+                "runtime receipt recovery requires an active invalid_runtime delivery"
+            )
+        if raw_state.get("runtime_provenance") != WAYGATE_1036_RECEIPT:
+            raise WorkflowError("unsupported or mismatched 1.0.36 receipt")
+
+        integrity_errors = journal_integrity_errors(raw_state)
+        if integrity_errors:
+            raise WorkflowError(
+                "runtime receipt recovery requires an intact journal: "
+                + ", ".join(integrity_errors)
+            )
+
+        self._validate_runtime_receipt_recovery_identity(state)
+        self._validate_runtime_receipt_recovery_chain(raw_state)
+        try:
+            assert_host_goal_owner(state)
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+
+        current_receipt = current_runtime_provenance()
+        if current_receipt.get("plugin_version") != "1.0.37":
+            raise WorkflowError("runtime receipt recovery requires Waygate 1.0.37")
+        state["runtime_provenance"] = current_receipt
+        state = append_transition(
+            state,
+            "runtime_receipt_recovered",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "runtime_receipt": host_goal_stable_hash(WAYGATE_1036_RECEIPT)
+            },
+            output_artifact_hashes={
+                "runtime_receipt": host_goal_stable_hash(current_receipt)
+            },
+            metadata={
+                "from_plugin_version": "1.0.36",
+                "to_plugin_version": "1.0.37",
+            },
+        )
+        return self._commit_runtime_receipt_recovery(state_path, state)
+
+    @staticmethod
+    def _validate_runtime_receipt_recovery_identity(
+        state: dict[str, Any],
+    ) -> None:
+        delivery_id = state.get("delivery_id")
+        feature_slug = state.get("feature_slug")
+        if (
+            delivery_id != RUNTIME_RECEIPT_RECOVERY_TARGET_DELIVERY_ID
+            or feature_slug != RUNTIME_RECEIPT_RECOVERY_TARGET_FEATURE_SLUG
+            or (state.get("host_goal_owner") or {}).get("coordinator_thread_id")
+            != RUNTIME_RECEIPT_RECOVERY_TARGET_OWNER_THREAD_ID
+        ):
+            raise WorkflowError(
+                "runtime receipt recovery is restricted to the pinned Classroom delivery"
+            )
+        policy = state.get("multi_agent_policy") or {}
+        if (
+            policy.get("execution_authorization")
+            not in {"authorized", "degradation_authorized"}
+            or policy.get("authorization_scope") != "current_delivery"
+            or policy.get("authorization_delivery_id") != delivery_id
+            or policy.get("authorization_feature_slug") != feature_slug
+        ):
+            raise WorkflowError(
+                "runtime receipt recovery requires current-delivery multi-agent authorization"
+            )
+
+    @staticmethod
+    def _validate_runtime_receipt_recovery_chain(
+        state: dict[str, Any],
+    ) -> None:
+        events = (state.get("transition_journal") or {}).get("events") or []
+        if (
+            len(events) != RUNTIME_RECEIPT_RECOVERY_TARGET_JOURNAL_EVENT_COUNT
+            or (state.get("transition_journal") or {}).get("last_event_hash")
+            != RUNTIME_RECEIPT_RECOVERY_TARGET_JOURNAL_LAST_HASH
+        ):
+            raise WorkflowError(
+                "runtime receipt recovery Classroom journal anchor mismatch"
+            )
+        activation_matches = [
+            (index, event)
+            for index, event in enumerate(events)
+            if isinstance(event, dict)
+            and event.get("transition_name") == "delivery_activated"
+            and event.get("feature_slug") == state.get("feature_slug")
+            and event.get("runtime_version") == "1.0.34"
+            and event.get("metadata") == WAYGATE_1034_RECEIPT
+        ]
+        pointer_matches = [
+            (index, event)
+            for index, event in enumerate(events)
+            if isinstance(event, dict)
+            and event.get("transition_name") == "current_pointer_switched"
+            and event.get("feature_slug") == state.get("feature_slug")
+            and event.get("runtime_version") == "1.0.34"
+            and event.get("metadata") == {"delivery_id": state.get("delivery_id")}
+        ]
+        recovery_matches = [
+            (index, event)
+            for index, event in enumerate(events)
+            if isinstance(event, dict)
+            and event.get("transition_name") == "runtime_receipt_recovered"
+            and event.get("feature_slug") == state.get("feature_slug")
+            and event.get("runtime_version") == "1.0.36"
+            and event.get("input_artifact_hashes")
+            == {"runtime_receipt": host_goal_stable_hash(WAYGATE_1034_RECEIPT)}
+            and event.get("output_artifact_hashes")
+            == {"runtime_receipt": host_goal_stable_hash(WAYGATE_1036_RECEIPT)}
+            and event.get("metadata")
+            == {
+                "from_plugin_version": "1.0.34",
+                "to_plugin_version": "1.0.36",
+            }
+        ]
+        all_activations = [
+            event
+            for event in events
+            if isinstance(event, dict)
+            and event.get("transition_name") == "delivery_activated"
+        ]
+        all_recoveries = [
+            event
+            for event in events
+            if isinstance(event, dict)
+            and event.get("transition_name") == "runtime_receipt_recovered"
+        ]
+        if (
+            len(all_activations) != 1
+            or len(all_recoveries) != 1
+            or len(pointer_matches) != 1
+            or len(activation_matches) != 1
+            or len(recovery_matches) != 1
+            or pointer_matches[0][0] + 1 != activation_matches[0][0]
+            or activation_matches[0][0] >= recovery_matches[0][0]
+        ):
+            raise WorkflowError(
+                "runtime receipt recovery requires the exact delivery pointer, "
+                "1.0.34 activation, and 1.0.36 recovery chain"
+            )
+
+    def _commit_runtime_receipt_recovery(
+        self,
+        state_path: Path,
+        next_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        if (
+            hashlib.sha256(state_path.read_bytes()).hexdigest()
+            != RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256
+        ):
+            raise WorkflowError(
+                "frozen Classroom delivery state changed before commit"
+            )
+        snapshot = self._capture_runtime_recovery_snapshot(next_state)
+        candidate_path = state_path.with_name(
+            "state.json.runtime-receipt-v1037-candidate.tmp"
+        )
+        exchanged = False
+        concurrent_change_detected = False
+        candidate_sha256 = ""
+        try:
+            persisted = normalize_state_protocol(dict(next_state))
+            persisted["updated_at"] = (
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+            )
+            payload = (
+                json.dumps(persisted, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8")
+            try:
+                with candidate_path.open("xb") as candidate_file:
+                    candidate_file.write(payload)
+                    candidate_file.flush()
+                    os.fsync(candidate_file.fileno())
+            except FileExistsError as error:
+                raise WorkflowError(
+                    "stale runtime receipt recovery candidate exists"
+                ) from error
+            candidate_sha256 = hashlib.sha256(payload).hexdigest()
+            self._atomic_exchange(candidate_path, state_path)
+            exchanged = True
+            displaced_sha256 = hashlib.sha256(
+                candidate_path.read_bytes()
+            ).hexdigest()
+            if (
+                displaced_sha256
+                != RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256
+            ):
+                concurrent_change_detected = True
+                self._atomic_exchange(candidate_path, state_path)
+                exchanged = False
+                raise WorkflowError(
+                    "frozen Classroom delivery state changed during commit"
+                )
+            if hashlib.sha256(state_path.read_bytes()).hexdigest() != candidate_sha256:
+                raise WorkflowError("persisted recovery candidate hash mismatch")
+
+            from product_delivery_agent.artifact_store import ensure_delivery_layout
+
+            ensure_delivery_layout(self.project_root, persisted)
+            if hashlib.sha256(state_path.read_bytes()).hexdigest() != candidate_sha256:
+                concurrent_change_detected = True
+                raise WorkflowError(
+                    "frozen Classroom delivery state changed during commit"
+                )
+            if runtime_status(persisted, persisted) != "verified_waygate":
+                raise WorkflowError("persisted runtime identity is not verified_waygate")
+            if journal_integrity_errors(persisted):
+                raise WorkflowError(
+                    "persisted transition journal failed integrity validation"
+                )
+            candidate_path.unlink()
+            exchanged = False
+            return persisted
+        except Exception as error:
+            if concurrent_change_detected:
+                try:
+                    if exchanged and candidate_sha256:
+                        current_sha256 = hashlib.sha256(
+                            state_path.read_bytes()
+                        ).hexdigest()
+                        if current_sha256 == candidate_sha256:
+                            self._atomic_exchange(candidate_path, state_path)
+                            exchanged = False
+                    if candidate_path.is_file():
+                        candidate_path.unlink()
+                except (OSError, WorkflowError) as cleanup_error:
+                    raise WorkflowError(
+                        "runtime receipt recovery detected a concurrent write "
+                        f"but cleanup failed: {cleanup_error}"
+                    ) from error
+                if isinstance(error, WorkflowError):
+                    raise
+                raise WorkflowError(
+                    f"runtime receipt recovery concurrency handling failed: {error}"
+                ) from error
+            try:
+                if exchanged and candidate_sha256:
+                    current_sha256 = hashlib.sha256(
+                        state_path.read_bytes()
+                    ).hexdigest()
+                    if current_sha256 == candidate_sha256:
+                        self._atomic_exchange(candidate_path, state_path)
+                        exchanged = False
+                self._restore_runtime_recovery_snapshot(
+                    snapshot,
+                    excluded_paths={state_path},
+                )
+            except WorkflowError as rollback_error:
+                raise WorkflowError(
+                    f"runtime receipt recovery failed and rollback failed: {rollback_error}"
+                ) from error
+            if isinstance(error, WorkflowError):
+                raise
+            raise WorkflowError(
+                f"runtime receipt recovery persistence failed: {error}"
+            ) from error
+
+    def _capture_runtime_recovery_snapshot(
+        self,
+        state: dict[str, Any],
+    ) -> dict[Path, tuple[str, bytes | str, int] | None]:
+        workspace = self.project_root / ARTIFACT_ROOT
+        delivery_root = (
+            workspace
+            / "deliveries"
+            / str(state["feature_slug"])
+            / str(state["delivery_id"])
+        )
+        paths = [
+            workspace / "state.json",
+            delivery_root / "state.json",
+            delivery_root / "manifest.json",
+            workspace / "current.json",
+            workspace / "current",
+            workspace / "state.json.runtime-receipt-v1037-candidate.tmp",
+        ]
+        paths.extend(
+            path.with_suffix(path.suffix + ".tmp")
+            for path in paths
+            if path.suffix == ".json"
+        )
+        snapshot: dict[Path, tuple[str, bytes | str, int] | None] = {}
+        for path in paths:
+            if path.is_symlink():
+                snapshot[path] = ("symlink", os.readlink(path), 0)
+            elif path.is_file():
+                snapshot[path] = (
+                    "file",
+                    path.read_bytes(),
+                    stat.S_IMODE(path.stat().st_mode),
+                )
+            else:
+                snapshot[path] = None
+        return snapshot
+
+    @staticmethod
+    def _restore_runtime_recovery_snapshot(
+        snapshot: dict[Path, tuple[str, bytes | str, int] | None],
+        *,
+        excluded_paths: set[Path],
+    ) -> None:
+        errors: list[str] = []
+        for path, saved in snapshot.items():
+            if path in excluded_paths:
+                continue
+            try:
+                if saved is None:
+                    if path.is_symlink() or path.is_file():
+                        path.unlink()
+                    continue
+                kind, payload, mode = saved
+                if path.is_symlink() or path.is_file():
+                    path.unlink()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if kind == "symlink":
+                    path.symlink_to(str(payload))
+                else:
+                    restore_path = path.with_name(path.name + ".restore.tmp")
+                    restore_path.write_bytes(bytes(payload))
+                    os.chmod(restore_path, mode)
+                    os.replace(restore_path, path)
+            except OSError as error:
+                errors.append(f"{path}: {error}")
+        if errors:
+            raise WorkflowError(f"state rollback failed: {errors}")
+
+    @staticmethod
+    def _atomic_exchange(left: Path, right: Path) -> None:
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = getattr(libc, "renameat2", None)
+        if renameat2 is None:
+            raise WorkflowError("atomic RENAME_EXCHANGE is unavailable")
+        renameat2.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        renameat2.restype = ctypes.c_int
+        result = renameat2(
+            AT_FDCWD,
+            os.fsencode(left),
+            AT_FDCWD,
+            os.fsencode(right),
+            RENAME_EXCHANGE,
+        )
+        if result != 0:
+            error_number = ctypes.get_errno()
+            raise WorkflowError(
+                f"atomic state exchange failed: {os.strerror(error_number)}"
+            )
 
     def _migrate_current_legacy_layout(
         self,
@@ -3155,10 +3591,6 @@ class ProductDeliveryWorkflow:
         if human_decision_id:
             response["decision_id"] = human_decision_id
             response["should_prompt"] = should_prompt
-            if should_prompt:
-                response["host_goal_user_guidance"] = (
-                    build_host_goal_user_guidance(required_now=False)
-                )
         return response
 
     def record_host_goal_observation(
@@ -3202,17 +3634,7 @@ class ProductDeliveryWorkflow:
                 ),
             },
         )
-        persisted_state = write_state(self.project_root, next_state)
-        from product_delivery_agent.continuation import derive_continuation_status
-
-        guidance = derive_continuation_status(persisted_state).get(
-            "host_goal_user_guidance"
-        )
-        if guidance is None:
-            return persisted_state
-        response = deepcopy(persisted_state)
-        response["host_goal_user_guidance"] = guidance
-        return response
+        return write_state(self.project_root, next_state)
 
     def recover_stale_host_goal_checkpoint(
         self,

@@ -17,10 +17,6 @@ from product_delivery_agent.skill_gates import FILE_SKILLS, STAGE_SKILLS
 
 PLUGIN_NAME = "waygate-product-delivery"
 LEGACY_PLUGIN_NAMES = ("product-delivery-agent",)
-RETIRED_PLUGIN_SCRIPTS = (
-    "recover-blocked-host-goal-v1034.py",
-    "recover-blocked-host-goal-current-task-v1034.py",
-)
 
 
 def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
@@ -48,10 +44,6 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     ):
         directory.mkdir(parents=True, exist_ok=True)
     _remove_python_cache_files(plugin_root)
-    for retired_script in RETIRED_PLUGIN_SCRIPTS:
-        retired_path = scripts_dir / retired_script
-        if retired_path.is_file():
-            retired_path.unlink()
     _copy_runtime_package(runtime_dir)
 
     _write_json(manifest_dir / "plugin.json", _plugin_manifest())
@@ -67,6 +59,13 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     control_path = scripts_dir / "waygate-control.py"
     control_path.write_text(_control_script(), encoding="utf-8")
     control_path.chmod(0o755)
+    receipt_recovery_path = (
+        scripts_dir / "recover-runtime-receipt-v1036-to-v1037.py"
+    )
+    receipt_recovery_path.write_text(
+        _runtime_receipt_recovery_script(), encoding="utf-8"
+    )
+    receipt_recovery_path.chmod(0o755)
     (agents_dir / "openai.yaml").write_text(
         _openai_agent_config(), encoding="utf-8"
     )
@@ -875,17 +874,47 @@ def _skill_markdown() -> str:
         "第二次 `test_coverage_plan` 确认同时授权当前 delivery 创建和推进真实 Host Goal，"
         "runtime 使用独立 `host_goal_binding` 绑定 `delivery_id`、`feature_slug`、launch package、"
         "objective hash、binding generation 和宿主返回的稳定标识。\n\n"
-        "V1.0.35 起，runtime 在首次展示 post-handoff 用户确认问题时返回 "
-        "`host_goal_user_guidance` 预告；若 Host Goal 已是 `blocked`，continuation、session resume、"
-        "prompt、stop 和 final guard 返回 `required_now=true` 的强提醒。发现任何 "
-        "`host_goal_user_guidance` 时必须向用户原样展示其中的 `display_message`；自动 Goal turn "
-        "不得重复展示首次预告或重复提问。\n\n"
-        "必须严格区分四个操作：Host Goal `/goal resume` 用于恢复当前 Goal；`/goal clear` 只移除当前 "
-        "Host Goal，不会终止 Waygate 交付；Waygate `resume` 只恢复被 pause 的 delivery；"
-        "`$waygate-product-delivery abandon` 才会终止当前交付。不得把这些操作视为同义词，也不得自动替"
-        "用户恢复或清理 Host Goal。用户确认后继续复用原 `decision_id`；只有 fresh `get_goal` 观察到 "
-        "`status=active` 才能 resolve `human_wait`、清理可解除 blocker 并授权原 gate。仍为 `blocked` 时"
-        "保持等待并再次展示强提醒，已经提交的确认无需重答。\n\n"
+        "### V1.0.34 Emergency Blocked-Goal Recovery\n\n"
+        "仅 delivery `26a6049314fe48caa1e7d4dcdb45c171` 可使用 "
+        "`scripts/recover-blocked-host-goal-v1034.py` 解除 1.0.34 blocked-binding 死锁。"
+        "不得手改 `.product-delivery/state.json`，不得将该恢复器用于其他 delivery，"
+        "也不得借此登记正式评审或 closure。\n\n"
+        "必须回到冻结的 owner thread，先由用户恢复 Host Goal，再通过宿主 `get_goal` 取得 fresh、"
+        "精确匹配且 `status=active` 的 observation。将严格 v1 JSON 通过 stdin 交给恢复器；"
+        "先以 `dry_run=true` 执行并确认 state 字节未变化，再使用完全相同的 observation 以 "
+        "`dry_run=false` 执行一次。恢复器会锁定冻结 state 文件 SHA-256、owner thread 和原始 "
+        "`c7ee45f…f9234` runtime receipt，并验证 delivery、feature、binding nonce、objective hash、"
+        "Goal identifiers、journal、stage、完整 TASK、browser evidence、review/closure 状态，以及不存在 "
+        "`human_wait`、pending checkpoint 或 authorized transition。\n\n"
+        "正式恢复只归档原 binding、记录 observation、追加 hash-linked "
+        "`host_goal_blocked_binding_recovered` event，并把 binding 恢复为 `active`、`next_gate` 恢复为 "
+        "`multi_agent_test_implementation_review`。任何 identity、状态或 runtime package hash 不匹配都必须 "
+        "fail closed；重复执行必须拒绝。恢复后只运行 `status`、`inspect` 和 continuation guard 验证 "
+        "`must_continue`，本次紧急恢复不得继续后续 review 或 closure。\n\n"
+        "对于仍在 `implementation_in_progress` 的其他 1.0.34 delivery，如果 binding 为 `blocked` 且不存在 "
+        "`human_wait`、pending checkpoint 或 authorized transition，可使用 "
+        "`scripts/recover-blocked-host-goal-current-task-v1034.py`。它按请求锁定当前 delivery、feature、"
+        "binding nonce、objective hash、state 文件 SHA-256、owner thread 和当前 runtime receipt，"
+        "只接受 fresh、精确匹配且 `status=active` 的 `get_goal` observation，并只把 `next_gate` 恢复为"
+        "当前未完成 TASK。必须先 `dry_run=true` 且 state 字节不变，再用同一 observation "
+        "`dry_run=false` 一次；恢复后不得借此登记证据或完成 gate，只允许先验证 `status` / `inspect` / "
+        "continuation guard。\n\n"
+        "### V1.0.37 Runtime Receipt Recovery\n\n"
+        "仅当现有 active、nonterminal delivery 的 `runtime_provenance` 精确等于受支持的 1.0.36 "
+        "receipt，并且 journal 包含完整的 `1.0.34 delivery_activated -> 1.0.36 "
+        "runtime_receipt_recovered` 链时，才允许原位迁移到 1.0.37。必须回到 `host_goal_owner` "
+        "记录的原 coordinator thread，并保持 `CODEX_THREAD_ID`、binding owner、delivery、feature 和 "
+        "current-delivery multi-Agent policy 一致；不得从 spawned subagent 执行。\n\n"
+        "用户必须原样授权 `用户确认恢复 1.0.36 runtime receipt 到 1.0.37`。然后在原 owner thread "
+        "调用 `recover_runtime_receipt()`，或执行 `scripts/recover-runtime-receipt-v1036-to-v1037.py "
+        "--project-root <project-root> --authorization '用户确认恢复 1.0.36 runtime receipt 到 "
+        "1.0.37'`。恢复器在语义上只替换 runtime receipt 并追加一条 hash-linked "
+        "`runtime_receipt_recovered` event；原子写入会正常刷新协议 `updated_at` 和 canonical "
+        "delivery-layout mirrors，但 delivery、Host Goal、TASK、确认、评审和证据必须保持不变。"
+        "未知 receipt、journal 篡改、缺少 1.0.34->1.0.36 链、外来线程、终态 delivery 或重复迁移必须 "
+        "fail closed。此入口是严格的一次性兼容例外，不得作为通用升级器，也不得改用 "
+        "`recover_legacy_active_delivery()`、v1034 blocked-Goal 恢复器、Waygate `resume` 或 Host Goal "
+        "Resume 代替。\n\n"
         "handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；"
         "确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 "
         "`record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、"
@@ -1106,6 +1135,42 @@ def _control_script() -> str:
         "from product_delivery_agent.control import run_control_cli\n\n"
         "if __name__ == '__main__':\n"
         "    raise SystemExit(run_control_cli())\n"
+    )
+
+
+def _runtime_receipt_recovery_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""One-shot audited Waygate 1.0.36 to 1.0.37 receipt recovery."""\n\n'
+        "import argparse\n"
+        "import json\n"
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.workflow import (\n"
+        "    ProductDeliveryWorkflow,\n"
+        "    RUNTIME_RECEIPT_RECOVERY_MESSAGE,\n"
+        "    WorkflowError,\n"
+        ")\n\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--project-root', default='.')\n"
+        "parser.add_argument('--authorization', required=True)\n"
+        "args = parser.parse_args()\n"
+        "try:\n"
+        "    state = ProductDeliveryWorkflow(args.project_root).recover_runtime_receipt(\n"
+        "        args.authorization\n"
+        "    )\n"
+        "except WorkflowError as error:\n"
+        "    print(f'recovery rejected: {error}', file=sys.stderr)\n"
+        "    raise SystemExit(2)\n"
+        "print(json.dumps({\n"
+        "    'result': 'runtime_receipt_recovered',\n"
+        "    'delivery_id': state.get('delivery_id'),\n"
+        "    'feature_slug': state.get('feature_slug'),\n"
+        "    'runtime_provenance': state.get('runtime_provenance'),\n"
+        "    'required_authorization': RUNTIME_RECEIPT_RECOVERY_MESSAGE,\n"
+        "}, ensure_ascii=False, sort_keys=True))\n"
     )
 
 

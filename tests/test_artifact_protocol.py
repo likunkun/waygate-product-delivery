@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -8,11 +9,39 @@ from product_delivery_agent.artifact_protocol import (
     CORE_ARTIFACTS,
     initialize_workspace,
     load_state,
+    state_write_lock,
     write_state,
 )
 
 
 class ArtifactProtocolTests(unittest.TestCase):
+    def test_canonical_writer_waits_for_stable_workspace_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            state = initialize_workspace(project_root)
+            state["concurrent_marker"] = "serialized-writer"
+            started = threading.Event()
+            finished = threading.Event()
+
+            def writer() -> None:
+                started.set()
+                write_state(project_root, state)
+                finished.set()
+
+            with state_write_lock(project_root):
+                worker = threading.Thread(target=writer)
+                worker.start()
+                self.assertTrue(started.wait(1))
+                self.assertFalse(finished.wait(0.1))
+
+            self.assertTrue(finished.wait(1))
+            worker.join(timeout=1)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(
+                load_state(project_root)["concurrent_marker"],
+                "serialized-writer",
+            )
+
     def test_initialize_workspace_creates_artifact_root_state_and_templates(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

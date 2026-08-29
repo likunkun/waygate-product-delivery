@@ -1,4 +1,5 @@
 import json
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +21,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.35")
+            self.assertEqual(manifest["version"], "1.0.37")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -61,30 +62,27 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertFalse(legacy_root.exists())
 
-    def test_packaging_removes_retired_v1034_recovery_utilities(self):
+    def test_packaging_removes_python_cache_without_retiring_recovery_scripts(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             scripts_dir = (
                 repo_root / "plugins" / "waygate-product-delivery" / "scripts"
             )
-            scripts_dir.mkdir(parents=True)
-            retired_names = (
-                "recover-blocked-host-goal-v1034.py",
-                "recover-blocked-host-goal-current-task-v1034.py",
-            )
-            for name in retired_names:
-                (scripts_dir / name).write_text("retired", encoding="utf-8")
             cache_dir = scripts_dir / "__pycache__"
-            cache_dir.mkdir()
-            (cache_dir / "recover-blocked-host-goal-v1034.cpython-312.pyc").write_bytes(
-                b"retired bytecode"
-            )
+            cache_dir.mkdir(parents=True)
+            (cache_dir / "recovery.cpython-312.pyc").write_bytes(b"cache")
+            recovery_path = scripts_dir / "recover-blocked-host-goal-v1034.py"
+            recovery_path.write_text("frozen", encoding="utf-8")
 
             result = package_codex_plugin(repo_root)
 
-            for name in retired_names:
-                self.assertFalse((result["plugin_root"] / "scripts" / name).exists())
             self.assertFalse(cache_dir.exists())
+            self.assertEqual(
+                (result["plugin_root"] / "scripts" / recovery_path.name).read_text(
+                    "utf-8"
+                ),
+                "frozen",
+            )
 
     def test_package_includes_runtime_assets_and_v0_11_closure_assets(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -122,6 +120,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/stop-guard-result.md",
                 "scripts/validate-closure-artifact.py",
                 "scripts/waygate-control.py",
+                "scripts/recover-runtime-receipt-v1036-to-v1037.py",
                 "scripts/formal-gate-validation-plan.md",
                 "agents/openai.yaml",
                 "runtime/product_delivery_agent/finalization.py",
@@ -272,18 +271,20 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("host_turn_id", skill_markdown)
             self.assertIn("decision_id", skill_markdown)
             self.assertIn("Goal 工具不可用", skill_markdown)
-            self.assertNotIn("recover-blocked-host-goal-v1034.py", skill_markdown)
+            self.assertIn("recover-blocked-host-goal-v1034.py", skill_markdown)
             self.assertIn("不得使用 20 秒 watchdog", skill_markdown)
-            self.assertNotIn(
+            self.assertIn(
                 "recover-blocked-host-goal-current-task-v1034.py",
                 skill_markdown,
             )
-            self.assertIn("host_goal_user_guidance", skill_markdown)
-            self.assertIn("display_message", skill_markdown)
-            self.assertIn("`/goal resume`", skill_markdown)
-            self.assertIn("`/goal clear`", skill_markdown)
-            self.assertIn("Waygate `resume`", skill_markdown)
-            self.assertIn("`$waygate-product-delivery abandon`", skill_markdown)
+            self.assertIn("recover_runtime_receipt", skill_markdown)
+            self.assertIn("1.0.36", skill_markdown)
+            self.assertIn("1.0.37", skill_markdown)
+            self.assertIn(
+                "协议 `updated_at` 和 canonical delivery-layout mirrors",
+                skill_markdown,
+            )
+            self.assertNotIn("host_goal_user_guidance", skill_markdown)
             required_skills = (
                 root / "templates" / "required-skills-checklist.md"
             ).read_text("utf-8")
@@ -402,7 +403,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.35")
+            self.assertEqual(closure_template["plugin_version"], "1.0.37")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -475,9 +476,58 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.35.tar.gz",
+                "waygate-product-delivery-1.0.37.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
+
+    def test_distribution_retains_frozen_recoveries_and_excludes_cache_and_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            scripts_dir = (
+                repo_root / "plugins" / "waygate-product-delivery" / "scripts"
+            )
+            scripts_dir.mkdir(parents=True)
+            source_scripts = (
+                "recover-blocked-host-goal-v1034.py",
+                "recover-blocked-host-goal-current-task-v1034.py",
+            )
+            for name in source_scripts:
+                source = (
+                    Path(__file__).resolve().parents[1]
+                    / "plugins"
+                    / "waygate-product-delivery"
+                    / "scripts"
+                    / name
+                )
+                (scripts_dir / name).write_bytes(source.read_bytes())
+            cache_dir = scripts_dir / "__pycache__"
+            cache_dir.mkdir()
+            (cache_dir / "recovery.pyc").write_bytes(b"cache")
+
+            archive_path = build_codex_plugin_distribution(repo_root)
+
+            with tarfile.open(archive_path, "r:gz") as archive:
+                names = set(archive.getnames())
+                for name in source_scripts:
+                    self.assertIn(
+                        f"waygate-product-delivery/scripts/{name}", names
+                    )
+                self.assertIn(
+                    "waygate-product-delivery/scripts/"
+                    "recover-runtime-receipt-v1036-to-v1037.py",
+                    names,
+                )
+                self.assertFalse(
+                    any("__pycache__" in name or name.endswith(".pyc") for name in names)
+                )
+                skill_file = archive.extractfile(
+                    "waygate-product-delivery/skills/"
+                    "waygate-product-delivery/SKILL.md"
+                )
+                self.assertIsNotNone(skill_file)
+                skill_markdown = skill_file.read().decode("utf-8")
+                self.assertNotIn("host_goal_user_guidance", skill_markdown)
+                self.assertIn("recover_runtime_receipt", skill_markdown)
 
     def test_lifecycle_is_dormant_by_default_and_start_stop_scoped(self):
         with tempfile.TemporaryDirectory() as tmp:
