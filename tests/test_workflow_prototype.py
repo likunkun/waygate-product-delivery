@@ -112,7 +112,6 @@ class WorkflowPrototypeTests(unittest.TestCase):
             self.assertEqual(
                 started["required_skill_gates"]["active_mode_startup"],
                 [
-                    "superpowers:using-superpowers",
                     "planning-with-files",
                     "waygate-product-delivery",
                 ],

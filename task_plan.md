@@ -677,6 +677,16 @@ Waygate Product Delivery `1.0.28` lightweight prototype-driven implementation cl
 - [x] Revert accidental V2 implementation changes and generated OpenCode package assets after user clarified this turn was planning-only.
 - **Status:** complete for planning only; no V2 OpenCode runtime/plugin implementation is retained.
 
+### Phase 50 - Waygate Product Delivery V1.0.38 Generic Skill Retirement
+
+- [x] Add RED coverage for the reduced startup requirements, retired empty stages, dependency behavior, generated assets, and release metadata.
+- [x] Remove `superpowers:using-superpowers`, `agent_startup`, and `refinement`/`code-simplifier` from current Waygate policy.
+- [x] Update current documentation and UI verification guidance without rewriting frozen historical evidence.
+- [x] Regenerate the plugin runtime, templates, manifest, marketplace metadata, and distribution archive at `1.0.38`.
+- [x] Validate the packaged Skill, run focused and full regression verification, and install the updated plugin.
+- [x] Disable the four retired local Skills through Codex user configuration after the updated dependency check passes.
+- **Status:** complete; installed version `1.0.38+codex.20260830083909` and retired Skills are absent from new-session prompt input.
+
 ## Out Of Scope For V0.1
 
 - No Waygate source code changes.

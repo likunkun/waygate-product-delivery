@@ -50,6 +50,11 @@ The script runs:
 Missing required skills block installation. Missing file-specific skills for `.pdf`,
 `.docx`, or `.pptx` only produce warnings because they are conditional.
 
+Version 1.0.38 no longer requires `superpowers:using-superpowers` or
+`code-simplifier`. Codex-native Skill routing handles generic selection, and code
+refinement is verified through project standards, tests, review, and completion
+evidence. Skill authoring uses the system `skill-creator` workflow.
+
 After installation, start a new Codex thread so Codex loads the updated plugin.
 
 Version 1.0.34 writes prototype design bundle v2 for new or reopened UI prototypes. Existing v1 bundles remain readable and are not rewritten during installation; an already confirmed active delivery is revalidated under v2 only after its prototype is modified, replaced, or explicitly reopened.

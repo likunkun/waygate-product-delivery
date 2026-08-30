@@ -6,7 +6,7 @@ from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.0.37"
+EXPECTED_VERSION = "1.0.38"
 
 
 class ReleaseConsistencyV1011Tests(unittest.TestCase):
@@ -89,6 +89,10 @@ class ReleaseConsistencyV1011Tests(unittest.TestCase):
         self.assertIn("baseline_entry_path", changelog)
         self.assertIn("V1.1 多 Agent 评审编排产品化", changelog)
         self.assertIn("V2.0 外部工作流集成", changelog)
+        self.assertIn("superpowers:using-superpowers", changelog)
+        self.assertIn("code-simplifier", changelog)
+        self.assertIn("skill-creator", changelog)
+        self.assertIn("axe", changelog)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,7 @@
 
 | Gate | Required skills |
 | --- | --- |
-| active_mode_startup | `superpowers:using-superpowers`, `planning-with-files`, `waygate-product-delivery` |
-| agent_startup | `superpowers:using-superpowers` |
+| active_mode_startup | `planning-with-files`, `waygate-product-delivery` |
 | long_running_recovery | `planning-with-files` |
 | open_spec_planning | `open-spec` |
 | product_blueprint | `superpowers:brainstorming` |
@@ -16,7 +15,6 @@
 | pre_handoff_verification | `superpowers:verification-before-completion` |
 | implementation | `superpowers:test-driven-development`, `superpowers:executing-plans` or `superpowers:subagent-driven-development` |
 | rework | `superpowers:systematic-debugging` |
-| refinement | `code-simplifier` |
 | review_request | `superpowers:requesting-code-review` |
 | review_response | `superpowers:receiving-code-review` |
 | feature_closure | `open-spec-feature-closure`, `superpowers:verification-before-completion` |

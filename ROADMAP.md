@@ -22,7 +22,7 @@ Key rules:
 - Only UI projects enable a local 1:1 HTML prototype gate.
 - Non-UI projects use a behavior contract confirmation gate instead of an HTML prototype.
 - Every project must pass product blueprint, version scope, test coverage audit, and Codex Goal handoff.
-- Waygate's recommended baseline skills must be assigned to the relevant workflow stages.
+- Specialized workflow skills must be assigned to relevant stages; generic Skill routing and code refinement remain Codex-native concerns.
 - V1 produces roadmap and version-planning artifacts first; implementation design, detailed interfaces, and runtime automation come later.
 
 ## Version Plan
@@ -77,7 +77,6 @@ Skill allocation:
 
 | Stage | Skills |
 | --- | --- |
-| Agent startup | `superpowers:using-superpowers` |
 | Long-running work and recovery | `planning-with-files` |
 | Product blueprint and scope shaping | `superpowers:brainstorming` |
 | Version plan and implementation plan | `superpowers:writing-plans` |
@@ -87,7 +86,6 @@ Skill allocation:
 | Pre-handoff evidence expectations | `superpowers:verification-before-completion` |
 | Later implementation execution | `superpowers:test-driven-development`, `superpowers:executing-plans`, or `superpowers:subagent-driven-development` |
 | Later rework and failure analysis | `superpowers:systematic-debugging` |
-| Later refinement | `code-simplifier` |
 | Later review loop | `superpowers:requesting-code-review` and `superpowers:receiving-code-review` |
 | Document-specific work | `pdf`, `docx`, and `pptx` only when the corresponding file type is involved |
 

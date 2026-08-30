@@ -2671,3 +2671,26 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Independent code review found four Important issues and no Critical issues. Added canonical baseline/conformance artifact reload and hash validation, corrected reused-task prompt cursors, and bounded PNG file/pixel/decompression resources; preserved annotation-only compatibility and no-side-effects-on-failed-handoff behavior.
 - Independent re-review found no remaining Critical, Important, or Minor issues and returned `Ready to merge: Yes`; its 42 focused baseline/conformance/supersession/launch tests passed.
 - Final post-review verification: 399 tests passed in 89.388s; source and packaged runtime compilation, plugin structural validation, closure CLI smoke, distribution contents, and `git diff --check` all passed.
+
+### V1.0.38 Generic Skill Retirement
+
+- User approved the full migration and per-Skill configuration disablement approach.
+- Loaded current `skill-creator`, planning, TDD, and verification guidance.
+- CodeGraph confirmed the authoritative edit surfaces: `skill_gates.py`, generated startup/Skill content in `plugin_packaging.py`, dependency tests, workflow startup assertions, and release consistency tests.
+- Preserved the pre-existing untracked V1.0.37 recovery script.
+- RED verification produced 10 expected failures against the old Skill gates, generated content, and `1.0.37` metadata.
+- Removed the generic startup/refinement gates, advanced current runtime/package metadata to `1.0.38`, and updated current README, roadmap, installation, UI evidence, and changelog guidance.
+- Regenerated the repository plugin and `dist/waygate-product-delivery-1.0.38.tar.gz`.
+- Focused Skill/dependency/workflow/packaging tests passed: 39 tests.
+- Version-focused verification initially exposed five V1.0.37 receipt-recovery tests that assumed the current runtime was still V1.0.37. Root cause was the intentionally version-pinned recovery contract, not the Skill migration.
+- Kept the recovery implementation pinned and added explicit coverage that V1.0.38 refuses to replay it; historical recovery tests now run under a pinned V1.0.37 fixture. Focused release/recovery tests passed: 19 tests.
+- First four-session Codex routing smoke attempt failed before model execution because `codex exec` does not accept the top-level `-a` shorthand. The active config already uses approval `Never`; retry without that unsupported flag.
+- Skill Creator `quick_validate.py` and plugin structural validation passed; the combined focused suite passed 58 tests.
+- Full regression verification passed 527 tests in 150.822 seconds; source and packaged runtime compilation, `git diff --check`, dependency checking, and distribution content checks also passed.
+- Installed `waygate-product-delivery` as the unique enabled Product Delivery plugin at `1.0.38+codex.20260830083909`; post-install dependency/plugin-selection checks passed.
+- Added four `enabled = false` entries to `/home/lichangkun/.codex/config.toml`. TOML parsing and Codex Doctor config loading passed.
+- `codex debug prompt-input` confirmed all four retired Skills are absent while `skill-creator`, `ui-ux-pro-max`, `webapp-testing`, and `waygate-product-delivery` remain visible.
+- Four ephemeral read-only Codex routing smokes confirmed the UI replacements, native code simplification path, `skill-creator` validation command, and installed Waygate status route. The local Codex process emitted pre-existing refresh-token/MCP 401 warnings but completed every smoke with exit code 0.
+- Final source and packaged CodeGraph inspection confirmed the reduced stage map and `PLUGIN_VERSION=1.0.38` on both sides of the packaging boundary.
+- One final visibility command used the unsupported combination `codex --strict-config debug`; Codex rejected it before rendering prompt input. Re-run visibility with the supported `codex debug prompt-input` command while retaining separate TOML parsing and Doctor config checks.
+- **Status:** complete; final verification evidence is recorded in the handoff response.

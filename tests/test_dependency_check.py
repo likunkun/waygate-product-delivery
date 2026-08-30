@@ -112,6 +112,10 @@ class DependencyCheckTests(unittest.TestCase):
 
     def test_check_passes_with_required_skills_and_warns_optional_file_skills(self):
         module = load_dependency_module()
+        self.assertNotIn(
+            "superpowers:using-superpowers", module.REQUIRED_SKILL_NAMES
+        )
+        self.assertNotIn("code-simplifier", module.REQUIRED_SKILL_NAMES)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex_home = root / "codex"
@@ -188,7 +192,9 @@ class DependencyCheckTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing_required", result.stdout)
-            self.assertIn("superpowers:using-superpowers", result.stdout)
+            self.assertIn("planning-with-files", result.stdout)
+            self.assertNotIn("superpowers:using-superpowers", result.stdout)
+            self.assertNotIn("code-simplifier", result.stdout)
 
     def test_install_script_runs_dependency_check_before_packaging(self):
         install_script = (REPO_ROOT / "scripts" / "install_waygate_product_delivery.sh").read_text(

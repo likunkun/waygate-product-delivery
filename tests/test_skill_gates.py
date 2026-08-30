@@ -16,15 +16,12 @@ class SkillGateTests(unittest.TestCase):
         self.assertEqual(
             required_skills_for_stage("active_mode_startup"),
             [
-                "superpowers:using-superpowers",
                 "planning-with-files",
                 "waygate-product-delivery",
             ],
         )
-        self.assertIn(
-            "superpowers:using-superpowers",
-            required_skills_for_stage("agent_startup"),
-        )
+        self.assertEqual(required_skills_for_stage("agent_startup"), [])
+        self.assertEqual(required_skills_for_stage("refinement"), [])
         self.assertIn(
             "superpowers:brainstorming",
             required_skills_for_stage("product_blueprint"),
@@ -75,7 +72,7 @@ class SkillGateTests(unittest.TestCase):
     def test_active_mode_startup_requires_planning_with_files(self):
         result = validate_skill_gate(
             "active_mode_startup",
-            ["superpowers:using-superpowers", "waygate-product-delivery"],
+            ["waygate-product-delivery"],
         )
 
         self.assertFalse(result.passed)

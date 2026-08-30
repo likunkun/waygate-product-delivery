@@ -1,5 +1,15 @@
 # Findings
 
+## 2026-08-30 V1.0.38 Generic Skill Retirement
+
+- `superpowers:using-superpowers` and `code-simplifier` are current Waygate hard dependencies because the dependency checker flattens every `STAGE_SKILLS` entry.
+- `web-design-guidelines` and `superpowers:writing-skills` have no current operational references in Waygate; their replacements are existing UI evidence gates and the system `skill-creator` workflow.
+- Generated plugin runtime and templates are derived from `src/product_delivery_agent`; source must change first and packaging must regenerate repository artifacts.
+- The two Superpowers Skills are inside a Git-managed installation, so per-Skill `skills.config` disablement is safer than deleting directories.
+- Historical Open Spec, state, progress, and roadmap records may retain retired names; only current operational surfaces and dependency checks must stop requiring them.
+- The working tree already contains the unrelated untracked recovery script `plugins/waygate-product-delivery/scripts/recover-blocked-host-goal-current-task-v1037.py`; preserve it unchanged.
+- The audited `1.0.36 -> 1.0.37` receipt recovery is deliberately version-pinned. V1.0.38 must reject replaying it; its historical behavior remains covered by tests with a pinned V1.0.37 runtime fixture.
+
 ## 2026-08-15 V1.0.28 Prototype-Driven Implementation Closure
 
 - Approved direction: lightweight closed loop, not a new all-page pixel-comparison platform.

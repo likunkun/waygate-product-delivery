@@ -31,11 +31,9 @@ class SkillGateResult:
 
 STAGE_SKILLS: dict[str, tuple[str, ...]] = {
     "active_mode_startup": (
-        "superpowers:using-superpowers",
         "planning-with-files",
         "waygate-product-delivery",
     ),
-    "agent_startup": ("superpowers:using-superpowers",),
     "long_running_recovery": ("planning-with-files",),
     "open_spec_planning": ("open-spec",),
     "product_blueprint": ("superpowers:brainstorming",),
@@ -51,7 +49,6 @@ STAGE_SKILLS: dict[str, tuple[str, ...]] = {
         "superpowers:executing-plans|superpowers:subagent-driven-development",
     ),
     "rework": ("superpowers:systematic-debugging",),
-    "refinement": ("code-simplifier",),
     "review_request": ("superpowers:requesting-code-review",),
     "review_response": ("superpowers:receiving-code-review",),
     "feature_closure": (

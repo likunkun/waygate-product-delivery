@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.37-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.38-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -30,7 +30,7 @@ Waygate Product Delivery 把这些失败模式变成明确的门禁。
 | --- | --- |
 | 仅显式参数控制 | 生命周期变更必须显式调用 `$waygate-product-delivery` 并提交严格 JSON；普通聊天不会修改交付状态。 |
 | 按 delivery 隔离证据 | `.product-delivery/state.json` 可跨上下文恢复，权威 artifacts 存储在 `deliveries/<feature_slug>/<delivery_id>/`。 |
-| 强制技能门禁 | 按阶段检查 Product Delivery、Open Spec、planning files、UI/UX、浏览器测试和闭包技能。 |
+| 强制技能门禁 | 按阶段检查产品专用工作流；通用技能路由和代码精炼由 Codex 原生能力与仓库验证承担。 |
 | 分层产品确认 | 先确认需求范围和 UI 原型或非 UI 行为契约，再生成详细测试设计。 |
 | 原型设计完整性 | 纯净产品表面必须继承全局产品上下文，评审标注只能放在独立评审页。 |
 | 原型绑定 TASK | 每个可见 UI TASK 都绑定冻结原型的精确切片，并在完成前通过逐任务语义与视觉一致性检查。 |
@@ -121,7 +121,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.37.tar.gz
+dist/waygate-product-delivery-1.0.38.tar.gz
 ```
 
 ## Codex 使用方式
@@ -172,6 +172,8 @@ flowchart LR
 ### 原型门禁与评审分工
 
 UI 原型生成后，先调用 `record_ui_prototype_design_bundle()`，再进入多 Agent 产品/场景评审。确定性门禁会重建固定 schema 的 semantic snapshot 与 browser-preflight probe artifact，逐个关键 state/viewport 校验 snapshot、截图和 region identity hash，不接受调用方自报 pass flag。全局框架、导航、视觉语言、信息密度、组件体系和响应式行为六个维度都必须绑定结构化、带 hash 的设计证据 artifact。
+
+UI 设计判断继续使用 `ui-ux-pro-max`，浏览器可见行为使用 `webapp-testing`。可访问性与交互结论优先采用仓库已有 lint、可用时的 axe 检查、键盘路径验证和浏览器 E2E 证据，不再依赖通用的只读评审 Skill。
 
 新建或重开的原型使用 bundle v2 和 `acceptance_content_separation`，并绑定 review-only 的 `prototype-acceptance-content-scan-v1` 报告。高保真产品原型只能包含真实产品内容；验收标准、测试步骤/预期结果、评审状态、证据路径和开发说明必须移到 review-only artifact。可能属于真实产品的文案只有映射到具备角色、触发和生命周期的 `intended_product_ui_callout` 后才能保留；不可见 `data-testid` 可以继续使用。内容污染属于原型完整性硬错误，不得进入视觉偏差裁决。
 

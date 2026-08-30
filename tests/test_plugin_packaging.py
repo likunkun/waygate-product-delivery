@@ -21,7 +21,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.37")
+            self.assertEqual(manifest["version"], "1.0.38")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -153,6 +153,8 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("旧 `stop()` 已退役", skill_markdown)
             self.assertNotIn("说 `启动交付`", skill_markdown)
             self.assertIn("planning-with-files", skill_markdown)
+            self.assertNotIn("superpowers:using-superpowers", skill_markdown)
+            self.assertNotIn("code-simplifier", skill_markdown)
             self.assertIn("open-spec", skill_markdown)
             self.assertIn("ui-ux-pro-max", skill_markdown)
             self.assertIn("webapp-testing", skill_markdown)
@@ -290,6 +292,10 @@ class PluginPackagingTests(unittest.TestCase):
             ).read_text("utf-8")
             self.assertIn("planning-with-files", required_skills)
             self.assertIn("open-spec-feature-closure", required_skills)
+            self.assertNotIn("agent_startup", required_skills)
+            self.assertNotIn("refinement", required_skills)
+            self.assertNotIn("superpowers:using-superpowers", required_skills)
+            self.assertNotIn("code-simplifier", required_skills)
             scenario_template = (
                 root / "templates" / "scope-scenario-matrix.md"
             ).read_text("utf-8")
@@ -301,6 +307,8 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("ui_change_type", ui_template)
             self.assertIn("continuity_mapping", ui_template)
             self.assertIn("product_baseline", ui_template)
+            self.assertIn("axe", ui_template)
+            self.assertIn("keyboard", ui_template)
             self.assertNotIn("confirm_ui_prototype", ui_template)
             startup_template = (
                 root / "templates" / "startup-checklist.md"
@@ -312,6 +320,7 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("review_annotation_set", startup_template)
             self.assertIn("CODEX_THREAD_ID", startup_template)
             self.assertIn("prepare_host_goal_owner_claim", startup_template)
+            self.assertNotIn("superpowers:using-superpowers", startup_template)
             self.assertLess(
                 startup_template.index("product_baseline"),
                 startup_template.index("planned E2E"),
@@ -403,7 +412,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.37")
+            self.assertEqual(closure_template["plugin_version"], "1.0.38")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -476,7 +485,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.37.tar.gz",
+                "waygate-product-delivery-1.0.38.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

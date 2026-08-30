@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.37-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.38-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -30,7 +30,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | --- | --- |
 | Explicit-only lifecycle control | Lifecycle changes require `$waygate-product-delivery` with a strict JSON request; ordinary chat never mutates delivery state. |
 | Delivery-isolated evidence | `.product-delivery/state.json` survives compaction while authoritative artifacts live under `deliveries/<feature_slug>/<delivery_id>/`. |
-| Required skill gates | Product Delivery, Open Spec, planning files, UI/UX, browser testing, and closure skills are checked by stage. |
+| Required skill gates | Product-specific workflows are checked by stage; generic skill routing and code refinement use Codex-native behavior plus repository verification. |
 | Layered product confirmation | Product scope and the UI prototype or non-UI behavior contract are confirmed before detailed test design. |
 | Prototype design integrity | Clean product surfaces must inherit the global product context, while review annotations remain on an external review-only surface. |
 | Prototype-bound task execution | Every visible UI task binds an exact frozen prototype slice and must pass per-task semantic and visual conformance before completion. |
@@ -123,7 +123,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.37.tar.gz
+dist/waygate-product-delivery-1.0.38.tar.gz
 ```
 
 ## Use In Codex
@@ -174,6 +174,8 @@ The key rule is simple: artifacts and state are authoritative; chat summaries ar
 ### Prototype Gate And Review
 
 For UI work, `record_ui_prototype_design_bundle()` runs before multi-agent product/scenario review. The deterministic gate rebuilds fixed-schema semantic snapshots and browser-preflight probe artifacts, verifies their snapshot/screenshot/region hashes for every required state and viewport, and ignores caller-reported pass flags. Each global shell, navigation, visual language, information density, component system, and responsive behavior row must bind a structured, hashed design-evidence artifact.
+
+UI review uses `ui-ux-pro-max` for design judgment and `webapp-testing` for browser-visible behavior. Accessibility and interaction claims should prefer repository-native lint and axe checks where available, keyboard-path verification, and browser E2E evidence instead of a generic review-only Skill.
 
 New or reopened prototypes use bundle v2 and `acceptance_content_separation`. A review-only `prototype-acceptance-content-scan-v1` report covers static and rendered DOM, semantic text, attributes, resources, and review modes. High-fidelity prototypes may contain only real product content: acceptance criteria, test instructions/results, review status, evidence paths, and developer notes must stay in review-only artifacts. Ambiguous real product copy is retained only when mapped to a lifecycle-bound `intended_product_ui_callout`; invisible `data-testid` selectors remain allowed. Contamination is a hard integrity failure and never enters visual-deviation adjudication.
 

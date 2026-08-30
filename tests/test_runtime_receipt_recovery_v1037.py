@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 from product_delivery_agent.artifact_protocol import (
     ARTIFACT_ROOT,
-    current_runtime_provenance,
     load_state,
     write_state,
 )
@@ -37,12 +36,19 @@ WAYGATE_1036_RECEIPT = {
         "8fbaf18d7dcc83e5363325e2b9e5661e248b3293d288cff09b3b385ae8776f72"
     ),
 }
+WAYGATE_1037_RECEIPT = {
+    "plugin_name": "waygate-product-delivery",
+    "plugin_version": "1.0.37",
+    "package_root_sha256": "1" * 64,
+}
 
 
 @patch.dict(os.environ, {"CODEX_THREAD_ID": OWNER_THREAD_ID})
 class RuntimeReceiptRecoveryV1037Tests(unittest.TestCase):
     @contextmanager
-    def _pin_fixture_as_recovery_target(self, project_root: Path):
+    def _pin_fixture_as_recovery_target(
+        self, project_root: Path, *, pin_v1037_runtime: bool = True
+    ):
         state_path = project_root / ARTIFACT_ROOT / "state.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
         journal = state["transition_journal"]
@@ -63,7 +69,17 @@ class RuntimeReceiptRecoveryV1037Tests(unittest.TestCase):
                 "last_event_hash"
             ],
         ):
-            yield
+            if not pin_v1037_runtime:
+                yield
+                return
+            with patch(
+                "product_delivery_agent.workflow.current_runtime_provenance",
+                return_value=WAYGATE_1037_RECEIPT,
+            ), patch(
+                "product_delivery_agent.artifact_protocol.current_runtime_provenance",
+                return_value=WAYGATE_1037_RECEIPT,
+            ), patch("product_delivery_agent.workflow.PLUGIN_VERSION", "1.0.37"):
+                yield
 
     @staticmethod
     def _rehash_journal(state: dict) -> None:
@@ -206,7 +222,7 @@ class RuntimeReceiptRecoveryV1037Tests(unittest.TestCase):
                     project_root
                 ).recover_runtime_receipt(RECOVERY_MESSAGE)
 
-            self.assertEqual(recovered["runtime_provenance"], current_runtime_provenance())
+            self.assertEqual(recovered["runtime_provenance"], WAYGATE_1037_RECEIPT)
             self.assertEqual(recovered["transition_journal"]["events"][:-1], prior_events)
             event = recovered["transition_journal"]["events"][-1]
             self.assertEqual(event["transition_name"], "runtime_receipt_recovered")
@@ -223,10 +239,26 @@ class RuntimeReceiptRecoveryV1037Tests(unittest.TestCase):
             actual_protected.pop("transition_journal")
             actual_protected.pop("updated_at", None)
             self.assertEqual(actual_protected, protected)
-            self.assertEqual(
-                ProductDeliveryWorkflow(project_root).status()["runtime_status"],
-                "verified_waygate",
-            )
+            with self._pin_fixture_as_recovery_target(project_root):
+                self.assertEqual(
+                    ProductDeliveryWorkflow(project_root).status()["runtime_status"],
+                    "verified_waygate",
+                )
+
+    def test_v1038_runtime_does_not_replay_the_v1037_recovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            self._write_1036_state(project_root)
+
+            with self._pin_fixture_as_recovery_target(
+                project_root, pin_v1037_runtime=False
+            ):
+                with self.assertRaisesRegex(
+                    WorkflowError, "requires Waygate 1.0.37"
+                ):
+                    ProductDeliveryWorkflow(project_root).recover_runtime_receipt(
+                        RECOVERY_MESSAGE
+                    )
 
     def test_rejects_valid_chain_for_non_classroom_delivery(self):
         with tempfile.TemporaryDirectory() as tmp:

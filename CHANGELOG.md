@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.38
+
+- Retires `superpowers:using-superpowers` and `code-simplifier` as Waygate hard dependencies; active startup now requires only `planning-with-files` and `waygate-product-delivery`, while the empty `agent_startup` and `refinement` stages are removed.
+- Keeps specialized workflow Skills and deterministic evidence gates, while relying on Codex-native routing and repository tests/reviews for generic code refinement.
+- Uses the system `skill-creator` workflow for Skill authoring and validation instead of `superpowers:writing-skills`.
+- Keeps UI design judgment in `ui-ux-pro-max` and browser verification in `webapp-testing`, with repository-native lint, axe, keyboard-path, and browser E2E evidence preferred for accessibility and interaction claims.
+- Preserves frozen historical Open Spec, state, progress, recovery, and roadmap records without treating their retired Skill names as current dependencies.
+
 ## 1.0.37
 
 - Restores the 1.0.34 enhanced runtime behavior from `c49e902`, including both frozen blocked-Goal recovery utilities, while preserving the 1.0.35 release history.

@@ -268,7 +268,6 @@ def _write_templates(templates_dir: Path) -> None:
         ),
         "startup-checklist.md": (
             "# Product Delivery Startup Checklist\n\n"
-            "- Invoke `superpowers:using-superpowers` before any task action.\n"
             "- Invoke `planning-with-files` and run its session catchup.\n"
             "- Read or create `task_plan.md`, `findings.md`, and `progress.md`.\n"
             "- Create or recover `.product-delivery/state.json`.\n"
@@ -309,6 +308,7 @@ def _write_templates(templates_dir: Path) -> None:
             "- Expected path: `docs/prototypes/<feature-slug>-prototype.html`.\n"
             "- Alternative path: `.product-delivery/artifacts/<feature-slug>-prototype.html`.\n"
             "- Use `ui-ux-pro-max` for prototype review and `webapp-testing` for browser verification.\n"
+            "- Prefer repository-native lint and axe checks when available; verify keyboard paths and browser E2E evidence.\n"
             "- Record `ui_change_type`: `incremental_existing_surface`, "
             "`new_surface_in_existing_product`, `greenfield_ui`, or `non_ui`.\n"
             "- Incremental existing-surface UI must include `baseline_feature_slug`, "
@@ -729,7 +729,7 @@ def _skill_markdown() -> str:
         "delivery、feature、原型、review 和确认；不得重新 start 当前 delivery，也不得手改 state。"
         "旧模型 API 只保留一版明确退役错误。\n\n"
         "active mode 下必须先使用这些 baseline skills："
-        "`superpowers:using-superpowers`、`planning-with-files`、`waygate-product-delivery`。"
+        "`planning-with-files`、`waygate-product-delivery`。"
         "`planning-with-files` 必须执行 session catchup，并读取或创建 "
         "`task_plan.md`、`findings.md`、`progress.md`。\n\n"
         "## Blocking Gates\n\n"
