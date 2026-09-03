@@ -21,7 +21,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.38")
+            self.assertEqual(manifest["version"], "1.0.39")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -120,6 +120,8 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/stop-guard-result.md",
                 "scripts/validate-closure-artifact.py",
                 "scripts/waygate-control.py",
+                "scripts/capture-ui-evidence.py",
+                "scripts/report-ui-evidence-performance.py",
                 "scripts/recover-runtime-receipt-v1036-to-v1037.py",
                 "scripts/formal-gate-validation-plan.md",
                 "agents/openai.yaml",
@@ -133,6 +135,10 @@ class PluginPackagingTests(unittest.TestCase):
                 "runtime/product_delivery_agent/journey_slice_tasks.py",
                 "runtime/product_delivery_agent/prototype_design.py",
                 "runtime/product_delivery_agent/ui_prototype.py",
+                "runtime/product_delivery_agent/ui_evidence.py",
+                "templates/playwright-capture-adapter.mjs",
+                "templates/ui-capture-manifest.json",
+                "templates/post-implementation-review-batch.json",
                 "policies/lifecycle.json",
                 "policies/upgrade-retention.md",
                 "policies/waygate-controller-readonly.md",
@@ -191,6 +197,20 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("acceptance_content_separation", skill_markdown)
             self.assertIn("高保真产品原型只能包含真实产品内容", skill_markdown)
             self.assertIn("prototype-acceptance-content-scan-v1", skill_markdown)
+            self.assertIn("V1.0.39 Trusted UI Capture", skill_markdown)
+            self.assertIn("prepare_ui_evidence_run", skill_markdown)
+            self.assertIn("record_ui_evidence_run", skill_markdown)
+            self.assertIn("iteration", skill_markdown)
+            self.assertIn("standard", skill_markdown)
+            self.assertIn("strict", skill_markdown)
+            self.assertIn("plan.required_units", skill_markdown)
+            self.assertIn("--project-module", skill_markdown)
+            self.assertIn("record_task_executed_evidence", skill_markdown)
+            self.assertIn("record_task_prototype_conformance", skill_markdown)
+            self.assertIn("record_executed_browser_evidence()", skill_markdown)
+            self.assertIn("prepare_post_implementation_review_batch", skill_markdown)
+            self.assertIn("新的空 staging 目录", skill_markdown)
+            self.assertIn("不得重放 stale plan", skill_markdown)
             self.assertIn("不得进入视觉偏差裁决", skill_markdown)
             self.assertIn("门禁验证客观事实", skill_markdown)
             self.assertIn("多 Agent 判断设计质量", skill_markdown)
@@ -412,7 +432,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.38")
+            self.assertEqual(closure_template["plugin_version"], "1.0.39")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -426,6 +446,90 @@ class PluginPackagingTests(unittest.TestCase):
             )
             self.assertEqual(closure_template["required_commands"][0]["exit_code"], 0)
             self.assertIn("supporting_validators", closure_template)
+            capture_template = json.loads(
+                (root / "templates" / "ui-capture-manifest.json").read_text(
+                    "utf-8"
+                )
+            )
+            self.assertEqual(capture_template["schema_version"], "capture-run-v1")
+            self.assertIn("capture_run_ref", capture_template)
+            self.assertIn("actor_identities", capture_template)
+            unit = capture_template["units"][0]
+            self.assertEqual(
+                {
+                    "surface_id",
+                    "state_id",
+                    "viewport_class",
+                    "route",
+                    "origin",
+                    "acceptance_url",
+                    "execution_segment_id",
+                    "dpr",
+                    "console_errors",
+                    "network_errors",
+                    "error_exemptions",
+                    "screenshot",
+                    "semantic_snapshot",
+                    "task_semantic_snapshot",
+                    "production_semantic_snapshot",
+                    "computed_style",
+                    "geometry",
+                    "production_component_refs",
+                    "region_results",
+                    "relationship_results",
+                    "interaction_results",
+                },
+                set(unit),
+            )
+            self.assertIn("comparisons", unit["computed_style"])
+            self.assertIn("observations", unit["geometry"])
+            self.assertNotEqual(
+                unit["task_semantic_snapshot"]["path"],
+                unit["production_semantic_snapshot"]["path"],
+            )
+            journey = capture_template["journey_segments"][0]
+            for field in (
+                "obligation_id",
+                "test_id",
+                "execution_segment_id",
+                "actor_identity_evidence",
+                "semantic_assertions",
+                "trace",
+                "screenshot",
+                "evidence",
+                "probe",
+                "segment_metadata",
+            ):
+                self.assertIn(field, journey)
+            adapter_template = (
+                root / "templates" / "playwright-capture-adapter.mjs"
+            ).read_text("utf-8")
+            self.assertIn("--project-module", adapter_template)
+            self.assertIn("writeArtifact", adapter_template)
+            self.assertIn("requiredUnits: plan.required_units", adapter_template)
+            self.assertIn("task_semantic_snapshot", adapter_template)
+            self.assertIn("production_semantic_snapshot", adapter_template)
+            self.assertIn("actor_identities", adapter_template)
+            review_batch = json.loads(
+                (root / "templates" / "post-implementation-review-batch.json")
+                .read_text("utf-8")
+            )
+            self.assertEqual(
+                set(review_batch),
+                {
+                    "batch_id",
+                    "closure_review_snapshot_sha256",
+                    "test_implementation_review",
+                    "ui_conformance_review",
+                },
+            )
+            self.assertIn("rejectVerdicts", adapter_template)
+            self.assertIn("output directory must be empty", adapter_template)
+            self.assertIn("{ flag: 'wx' }", adapter_template)
+            self.assertNotIn(
+                "Implement the project adapter for ${plan.plan_id}",
+                adapter_template,
+            )
             validator_script = (
                 root / "scripts" / "validate-closure-artifact.py"
             ).read_text("utf-8")
@@ -485,7 +589,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.38.tar.gz",
+                "waygate-product-delivery-1.0.39.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 
@@ -528,6 +632,11 @@ class PluginPackagingTests(unittest.TestCase):
                 )
                 self.assertFalse(
                     any("__pycache__" in name or name.endswith(".pyc") for name in names)
+                )
+                self.assertNotIn(
+                    "waygate-product-delivery/scripts/"
+                    "recover-blocked-host-goal-current-task-v1037.py",
+                    names,
                 )
                 skill_file = archive.extractfile(
                     "waygate-product-delivery/skills/"

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import hashlib
 import os
+import re
 import ctypes
+import shutil
+import subprocess
 import stat
 import uuid
 from copy import deepcopy
@@ -25,7 +29,9 @@ from product_delivery_agent.artifact_protocol import (
     runtime_status,
     state_write_lock,
     write_state,
+    _write_state_locked,
 )
+from product_delivery_agent.artifact_store import delivery_dir
 from product_delivery_agent.closure import (
     ClosureGateError,
     render_feature_closure,
@@ -78,6 +84,7 @@ from product_delivery_agent.gatekeeper import (
     assert_prototype_annotation_review_current,
     derive_blockers,
     product_baseline_hash,
+    planned_e2e_input_hash,
     requirements_e2e_confirmation_hash,
     render_closure_validator_result,
     review_input_hash,
@@ -165,6 +172,20 @@ from product_delivery_agent.ui_prototype import (
     build_prototype_contract,
     render_ui_prototype_review,
     validate_ui_prototype_review,
+)
+from product_delivery_agent.ui_evidence import (
+    UIEvidenceError,
+    append_performance_event,
+    browser_records_from_capture_runs,
+    build_capture_plan,
+    build_closure_manifest as build_ui_closure_manifest,
+    ingest_capture_run,
+    inspect_capture_run,
+    load_capture_run,
+    performance_report as build_performance_report,
+    task_conformance_payload_from_capture_runs,
+    validate_delivery_evidence_root,
+    production_conformance_payload_from_capture_runs,
 )
 
 
@@ -1303,6 +1324,279 @@ class ProductDeliveryWorkflow:
         state["next_gate"] = next_gate
         return write_state(self.project_root, state)
 
+    def _build_post_implementation_review_index(
+        self,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "post-implementation-review-index-v1",
+            "delivery_id": state.get("delivery_id"),
+            "feature_slug": state.get("feature_slug"),
+            "executed_browser_evidence_sha256": stable_state_hash(
+                state.get("executed_browser_evidence") or {}
+            ),
+            "prototype_production_conformance_sha256": stable_state_hash(
+                state.get("prototype_production_conformance") or {}
+            ),
+            "planned_e2e_sha256": planned_e2e_input_hash(state),
+            "ui_closure_manifest_sha256": (
+                (state.get("ui_closure_manifest") or {}).get("manifest_sha256")
+            ),
+            "task_evidence_sha256": stable_state_hash(
+                state.get("task_executed_evidence") or {}
+            ),
+            "visual_adjudications": self._current_visual_adjudication_deviations(
+                state
+            ),
+            "review_projections": {
+                "test_implementation": {
+                    "planned_test_ids": sorted(
+                        {
+                            item.get("test_id")
+                            for item in (
+                                state.get("planned_e2e_obligations") or {}
+                            ).get("obligations")
+                            or []
+                            if isinstance(item, dict) and item.get("test_id")
+                        }
+                    ),
+                    "executed_record_count": len(
+                        (state.get("executed_browser_evidence") or {}).get(
+                            "records"
+                        )
+                        or []
+                    ),
+                },
+                "ui_conformance": {
+                    field_name: list(
+                        (state.get("prototype_production_conformance") or {}).get(
+                            field_name
+                        )
+                        or []
+                    )
+                    for field_name in (
+                        "covered_surface_ids",
+                        "covered_state_ids",
+                        "covered_region_ids",
+                    )
+                },
+            },
+        }
+
+    def prepare_post_implementation_review_batch(self) -> dict[str, Any]:
+        """Freeze one deduplicated evidence index for two independent reviews."""
+        state = self._require_started(host_goal_transition=True)
+        if state.get("project_type") != "ui":
+            raise WorkflowError("post-implementation UI review batch requires a UI delivery")
+        if (state.get("executed_browser_evidence") or {}).get("status") != "passed":
+            raise WorkflowError("executed browser evidence must pass before review batching")
+        if (state.get("prototype_production_conformance") or {}).get("status") != "passed":
+            raise WorkflowError("production conformance must pass before review batching")
+        evidence_index = self._build_post_implementation_review_index(state)
+        snapshot_sha256 = stable_state_hash(evidence_index)
+        batch_id = "post-review-batch-" + snapshot_sha256[:20]
+        artifact_path = self._write_delivery_artifact(
+            state,
+            "post_implementation_review_index",
+            "post-implementation-review-index.json",
+            json.dumps(evidence_index, indent=2, sort_keys=True) + "\n",
+        )
+        batch = {
+            "status": "prepared",
+            "batch_id": batch_id,
+            "closure_review_snapshot_sha256": snapshot_sha256,
+            "evidence_index_path": "artifacts/post-implementation-review-index.json",
+            "evidence_index_sha256": self._artifact_hash(str(artifact_path)),
+            "required_review_types": ["test_implementation", "ui_conformance"],
+        }
+        state["post_implementation_review_batch"] = batch
+        state["stage"] = "post_implementation_review_batch_prepared"
+        state["next_gate"] = "post_implementation_review_batch"
+        state = append_transition(
+            state,
+            "post_implementation_review_batch_prepared",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            output_artifact_hashes={
+                batch["evidence_index_path"]: batch["evidence_index_sha256"]
+            },
+            metadata={
+                "batch_id": batch_id,
+                "closure_review_snapshot_sha256": snapshot_sha256,
+            },
+        )
+        try:
+            encoded_size = len(
+                json.dumps(evidence_index, sort_keys=True).encode("utf-8")
+            )
+            append_performance_event(
+                self._current_delivery_root(state),
+                {
+                    "operation": "post_implementation_review_prepare",
+                    "wall_ms": 0,
+                    "review_input_tokens": (encoded_size + 3) // 4,
+                    "projection_reuse_count": 2,
+                },
+            )
+        except (OSError, UIEvidenceError) as cause:
+            state["performance_telemetry"] = {
+                "status": "unavailable",
+                "reason": str(cause),
+            }
+        write_state(self.project_root, state)
+        return batch
+
+    def record_post_implementation_review_batch(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate both typed reviews before recording either passed state."""
+        state = self._require_started(host_goal_transition=True)
+        current = state.get("post_implementation_review_batch") or {}
+        if current.get("status") != "prepared":
+            raise WorkflowError("prepared post-implementation review batch is required")
+        if not isinstance(payload, dict):
+            raise WorkflowError("post-implementation review batch payload must be an object")
+        if payload.get("batch_id") != current.get("batch_id") or payload.get(
+            "closure_review_snapshot_sha256"
+        ) != current.get("closure_review_snapshot_sha256"):
+            raise WorkflowError("post-implementation review batch identity is stale")
+        evidence_index_path = self._current_delivery_root(state) / str(
+            current.get("evidence_index_path") or ""
+        )
+        delivery_root = self._current_delivery_root(state).resolve()
+        try:
+            evidence_index_path.resolve().relative_to(delivery_root)
+        except ValueError as cause:
+            raise WorkflowError("post-implementation review index path escapes delivery") from cause
+        if (
+            not evidence_index_path.is_file()
+            or self._artifact_hash(str(evidence_index_path))
+            != current.get("evidence_index_sha256")
+        ):
+            raise WorkflowError("post-implementation review index artifact changed")
+        try:
+            frozen_index = json.loads(evidence_index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as cause:
+            raise WorkflowError("post-implementation review index is invalid") from cause
+        current_index = self._build_post_implementation_review_index(state)
+        if (
+            frozen_index != current_index
+            or stable_state_hash(current_index)
+            != current.get("closure_review_snapshot_sha256")
+        ):
+            raise WorkflowError("post-implementation review evidence snapshot is stale")
+        test_review = payload.get("test_implementation_review")
+        ui_review = payload.get("ui_conformance_review")
+        if not isinstance(test_review, dict) or not isinstance(ui_review, dict):
+            raise WorkflowError("both typed post-implementation reviews are required")
+        planned = list(
+            (state.get("planned_e2e_obligations") or {}).get("obligations") or []
+        )
+        executed = list(
+            (state.get("executed_browser_evidence") or {}).get("records") or []
+        )
+        try:
+            validate_multi_agent_review(
+                "test_implementation",
+                test_review,
+                planned_obligations=planned,
+                executed_records=executed,
+            )
+            validate_multi_agent_review(
+                "ui_conformance",
+                ui_review,
+                prototype_contract=state.get("prototype_contract") or {},
+                visual_adjudications=self._current_visual_adjudication_deviations(
+                    state
+                ),
+            )
+            for review_type, review in (
+                ("test_implementation", test_review),
+                ("ui_conformance", ui_review),
+            ):
+                self._validate_review_mode_authorization(state, review_type, review)
+        except ReviewGateError as cause:
+            raise WorkflowError(str(cause)) from cause
+
+        rendered = {
+            "test_implementation": render_multi_agent_review(test_review),
+            "ui_conformance": render_multi_agent_review(ui_review),
+        }
+        artifact_paths = {
+            review_type: self._write_delivery_artifact(
+                state,
+                f"multi_agent_{review_type}_review",
+                f"multi-agent-{review_type}-review.md",
+                body,
+            )
+            for review_type, body in rendered.items()
+        }
+        state.setdefault("multi_agent_reviews", {})
+        for review_type, review in (
+            ("test_implementation", test_review),
+            ("ui_conformance", ui_review),
+        ):
+            state["multi_agent_reviews"][review_type] = {
+                "status": "passed",
+                "artifact": f"artifacts/multi-agent-{review_type}-review.md",
+                "artifact_sha256": self._artifact_hash(
+                    str(artifact_paths[review_type])
+                ),
+                "review_id": review["review_id"],
+                "artifact_version": review["artifact_version"],
+                "review_mode": review.get("review_mode", "spawned_subagents"),
+                "reviewer_agent_ids": list(review.get("reviewer_agent_ids") or []),
+                "reviewer_spawn_source": review.get("reviewer_spawn_source"),
+                "input_snapshot_hash": review_input_hash(state, review_type),
+                "closure_review_snapshot_sha256": current[
+                    "closure_review_snapshot_sha256"
+                ],
+            }
+        completed = {
+            **current,
+            "status": "passed",
+            "test_implementation_review_sha256": state["multi_agent_reviews"][
+                "test_implementation"
+            ]["artifact_sha256"],
+            "ui_conformance_review_sha256": state["multi_agent_reviews"][
+                "ui_conformance"
+            ]["artifact_sha256"],
+        }
+        state["post_implementation_review_batch"] = completed
+        self._remove_blockers(
+            state,
+            "multi_agent_test_implementation_review",
+            "stale_multi_agent_test_implementation_review",
+            "multi_agent_ui_conformance_review",
+            "stale_multi_agent_ui_conformance_review",
+        )
+        state["stage"] = "post_implementation_review_batch_passed"
+        state["next_gate"] = "feature_closure_after_implementation"
+        state = append_transition(
+            state,
+            "post_implementation_review_batch_recorded",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                current["evidence_index_path"]: current["evidence_index_sha256"]
+            },
+            output_artifact_hashes={
+                value["artifact"]: value["artifact_sha256"]
+                for value in state["multi_agent_reviews"].values()
+                if isinstance(value, dict)
+                and value.get("artifact")
+                and value.get("artifact_sha256")
+            },
+            metadata={
+                "batch_id": current["batch_id"],
+                "closure_review_snapshot_sha256": current[
+                    "closure_review_snapshot_sha256"
+                ],
+            },
+        )
+        return write_state(self.project_root, state)
+
     def record_implementation_launch_authorization(
         self,
         *,
@@ -2136,6 +2430,17 @@ class ProductDeliveryWorkflow:
             state["implementation_visual_policy"] = deepcopy(
                 DEFAULT_VISUAL_POLICY
             )
+            state["ui_evidence_policy"] = {
+                "policy_version": "v1",
+                "status": "required",
+                "introduced_in": "1.0.39",
+                "resolved_profile": None,
+                "closure_valid": None,
+            }
+            state["ui_capture_registry"] = {
+                "status": "empty",
+                "capture_run_ids": [],
+            }
             state["stage"] = "ui_prototype_confirmation"
             state["next_gate"] = "ui_prototype_review"
             if "ui_html_prototype_confirmation" not in blocked_until:
@@ -2153,6 +2458,11 @@ class ProductDeliveryWorkflow:
             state["journey_slice_task_policy"] = default_journey_slice_task_policy(
                 status="required"
             )
+            state["ui_evidence_policy"] = {
+                "policy_version": "v1",
+                "status": "not_applicable",
+                "introduced_in": "1.0.39",
+            }
             state["stage"] = "non_ui_behavior_contract_confirmation"
             state["next_gate"] = "non_ui_behavior_contract"
             if "non_ui_behavior_contract_confirmation" not in blocked_until:
@@ -2165,6 +2475,438 @@ class ProductDeliveryWorkflow:
         state["blocked_until"] = blocked_until
         state["required_artifacts"] = required_artifacts
         return write_state(self.project_root, state)
+
+    def prepare_ui_evidence_run(
+        self,
+        purpose: str,
+        requested_profile: str = "auto",
+    ) -> dict[str, Any]:
+        """Prepare a trusted single-capture run without executing a browser adapter."""
+        with state_write_lock(self.project_root):
+            return self._prepare_ui_evidence_run_locked(
+                purpose,
+                requested_profile,
+            )
+
+    def _prepare_ui_evidence_run_locked(
+        self,
+        purpose: str,
+        requested_profile: str,
+    ) -> dict[str, Any]:
+        state = self._require_started(recover_ui_transactions=False)
+        self._recover_pending_ui_capture_transactions(state)
+        state = self._require_started(recover_ui_transactions=False)
+        if host_goal_required(state):
+            try:
+                state = consume_authorized_transition(state)
+            except HostGoalError as cause:
+                raise WorkflowError(str(cause)) from cause
+        if state.get("project_type") != "ui":
+            raise WorkflowError("UI evidence capture is only available for UI projects")
+        units = self._ui_capture_plan_units(state)
+        journeys = self._ui_capture_plan_journeys(state)
+        risk_facts = self._derive_ui_evidence_risk_facts(state)
+        try:
+            plan = build_capture_plan(
+                delivery_id=str(state.get("delivery_id") or ""),
+                feature_slug=str(state.get("feature_slug") or ""),
+                purpose=purpose,
+                requested_profile=requested_profile,
+                risk_facts=risk_facts,
+                units=units,
+                journeys=journeys,
+                required_build_digest=(
+                    (state.get("final_build_identity") or {}).get("build_digest")
+                ),
+                prototype_origin=self._ui_prototype_origin(state),
+            )
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        plan_path = self._write_delivery_artifact(
+            state,
+            "ui_capture_plan",
+            f"ui-capture-plan-{plan['plan_id']}.json",
+            json.dumps(plan, indent=2, sort_keys=True) + "\n",
+        )
+        pending = dict(state.get("ui_capture_plans") or {})
+        for previous_id, previous in list(pending.items()):
+            if previous_id == plan["plan_id"] or not isinstance(previous, dict):
+                continue
+            if previous.get("status") != "ingested":
+                pending[previous_id] = {
+                    **previous,
+                    "status": "superseded",
+                    "superseded_by_plan_id": plan["plan_id"],
+                }
+        pending[plan["plan_id"]] = {
+            **plan,
+            "status": "prepared",
+            "artifact_path": f"artifacts/{plan_path.name}",
+            "artifact_sha256": self._artifact_hash(str(plan_path)),
+        }
+        state["ui_capture_plans"] = pending
+        state["ui_evidence_policy"] = {
+            "policy_version": "v1",
+            "status": "prepared",
+            "introduced_in": "1.0.39",
+            "resolved_profile": plan["resolved_profile"],
+            "closure_valid": plan["closure_valid"],
+            "profile_reasons": list(plan["profile_reasons"]),
+            "risk_facts_sha256": stable_state_hash(risk_facts),
+            "current_plan_id": plan["plan_id"],
+        }
+        state = append_transition(
+            state,
+            "ui_capture_plan_prepared",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            output_artifact_hashes={
+                f"artifacts/{plan_path.name}": self._artifact_hash(str(plan_path))
+            },
+            metadata={
+                "purpose": purpose,
+                "resolved_profile": plan["resolved_profile"],
+                "closure_valid": plan["closure_valid"],
+                "unit_count": len(units),
+                "journey_count": len(journeys),
+            },
+        )
+        _write_state_locked(self.project_root, state)
+        return {**plan, "artifact_path": f"artifacts/{plan_path.name}"}
+
+    def record_ui_evidence_run(
+        self,
+        plan_id: str,
+        manifest_path: str,
+    ) -> dict[str, Any]:
+        """Ingest one untrusted staging capture into the immutable delivery registry."""
+        with state_write_lock(self.project_root):
+            return self._record_ui_evidence_run_locked(plan_id, manifest_path)
+
+    def _record_ui_evidence_run_locked(
+        self,
+        plan_id: str,
+        manifest_path: str,
+    ) -> dict[str, Any]:
+        state = self._require_started(recover_ui_transactions=False)
+        self._recover_pending_ui_capture_transactions(state)
+        state = self._require_started(recover_ui_transactions=False)
+        if state.get("project_type") != "ui":
+            raise WorkflowError("UI evidence capture is only available for UI projects")
+        policy = state.get("ui_evidence_policy") or {}
+        if plan_id != policy.get("current_plan_id"):
+            raise WorkflowError("only the current UI capture plan may be ingested")
+        plan = (state.get("ui_capture_plans") or {}).get(plan_id)
+        if not isinstance(plan, dict):
+            raise WorkflowError("current UI capture plan is required")
+        plan_artifact = self._current_delivery_root(state) / str(
+            plan.get("artifact_path") or ""
+        )
+        if (
+            not plan_artifact.is_file()
+            or self._artifact_hash(str(plan_artifact)) != plan.get("artifact_sha256")
+        ):
+            raise WorkflowError("current UI capture plan artifact changed")
+        current_risk_facts = self._derive_ui_evidence_risk_facts(state)
+        try:
+            current_plan = build_capture_plan(
+                delivery_id=str(state.get("delivery_id") or ""),
+                feature_slug=str(state.get("feature_slug") or ""),
+                purpose=str(plan.get("purpose") or ""),
+                requested_profile=str(plan.get("requested_profile") or ""),
+                risk_facts=current_risk_facts,
+                units=self._ui_capture_plan_units(state),
+                journeys=self._ui_capture_plan_journeys(state),
+                required_build_digest=(
+                    (state.get("final_build_identity") or {}).get("build_digest")
+                ),
+                prototype_origin=self._ui_prototype_origin(state),
+            )
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        if current_plan.get("plan_id") != plan_id and plan.get("status") != "ingested":
+            raise WorkflowError("current UI capture plan no longer matches delivery state")
+        root = self._current_delivery_root(state)
+        registry_path = root / "evidence" / "capture-registry.json"
+        final_identity = state.get("final_build_identity") or {}
+        expected_execution_identity = None
+        identity_fields = (
+            "source_identity",
+            "build_identity",
+            "deployment_identity",
+            "environment_identity",
+            "collector_identity",
+        )
+        if all(isinstance(final_identity.get(field), dict) for field in identity_fields):
+            expected_execution_identity = {
+                field: deepcopy(final_identity[field]) for field in identity_fields
+            }
+        if plan.get("status") == "ingested" and plan.get("capture_id"):
+            try:
+                replay = inspect_capture_run(
+                    self.project_root,
+                    root,
+                    plan,
+                    manifest_path,
+                    expected_registry_sha256=(
+                        (state.get("ui_capture_registry") or {}).get(
+                            "artifact_sha256"
+                        )
+                    ),
+                    expected_registry_root_sha256=(
+                        (state.get("ui_capture_registry") or {}).get(
+                            "registry_root_sha256"
+                        )
+                    ),
+                    expected_execution_identity=expected_execution_identity,
+                )
+                if replay["capture_id"] != plan["capture_id"]:
+                    raise UIEvidenceError(
+                        "ingested UI capture plan identity changed"
+                    )
+                recovered = ingest_capture_run(
+                    self.project_root,
+                    root,
+                    plan,
+                    manifest_path,
+                    expected_registry_sha256=(
+                        (state.get("ui_capture_registry") or {}).get(
+                            "artifact_sha256"
+                        )
+                    ),
+                    expected_registry_root_sha256=(
+                        (state.get("ui_capture_registry") or {}).get(
+                            "registry_root_sha256"
+                        )
+                    ),
+                    expected_execution_identity=expected_execution_identity,
+                    expected_capture_id=replay["capture_id"],
+                    expected_manifest_sha256=replay["manifest_sha256"],
+                )
+            except UIEvidenceError as cause:
+                raise WorkflowError(str(cause)) from cause
+            _write_state_locked(self.project_root, state)
+            return {
+                "capture_id": recovered["capture_id"],
+                "created": False,
+                "profile": plan["resolved_profile"],
+                "closure_valid": plan["closure_valid"],
+                "registry_root_sha256": recovered["registry_root_sha256"],
+                "recovered": True,
+            }
+        try:
+            inspected = inspect_capture_run(
+                self.project_root,
+                root,
+                plan,
+                manifest_path,
+                expected_registry_sha256=(
+                    (state.get("ui_capture_registry") or {}).get("artifact_sha256")
+                ),
+                expected_registry_root_sha256=(
+                    (state.get("ui_capture_registry") or {}).get(
+                        "registry_root_sha256"
+                    )
+                ),
+                expected_execution_identity=expected_execution_identity,
+            )
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        if host_goal_required(state):
+            try:
+                state = consume_authorized_transition(state)
+            except HostGoalError as cause:
+                raise WorkflowError(str(cause)) from cause
+        transaction = self._begin_ui_capture_transaction(
+            state,
+            root=root,
+            plan_id=plan_id,
+            registry_path=registry_path,
+            capture_id=inspected["capture_id"],
+            capture_created=inspected["capture_created"],
+            manifest_path=Path(manifest_path).resolve(),
+            manifest_sha256=inspected["manifest_sha256"],
+        )
+        try:
+            result = ingest_capture_run(
+                self.project_root,
+                root,
+                plan,
+                manifest_path,
+                expected_registry_sha256=(
+                    (state.get("ui_capture_registry") or {}).get("artifact_sha256")
+                ),
+                expected_registry_root_sha256=(
+                    (state.get("ui_capture_registry") or {}).get(
+                        "registry_root_sha256"
+                    )
+                ),
+                expected_execution_identity=expected_execution_identity,
+                transaction_id=transaction["transaction_id"],
+                expected_capture_id=transaction["capture_id"],
+                expected_manifest_sha256=transaction["manifest_sha256"],
+            )
+            if result["capture_id"] != transaction["capture_id"]:
+                raise UIEvidenceError("capture transaction result identity changed")
+            transaction.update(
+                {
+                    "status": "registry_committed",
+                    "registry_after_sha256": result["registry_sha256"],
+                    "registry_root_after_sha256": result["registry_root_sha256"],
+                }
+            )
+            self._write_ui_capture_transaction(transaction)
+        except Exception as cause:
+            try:
+                self._rollback_ui_capture_transaction(transaction)
+            except Exception as rollback_cause:
+                raise WorkflowError(
+                    "capture ingest failed and transaction rollback failed: "
+                    f"ingest={cause}; rollback={rollback_cause}"
+                ) from cause
+            raise WorkflowError(str(cause)) from cause
+        current = dict(state.get("ui_capture_registry") or {})
+        capture_ids = list(current.get("capture_run_ids") or [])
+        if result["capture_id"] not in capture_ids:
+            capture_ids.append(result["capture_id"])
+        state["ui_capture_registry"] = {
+            "status": "ready",
+            "schema_version": "ui-capture-registry-v1",
+            "artifact_path": str(
+                Path(result["registry_path"]).relative_to(root)
+            ),
+            "artifact_sha256": result["registry_sha256"],
+            "registry_root_sha256": result["registry_root_sha256"],
+            "capture_run_ids": capture_ids,
+        }
+        state["final_build_identity"] = {
+            **deepcopy(result["execution_identity"]),
+            "build_digest": result["build_identity"]["build_digest"],
+            "frozen_by_capture_id": result["capture_id"],
+        }
+        policy = dict(policy)
+        policy.update(
+            {
+                "status": "captured",
+                "resolved_profile": plan["resolved_profile"],
+                "closure_valid": plan["closure_valid"],
+                "current_capture_id": result["capture_id"],
+            }
+        )
+        state["ui_evidence_policy"] = policy
+        state["ui_capture_plans"][plan_id] = {
+            **plan,
+            "status": "ingested",
+            "capture_id": result["capture_id"],
+        }
+        state = append_transition(
+            state,
+            "ui_capture_run_ingested",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                str(manifest_path): result["capture_id"].removeprefix("capture-")
+            },
+            output_artifact_hashes={
+                state["ui_capture_registry"]["artifact_path"]: result[
+                    "registry_sha256"
+                ]
+            },
+            metadata={
+                "capture_id": result["capture_id"],
+                "created": result["created"],
+                "profile": plan["resolved_profile"],
+                "closure_valid": plan["closure_valid"],
+            },
+        )
+        performance_event = result.get("performance_event") or {
+            "wall_ms": 0,
+            "browser_launches": 0,
+            "capture_units": len(plan.get("units") or []),
+            "total_artifacts": 1,
+        }
+        performance_event = {
+            **performance_event,
+            "operation": "capture_ingest",
+            "reused_artifacts": max(
+                int(performance_event.get("reused_artifacts") or 0),
+                0 if result["created"] else 1,
+            ),
+        }
+        try:
+            append_performance_event(root, performance_event)
+        except (OSError, UIEvidenceError) as cause:
+            state["performance_telemetry"] = {
+                "status": "unavailable",
+                "reason": str(cause),
+            }
+        try:
+            transaction["intended_state_sha256"] = lifecycle_state_hash(state)
+            transaction["intended_capture_ids"] = list(capture_ids)
+            transaction["intended_current_capture_id"] = result["capture_id"]
+            transaction["intended_journal_head"] = (
+                (state.get("transition_journal") or {}).get("last_event_hash")
+            )
+            transaction["intended_host_goal_transition"] = deepcopy(
+                (state.get("host_goal_binding") or {}).get(
+                    "last_consumed_transition"
+                )
+            )
+            self._write_ui_capture_transaction(transaction)
+            persisted = _write_state_locked(self.project_root, state)
+        except Exception as cause:
+            disk_state = self._state()
+            if self._ui_capture_state_matches_transaction(
+                disk_state,
+                transaction,
+            ):
+                transaction["status"] = "state_committed_layout_pending"
+                transaction["state_after_sha256"] = stable_state_hash(disk_state)
+                transaction["commit_error"] = str(cause)
+                self._write_ui_capture_transaction(transaction)
+                raise WorkflowError(
+                    "capture state committed but delivery layout refresh failed; "
+                    "retry the same plan to complete recovery: " + str(cause)
+                ) from cause
+            try:
+                self._rollback_ui_capture_transaction(transaction)
+            except Exception as rollback_cause:
+                raise WorkflowError(
+                    "capture state commit failed and registry rollback failed: "
+                    f"commit={cause}; rollback={rollback_cause}"
+                ) from cause
+            raise WorkflowError(
+                f"capture state commit failed; registry was rolled back: {cause}"
+            ) from cause
+        transaction["status"] = "committed"
+        transaction["state_after_sha256"] = stable_state_hash(
+            persisted
+        )
+        transaction["committed_at"] = self._timestamp_from_state(persisted)
+        self._write_ui_capture_transaction(transaction)
+        return {
+            "capture_id": result["capture_id"],
+            "created": result["created"],
+            "profile": plan["resolved_profile"],
+            "closure_valid": plan["closure_valid"],
+            "registry_root_sha256": result["registry_root_sha256"],
+        }
+
+    def performance_report(self) -> dict[str, Any]:
+        """Return read-only UI evidence performance telemetry."""
+        state = self._require_started()
+        if state.get("project_type") != "ui":
+            return {
+                "schema_version": "ui-performance-telemetry-v1",
+                "applicable": False,
+                "event_count": 0,
+            }
+        return {
+            **build_performance_report(self._current_delivery_root(state)),
+            "applicable": True,
+            "delivery_id": state.get("delivery_id"),
+            "feature_slug": state.get("feature_slug"),
+        }
 
     def confirm(self, artifact_name: str) -> dict[str, Any]:
         if artifact_name not in CORE_ARTIFACTS:
@@ -3045,11 +3787,55 @@ class ProductDeliveryWorkflow:
 
     def record_executed_browser_evidence(
         self,
-        records: list[dict[str, Any]],
+        records: list[dict[str, Any]] | None = None,
+        *,
+        capture_run_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
         self._require_current_prototype_progression(state)
         planned = state.get("planned_e2e_obligations", {})
+        capture_policy_active = self._ui_capture_policy_active(state)
+        if capture_policy_active and records is not None:
+            raise WorkflowError(
+                "V1.0.39 UI evidence must use capture_run_ids, not legacy records"
+            )
+        if records is not None and capture_run_ids is not None:
+            raise WorkflowError("records and capture_run_ids are mutually exclusive")
+        if capture_run_ids is not None:
+            try:
+                records = browser_records_from_capture_runs(
+                    self._current_delivery_root(state),
+                    capture_run_ids,
+                    authorized_exemptions=(
+                        self._authorized_ui_evidence_exemptions(state)
+                    ),
+                )
+            except UIEvidenceError as cause:
+                raise WorkflowError(str(cause)) from cause
+        elif records is None:
+            stored = (state.get("task_executed_evidence") or {}).get("records") or {}
+            slice_rows = [
+                row
+                for task_record in stored.values()
+                if isinstance(task_record, dict)
+                and task_record.get("status") == "passed"
+                for row in task_record.get("records") or []
+                if isinstance(row, dict)
+            ]
+            if not slice_rows:
+                raise WorkflowError(
+                    "executed browser evidence requires records or recorded TASK slices"
+                )
+            records = self._deduplicate_browser_records(slice_rows)
+            capture_run_ids = sorted(
+                {
+                    capture_id
+                    for task_record in stored.values()
+                    if isinstance(task_record, dict)
+                    for capture_id in task_record.get("capture_run_ids") or []
+                    if isinstance(capture_id, str) and capture_id
+                }
+            ) or None
         if journey_slice_tasks_required(state) and (
             (state.get("delivery_goal") or {}).get("planned_tasks")
         ):
@@ -3072,7 +3858,44 @@ class ProductDeliveryWorkflow:
         state["executed_browser_evidence"] = {
             **evidence,
             "artifact_path": "artifacts/executed-browser-evidence.md",
+            "artifact_sha256": self._artifact_hash(str(evidence_path)),
+            "capture_run_ids": list(capture_run_ids or []),
         }
+        if capture_run_ids:
+            try:
+                closure_manifest = build_ui_closure_manifest(
+                    self._current_delivery_root(state),
+                    capture_run_ids=capture_run_ids,
+                    required_units=self._ui_capture_plan_units(state),
+                    required_journeys=self._ui_capture_plan_journeys(state),
+                    profile=str(
+                        (state.get("ui_evidence_policy") or {}).get(
+                            "resolved_profile"
+                        )
+                        or ""
+                    ),
+                    registry_root_sha256=(
+                        state.get("ui_capture_registry") or {}
+                    ).get("registry_root_sha256"),
+                    authorized_exemptions=(
+                        self._authorized_ui_evidence_exemptions(state)
+                    ),
+                )
+            except UIEvidenceError as cause:
+                raise WorkflowError(str(cause)) from cause
+            manifest_path = self._write_delivery_artifact(
+                state,
+                "ui_closure_manifest",
+                "ui-closure-manifest.json",
+                json.dumps(closure_manifest, indent=2, sort_keys=True) + "\n",
+            )
+            state["ui_closure_manifest"] = {
+                **closure_manifest,
+                "artifact_path": "artifacts/ui-closure-manifest.json",
+                "artifact_sha256": self._artifact_hash(str(manifest_path)),
+            }
+        else:
+            state.pop("ui_closure_manifest", None)
         state = append_transition(
             state,
             "executed_browser_evidence_recorded",
@@ -3096,6 +3919,10 @@ class ProductDeliveryWorkflow:
             ("test_implementation", "ui_conformance"),
             reason="executed_browser_evidence_changed",
         )
+        self._invalidate_post_implementation_review_batch(
+            state,
+            reason="executed_browser_evidence_changed",
+        )
         self._invalidate_prototype_production_conformance(
             state,
             reason="executed_browser_evidence_changed",
@@ -3107,7 +3934,9 @@ class ProductDeliveryWorkflow:
 
     def record_prototype_production_conformance(
         self,
-        payload: dict[str, Any],
+        payload: dict[str, Any] | None = None,
+        *,
+        capture_run_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Record production UI conformance against the confirmed prototype."""
         state = self._require_started(host_goal_transition=True)
@@ -3121,6 +3950,44 @@ class ProductDeliveryWorkflow:
             raise WorkflowError("implementation tasks must be complete before conformance")
         if (state.get("executed_browser_evidence") or {}).get("status") != "passed":
             raise WorkflowError("executed browser evidence must pass before conformance")
+        if payload is not None and capture_run_ids is not None:
+            raise WorkflowError("payload and capture_run_ids are mutually exclusive")
+        if self._ui_capture_policy_active(state) and payload is not None:
+            raise WorkflowError(
+                "V1.0.39 UI conformance must use capture_run_ids, not a legacy payload"
+            )
+        if capture_run_ids is not None:
+            manifest_capture_ids = set(
+                (state.get("ui_closure_manifest") or {}).get("capture_run_ids") or []
+            )
+            browser_capture_ids = set(
+                (state.get("executed_browser_evidence") or {}).get(
+                    "capture_run_ids"
+                )
+                or []
+            )
+            if set(capture_run_ids) != manifest_capture_ids or set(
+                capture_run_ids
+            ) != browser_capture_ids:
+                raise WorkflowError(
+                    "production conformance capture IDs must match the UI closure manifest"
+                )
+            try:
+                payload = production_conformance_payload_from_capture_runs(
+                    self._current_delivery_root(state),
+                    capture_run_ids,
+                    canonical_prototype=state.get("ui_prototype") or {},
+                    prototype_contract=state.get("prototype_contract") or {},
+                    authorized_exemptions=(
+                        self._authorized_ui_evidence_exemptions(state)
+                    ),
+                )
+            except UIEvidenceError as cause:
+                raise WorkflowError(str(cause)) from cause
+        if payload is None:
+            raise WorkflowError(
+                "prototype production conformance requires payload or capture_run_ids"
+            )
         try:
             evidence = build_prototype_production_conformance(
                 self.project_root,
@@ -3146,6 +4013,7 @@ class ProductDeliveryWorkflow:
         )
         state["prototype_production_conformance"] = {
             **evidence,
+            "capture_run_ids": list(capture_run_ids or []),
             "artifact_path": "artifacts/prototype-production-conformance.json",
             "artifact_sha256": self._artifact_hash(str(json_path)),
             "report_path": "artifacts/prototype-production-conformance.md",
@@ -3171,6 +4039,10 @@ class ProductDeliveryWorkflow:
         self._mark_reviews_stale(
             state,
             ("ui_conformance",),
+            reason="prototype_production_conformance_changed",
+        )
+        self._invalidate_post_implementation_review_batch(
+            state,
             reason="prototype_production_conformance_changed",
         )
         self._remove_blockers(state, "prototype_production_conformance")
@@ -3758,7 +4630,9 @@ class ProductDeliveryWorkflow:
     def record_task_prototype_conformance(
         self,
         task_id: str,
-        payload: dict[str, Any],
+        payload: dict[str, Any] | None = None,
+        *,
+        capture_run_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Record objective prototype conformance for the current UI task."""
         state = self._require_started(host_goal_transition=True)
@@ -3786,10 +4660,30 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(
                 "task prototype conformance is not applicable when ui_impact is none"
             )
+        if payload is not None and capture_run_ids is not None:
+            raise WorkflowError("payload and capture_run_ids are mutually exclusive")
+        if self._ui_capture_policy_active(state) and payload is not None:
+            raise WorkflowError(
+                "V1.0.39 UI TASK conformance must use capture_run_ids"
+            )
         try:
             implementation_baseline = self._load_current_implementation_baseline(
                 state
             )
+            if capture_run_ids is not None:
+                payload = task_conformance_payload_from_capture_runs(
+                    self._current_delivery_root(state),
+                    capture_run_ids,
+                    implementation_baseline=implementation_baseline,
+                    planned_task=planned_task,
+                    authorized_exemptions=(
+                        self._authorized_ui_evidence_exemptions(state)
+                    ),
+                )
+            if payload is None:
+                raise UIEvidenceError(
+                    "task prototype conformance requires payload or capture_run_ids"
+                )
             evidence = build_task_prototype_conformance(
                 self.project_root,
                 payload,
@@ -4211,7 +5105,9 @@ class ProductDeliveryWorkflow:
     def record_task_executed_evidence(
         self,
         task_id: str,
-        records: list[dict[str, Any]],
+        records: list[dict[str, Any]] | None = None,
+        *,
+        capture_run_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Record the current TASK's bound full-stack evidence slice."""
         state = self._require_started(host_goal_transition=True)
@@ -4243,8 +5139,36 @@ class ProductDeliveryWorkflow:
         ]
         if not owned:
             raise WorkflowError("journey slice TASK is missing bound obligations")
+        if records is not None and capture_run_ids is not None:
+            raise WorkflowError("records and capture_run_ids are mutually exclusive")
         try:
             if state.get("project_type") == "ui":
+                if self._ui_capture_policy_active(state) and records is not None:
+                    raise UIEvidenceError(
+                        "V1.0.39 UI TASK evidence must use capture_run_ids"
+                    )
+                if capture_run_ids is not None:
+                    records = browser_records_from_capture_runs(
+                        self._current_delivery_root(state),
+                        capture_run_ids,
+                            authorized_exemptions=(
+                                self._authorized_ui_evidence_exemptions(state)
+                        ),
+                    )
+                    owned_keys = {
+                        (item.get("obligation_id"), item.get("test_id"))
+                        for item in owned
+                    }
+                    records = [
+                        row
+                        for row in records
+                        if (row.get("obligation_id"), row.get("test_id"))
+                        in owned_keys
+                    ]
+                if records is None:
+                    raise UIEvidenceError(
+                        "UI TASK slice requires records or capture_run_ids"
+                    )
                 evidence = build_executed_browser_evidence(
                     self.project_root,
                     records,
@@ -4253,6 +5177,12 @@ class ProductDeliveryWorkflow:
                 )
                 evidence_kind = "browser"
             else:
+                if capture_run_ids is not None:
+                    raise UIEvidenceError(
+                        "capture_run_ids are not available for non-UI evidence"
+                    )
+                if records is None:
+                    raise UIEvidenceError("non-UI TASK slice requires records")
                 evidence = build_executed_browser_evidence(
                     self.project_root,
                     records,
@@ -4270,6 +5200,7 @@ class ProductDeliveryWorkflow:
             "planned_task_hash": planned_task.get("planned_task_hash"),
             "obligation_ids": list(planned_task.get("obligation_ids") or []),
             "records": list(evidence.get("records") or []),
+            "capture_run_ids": list(capture_run_ids or []),
         }
         state["task_executed_evidence"] = {
             "status": "in_progress",
@@ -4871,6 +5802,844 @@ class ProductDeliveryWorkflow:
             return {}
         return payload if isinstance(payload, dict) else {}
 
+    def _current_delivery_root(self, state: dict[str, Any]) -> Path:
+        feature_slug = str(state.get("feature_slug") or "")
+        delivery_id = str(state.get("delivery_id") or "")
+        if not feature_slug or not delivery_id:
+            raise WorkflowError("current delivery identity is required")
+        return delivery_dir(self.project_root, feature_slug, delivery_id)
+
+    def _begin_ui_capture_transaction(
+        self,
+        state: dict[str, Any],
+        *,
+        root: Path,
+        plan_id: str,
+        registry_path: Path,
+        capture_id: str,
+        capture_created: bool,
+        manifest_path: Path,
+        manifest_sha256: str,
+    ) -> dict[str, Any]:
+        try:
+            validate_delivery_evidence_root(root)
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        registry_before = (
+            registry_path.read_bytes() if registry_path.is_file() else b""
+        )
+        transaction = {
+            "schema_version": "ui-capture-transaction-v1",
+            "transaction_id": "ui-capture-tx-" + uuid.uuid4().hex,
+            "status": "pending",
+            "delivery_id": state.get("delivery_id"),
+            "feature_slug": state.get("feature_slug"),
+            "plan_id": plan_id,
+            "capture_id": capture_id,
+            "capture_created": capture_created,
+            "manifest_path": str(
+                manifest_path.relative_to(self.project_root.resolve())
+            ),
+            "manifest_sha256": manifest_sha256,
+            "delivery_root": str(root.relative_to(self.project_root)),
+            "registry_path": str(registry_path.relative_to(root)),
+            "registry_before_exists": registry_path.is_file(),
+            "registry_before_sha256": (
+                hashlib.sha256(registry_before).hexdigest()
+                if registry_before
+                else None
+            ),
+            "registry_before_base64": base64.b64encode(
+                registry_before
+            ).decode("ascii"),
+            "state_before_sha256": lifecycle_state_hash(self._state()),
+            "created_at": self._timestamp_from_state(state),
+        }
+        self._write_ui_capture_transaction(transaction)
+        return transaction
+
+    def _write_ui_capture_transaction(
+        self,
+        transaction: dict[str, Any],
+    ) -> None:
+        state = self._state()
+        transaction.pop("receipt_sha256", None)
+        root, _ = self._validate_ui_capture_transaction(transaction, state)
+        try:
+            validate_delivery_evidence_root(root)
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        body = {
+            key: value
+            for key, value in transaction.items()
+            if key != "receipt_sha256"
+        }
+        transaction["receipt_sha256"] = stable_state_hash(body)
+        path = (
+            root
+            / "evidence"
+            / "transactions"
+            / f"{transaction['transaction_id']}.json"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex)
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump(transaction, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        self._fsync_directory(path.parent)
+
+    def _rollback_ui_capture_transaction(
+        self,
+        transaction: dict[str, Any],
+    ) -> None:
+        state = self._state()
+        root, registry_path = self._validate_ui_capture_transaction(
+            transaction,
+            state,
+        )
+        capture_id = str(transaction.get("capture_id") or "")
+        if capture_id in (
+            (state.get("ui_capture_registry") or {}).get("capture_run_ids")
+            or []
+        ):
+            raise WorkflowError(
+                "capture transaction cannot roll back state-bound capture"
+            )
+        if lifecycle_state_hash(state) != transaction.get("state_before_sha256"):
+            raise WorkflowError(
+                "capture transaction state changed before rollback"
+            )
+        registry_before = b""
+        previous_registry = {
+            "schema_version": "ui-capture-registry-v1",
+            "captures": [],
+        }
+        if transaction.get("registry_before_exists") is True:
+            try:
+                registry_before = base64.b64decode(
+                    str(transaction.get("registry_before_base64") or ""),
+                    validate=True,
+                )
+                previous_registry = json.loads(registry_before)
+            except (ValueError, json.JSONDecodeError) as cause:
+                raise WorkflowError(
+                    "capture transaction registry backup is invalid"
+                ) from cause
+            if hashlib.sha256(registry_before).hexdigest() != transaction.get(
+                "registry_before_sha256"
+            ):
+                raise WorkflowError("capture transaction registry backup hash changed")
+        previous_entries = previous_registry.get("captures") or []
+        if not isinstance(previous_entries, list):
+            raise WorkflowError("capture transaction registry backup is invalid")
+        previous_ids = {
+            item.get("capture_id")
+            for item in previous_entries
+            if isinstance(item, dict)
+        }
+        if transaction.get("capture_created") is True and capture_id in previous_ids:
+            raise WorkflowError(
+                "capture transaction cannot delete pre-existing capture"
+            )
+        transaction_token = transaction["transaction_id"].removeprefix(
+            "ui-capture-tx-"
+        )
+        registry_after = transaction.get("registry_after_sha256")
+        current_registry = (
+            self._artifact_hash(str(registry_path), require_exists=True)
+            if registry_path.is_file()
+            else None
+        )
+        before_sha = transaction.get("registry_before_sha256")
+        if registry_after and current_registry not in {registry_after, before_sha}:
+            raise WorkflowError(
+                "capture transaction registry changed by another writer"
+            )
+        if current_registry not in {None, before_sha}:
+            try:
+                current_value = json.loads(registry_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as cause:
+                raise WorkflowError(
+                    "capture transaction current registry is invalid"
+                ) from cause
+            current_entries = current_value.get("captures") or []
+            current_by_id = {
+                item.get("capture_id"): item
+                for item in current_entries
+                if isinstance(item, dict)
+            }
+            previous_by_id = {
+                item.get("capture_id"): item
+                for item in previous_entries
+                if isinstance(item, dict)
+            }
+            if (
+                set(current_by_id) != set(previous_by_id) | {capture_id}
+                or any(
+                    current_by_id.get(key) != value
+                    for key, value in previous_by_id.items()
+                )
+            ):
+                raise WorkflowError(
+                    "capture transaction registry is not an exact capture append"
+                )
+            appended = current_by_id[capture_id]
+            capture_manifest = (
+                root / "evidence" / "captures" / capture_id / "manifest.json"
+            )
+            if (
+                appended.get("manifest_path")
+                != str(capture_manifest.relative_to(root))
+                or not capture_manifest.is_file()
+                or appended.get("manifest_sha256")
+                != self._artifact_hash(str(capture_manifest), require_exists=True)
+            ):
+                raise WorkflowError(
+                    "capture transaction appended registry entry is invalid"
+                )
+
+        # All identities and compare-and-swap checks passed; destructive work starts here.
+        if transaction.get("capture_created") is True:
+            capture_root = root / "evidence" / "captures" / capture_id
+            if capture_root.is_dir():
+                shutil.rmtree(capture_root)
+                self._fsync_directory(capture_root.parent)
+        shutil.rmtree(
+            root / "evidence" / f".capture-ingest-{transaction_token}",
+            ignore_errors=True,
+        )
+        registry_path.with_name(
+            registry_path.name + ".tmp-" + transaction_token
+        ).unlink(missing_ok=True)
+        if transaction.get("registry_before_exists") is True:
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = registry_path.with_name(
+                registry_path.name + ".rollback-" + uuid.uuid4().hex
+            )
+            with temporary.open("wb") as stream:
+                stream.write(registry_before)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, registry_path)
+            self._fsync_directory(registry_path.parent)
+        else:
+            registry_path.unlink(missing_ok=True)
+            self._fsync_directory(registry_path.parent)
+        transaction["status"] = "rolled_back"
+        transaction["rolled_back_at"] = self._timestamp_from_state(self._state())
+        self._write_ui_capture_transaction(transaction)
+
+    def _recover_pending_ui_capture_transactions(
+        self,
+        state: dict[str, Any],
+    ) -> None:
+        root = self._current_delivery_root(state)
+        try:
+            validate_delivery_evidence_root(root)
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        transactions_root = root / "evidence" / "transactions"
+        if not transactions_root.is_dir():
+            return
+        for temporary in transactions_root.glob(
+            "ui-capture-tx-*.json.tmp-*"
+        ):
+            temporary.unlink(missing_ok=True)
+        for path in sorted(transactions_root.glob("ui-capture-tx-*.json")):
+            if path.is_symlink():
+                raise WorkflowError("capture transaction receipt cannot be a symlink")
+            try:
+                transaction = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as cause:
+                raise WorkflowError("capture transaction receipt is invalid") from cause
+            if not isinstance(transaction, dict):
+                raise WorkflowError("capture transaction receipt schema is invalid")
+            self._validate_ui_capture_transaction(
+                transaction,
+                state,
+                receipt_path=path,
+            )
+            if transaction.get("status") in {
+                "committed",
+                "committed_recovered",
+                "rolled_back",
+            }:
+                continue
+            registry_path = root / str(transaction.get("registry_path") or "")
+            registry_after = transaction.get("registry_after_sha256")
+            state_registry = (state.get("ui_capture_registry") or {}).get(
+                "artifact_sha256"
+            )
+            current_registry = (
+                self._artifact_hash(str(registry_path), require_exists=True)
+                if registry_path.is_file()
+                else None
+            )
+            if registry_after and current_registry == registry_after and self._ui_capture_state_matches_transaction(
+                state,
+                transaction,
+            ):
+                transaction["status"] = "committed_recovered"
+                transaction["recovered_at"] = self._timestamp_from_state(state)
+                self._write_ui_capture_transaction(transaction)
+                continue
+            self._rollback_ui_capture_transaction(transaction)
+
+    def _validate_ui_capture_transaction(
+        self,
+        transaction: dict[str, Any],
+        state: dict[str, Any],
+        *,
+        receipt_path: Path | None = None,
+    ) -> tuple[Path, Path]:
+        if transaction.get("schema_version") != "ui-capture-transaction-v1":
+            raise WorkflowError("capture transaction receipt schema is invalid")
+        if transaction.get("status") not in {
+            "pending",
+            "registry_committed",
+            "state_committed_layout_pending",
+            "committed",
+            "committed_recovered",
+            "rolled_back",
+        }:
+            raise WorkflowError("capture transaction status is invalid")
+        transaction_id = str(transaction.get("transaction_id") or "")
+        if not re.fullmatch(r"ui-capture-tx-[0-9a-f]{32}", transaction_id):
+            raise WorkflowError("capture transaction id is invalid")
+        if transaction.get("delivery_id") != state.get("delivery_id") or transaction.get(
+            "feature_slug"
+        ) != state.get("feature_slug"):
+            raise WorkflowError("capture transaction delivery identity changed")
+        root = self._current_delivery_root(state).resolve()
+        try:
+            validate_delivery_evidence_root(root)
+        except UIEvidenceError as cause:
+            raise WorkflowError(str(cause)) from cause
+        expected_root = str(root.relative_to(self.project_root.resolve()))
+        if transaction.get("delivery_root") != expected_root:
+            raise WorkflowError("capture transaction delivery root changed")
+        if transaction.get("registry_path") != "evidence/capture-registry.json":
+            raise WorkflowError("capture transaction registry path changed")
+        if not re.fullmatch(r"capture-[0-9a-f]{64}", str(transaction.get("capture_id") or "")):
+            raise WorkflowError("capture transaction capture id is invalid")
+        if not isinstance(transaction.get("capture_created"), bool):
+            raise WorkflowError("capture transaction created flag is invalid")
+        if not re.fullmatch(r"capture-plan-[0-9a-f]{24}", str(transaction.get("plan_id") or "")):
+            raise WorkflowError("capture transaction plan id is invalid")
+        plans = state.get("ui_capture_plans") or {}
+        plan = plans.get(transaction.get("plan_id")) if isinstance(plans, dict) else None
+        if not isinstance(plan, dict) or not plan:
+            raise WorkflowError("capture transaction plan is not canonical")
+        manifest_relative = str(transaction.get("manifest_path") or "")
+        manifest_candidate = Path(manifest_relative)
+        if (
+            not manifest_relative
+            or manifest_candidate.is_absolute()
+            or ".." in manifest_candidate.parts
+        ):
+            raise WorkflowError("capture transaction manifest path is invalid")
+        manifest_path = (self.project_root / manifest_candidate).resolve()
+        try:
+            manifest_path.relative_to(self.project_root.resolve())
+        except ValueError as cause:
+            raise WorkflowError("capture transaction manifest path escapes project") from cause
+        if not re.fullmatch(r"[0-9a-f]{64}", str(transaction.get("manifest_sha256") or "")):
+            raise WorkflowError("capture transaction manifest hash is invalid")
+        declared_hash = transaction.get("receipt_sha256")
+        if declared_hash is not None:
+            body = {
+                key: value
+                for key, value in transaction.items()
+                if key != "receipt_sha256"
+            }
+            if declared_hash != stable_state_hash(body):
+                raise WorkflowError("capture transaction receipt hash changed")
+        if receipt_path is not None:
+            expected_path = (
+                root / "evidence" / "transactions" / f"{transaction_id}.json"
+            ).resolve()
+            if receipt_path.resolve() != expected_path:
+                raise WorkflowError("capture transaction filename identity changed")
+        return root, root / "evidence" / "capture-registry.json"
+
+    @staticmethod
+    def _ui_capture_state_matches_transaction(
+        state: dict[str, Any],
+        transaction: dict[str, Any],
+    ) -> bool:
+        if transaction.get("intended_state_sha256") != lifecycle_state_hash(state):
+            return False
+        capture_id = transaction.get("capture_id")
+        registry = state.get("ui_capture_registry") or {}
+        policy = state.get("ui_evidence_policy") or {}
+        plan = (state.get("ui_capture_plans") or {}).get(
+            transaction.get("plan_id")
+        ) or {}
+        journal = state.get("transition_journal") or {}
+        if (
+            registry.get("artifact_sha256")
+            != transaction.get("registry_after_sha256")
+            or capture_id not in (registry.get("capture_run_ids") or [])
+            or policy.get("current_capture_id") != capture_id
+            or plan.get("status") != "ingested"
+            or plan.get("capture_id") != capture_id
+            or journal.get("last_event_hash") != transaction.get("intended_journal_head")
+        ):
+            return False
+        return any(
+            isinstance(event, dict)
+            and event.get("transition_name") == "ui_capture_run_ingested"
+            and (event.get("metadata") or {}).get("capture_id") == capture_id
+            for event in journal.get("events") or []
+        )
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_fd = os.open(path, flags)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    @staticmethod
+    def _ui_capture_plan_units(state: dict[str, Any]) -> list[dict[str, str]]:
+        units: list[dict[str, str]] = []
+        for surface in (state.get("prototype_contract") or {}).get("surfaces") or []:
+            if not isinstance(surface, dict):
+                continue
+            for viewport in surface.get("required_viewports") or []:
+                units.append(
+                    {
+                        "surface_id": str(surface.get("surface_id") or ""),
+                        "state_id": str(surface.get("state_id") or ""),
+                        "viewport_class": str(viewport or ""),
+                    }
+                )
+        return units
+
+    @staticmethod
+    def _ui_capture_plan_journeys(state: dict[str, Any]) -> list[dict[str, str]]:
+        return [
+            {
+                "obligation_id": str(item.get("obligation_id") or ""),
+                "test_id": str(item.get("test_id") or ""),
+            }
+            for item in (state.get("planned_e2e_obligations") or {}).get(
+                "obligations"
+            )
+            or []
+            if isinstance(item, dict)
+        ]
+
+    def _ui_prototype_origin(self, state: dict[str, Any]) -> str | None:
+        prototype = state.get("ui_prototype") or {}
+        explicit = prototype.get("prototype_origin")
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip()
+        prototype_path = prototype.get("prototype_path")
+        if not isinstance(prototype_path, str) or not prototype_path.strip():
+            return None
+        candidate = (self.project_root / prototype_path).resolve()
+        try:
+            candidate.relative_to(self.project_root.resolve())
+        except ValueError as cause:
+            raise WorkflowError("prototype path escapes project root") from cause
+        return candidate.as_uri()
+
+    def _derive_ui_evidence_risk_facts(
+        self,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        tags = {
+            str(item).strip().lower()
+            for item in (state.get("ui_evidence_risk_facts") or {}).get(
+                "risk_tags"
+            )
+            or []
+            if isinstance(item, str) and item.strip()
+        }
+        ui_change_type = (
+            (state.get("ui_prototype_review") or {}).get("ui_change_type")
+            or (state.get("ui_prototype") or {}).get("ui_change_type")
+        )
+        if ui_change_type in {"new_surface_in_existing_product", "greenfield_ui"}:
+            tags.add("new_surface")
+        risk_text = " ".join(
+            str(value).lower()
+            for row in (state.get("scenario_matrix") or {}).get("rows") or []
+            if isinstance(row, dict)
+            for value in row.values()
+            if isinstance(value, str)
+        )
+        keyword_tags = {
+            "auth": ("auth", "login", "登录"),
+            "authorization": ("permission", "authorization", "权限"),
+            "privacy": ("privacy", "隐私"),
+            "security": ("security", "安全"),
+            "payment": ("payment", "billing", "支付", "计费"),
+            "destructive": ("delete", "destroy", "删除", "销毁"),
+            "global_shell": ("global shell", "全局壳"),
+            "navigation": ("navigation", "导航"),
+            "design_tokens": ("design token", "设计令牌"),
+            "responsive_infrastructure": ("responsive", "breakpoint", "响应式"),
+            "api_schema": ("api schema", "openapi", "api contract"),
+            "migration": ("migration", "迁移"),
+        }
+        for tag, keywords in keyword_tags.items():
+            if any(keyword in risk_text for keyword in keywords):
+                tags.add(tag)
+        changed_paths, changed_paths_available = self._ui_changed_paths()
+        untracked_paths = self._ui_untracked_paths() if changed_paths_available else set()
+        for changed_path in changed_paths:
+            normalized_path = changed_path.lower().replace("\\", "/")
+            name = Path(normalized_path).name
+            if normalized_path.endswith((".css", ".scss", ".sass", ".less")):
+                tags.add("design_tokens")
+            if any(
+                marker in normalized_path
+                for marker in (
+                    "/theme/",
+                    "/tokens/",
+                    "/components/",
+                    "/shared/",
+                    "/common/",
+                    "/lib/",
+                    "/hooks/",
+                    "/utils/",
+                    "tailwind.config",
+                    "design-token",
+                    "breakpoint",
+                )
+            ) or any(marker in name for marker in ("theme", "token", "button")):
+                tags.update({"design_tokens", "responsive_infrastructure"})
+            if any(marker in name for marker in ("layout", "shell", "navbar", "sidebar", "navigation", "router")):
+                tags.update({"global_shell", "navigation"})
+            if any(marker in name for marker in ("auth", "login", "permission")):
+                tags.update({"auth", "authorization"})
+            if "security" in name:
+                tags.add("security")
+            if "api" in name and Path(normalized_path).suffix in {
+                ".js",
+                ".jsx",
+                ".ts",
+                ".tsx",
+            }:
+                tags.add("api_schema")
+            if any(
+                marker in normalized_path
+                for marker in (
+                    "openapi",
+                    "api-schema",
+                    "schema.graphql",
+                    "/migrations/",
+                    "/migration/",
+                )
+            ):
+                tags.add(
+                    "migration" if "migration" in normalized_path else "api_schema"
+                )
+            rooted_path = "/" + normalized_path
+            if changed_path in untracked_paths and any(
+                marker in rooted_path
+                for marker in ("/app/", "/pages/", "/routes/")
+            ):
+                tags.add("new_route")
+        obligations = (
+            state.get("planned_e2e_obligations") or {}
+        ).get("obligations") or []
+        if any(
+            len(
+                {
+                    str(role).strip().lower()
+                    for role in item.get("required_actor_roles") or []
+                    if isinstance(role, str) and role.strip()
+                }
+            )
+            > 1
+            for item in obligations
+            if isinstance(item, dict)
+        ):
+            tags.add("cross_role_critical_journey")
+        explicit_impact = (state.get("ui_evidence_risk_facts") or {}).get(
+            "impact_known"
+        )
+        contract_units = ProductDeliveryWorkflow._ui_capture_plan_units(state)
+        contract_keys = {
+            (item["surface_id"], item["state_id"], item["viewport_class"])
+            for item in contract_units
+        }
+        planned_tasks = (state.get("delivery_goal") or {}).get("planned_tasks") or []
+        affected_keys: set[tuple[str, str, str]] = set()
+        bindings_complete = bool(planned_tasks)
+        for task in planned_tasks:
+            if not isinstance(task, dict) or task.get("ui_impact") != "prototype_bound":
+                continue
+            bindings = task.get("prototype_bindings")
+            if not isinstance(bindings, list) or not bindings:
+                bindings_complete = False
+                continue
+            for binding in bindings:
+                if not isinstance(binding, dict):
+                    bindings_complete = False
+                    continue
+                viewports = binding.get("viewport_classes") or []
+                if not viewports:
+                    bindings_complete = False
+                for viewport in viewports:
+                    key = (
+                        str(binding.get("surface_id") or ""),
+                        str(binding.get("state_id") or ""),
+                        str(viewport or ""),
+                    )
+                    if key not in contract_keys:
+                        bindings_complete = False
+                    else:
+                        affected_keys.add(key)
+        explicit_affected = (state.get("ui_evidence_risk_facts") or {}).get(
+            "affected_units"
+        )
+        if isinstance(explicit_affected, list) and explicit_impact is True:
+            affected_keys.update(
+                (
+                    str(item.get("surface_id") or ""),
+                    str(item.get("state_id") or ""),
+                    str(item.get("viewport_class") or ""),
+                )
+                for item in explicit_affected
+                if isinstance(item, dict)
+            )
+        affected_surface_ids = {key[0] for key in affected_keys if key[0]}
+        affected_route_tokens = {
+            token
+            for surface in (state.get("prototype_contract") or {}).get("surfaces")
+            or []
+            if isinstance(surface, dict)
+            and str(surface.get("surface_id") or "") in affected_surface_ids
+            for token in str(surface.get("route") or "").lower().split("/")
+            if token
+        }
+        dependency_proof_complete = (
+            changed_paths_available
+            and self._ui_changed_paths_are_local(
+                changed_paths,
+                affected_surface_ids=affected_surface_ids,
+                affected_route_tokens=affected_route_tokens,
+            )
+        )
+        impact_known = (
+            bool(contract_units)
+            and bindings_complete
+            and bool(affected_keys)
+            and dependency_proof_complete
+        )
+        if explicit_impact is False:
+            impact_known = False
+        remaining = contract_keys - affected_keys
+        canary_keys: set[tuple[str, str, str]] = set()
+        for viewport in sorted({key[2] for key in remaining}):
+            candidate = next((key for key in sorted(remaining) if key[2] == viewport), None)
+            if candidate:
+                canary_keys.add(candidate)
+        reusable_units: list[dict[str, str]] = []
+        reusable_capture_run_ids: list[str] = []
+        final_identity = state.get("final_build_identity") or {}
+        identity_fields = (
+            "source_identity",
+            "build_identity",
+            "deployment_identity",
+            "environment_identity",
+            "collector_identity",
+        )
+        if all(isinstance(final_identity.get(field), dict) for field in identity_fields):
+            expected_identity = {
+                field: final_identity[field] for field in identity_fields
+            }
+            for capture_id in (
+                (state.get("ui_capture_registry") or {}).get("capture_run_ids")
+                or []
+            ):
+                try:
+                    capture = load_capture_run(
+                        self._current_delivery_root(state), str(capture_id)
+                    )
+                except UIEvidenceError as cause:
+                    raise WorkflowError(str(cause)) from cause
+                capture_identity = {
+                    field: capture.get(field) or {} for field in identity_fields
+                }
+                if capture_identity != expected_identity:
+                    continue
+                reusable_capture_run_ids.append(str(capture_id))
+                reusable_units.extend(
+                    {
+                        "surface_id": str(unit.get("surface_id") or ""),
+                        "state_id": str(unit.get("state_id") or ""),
+                        "viewport_class": str(
+                            unit.get("viewport_class") or ""
+                        ),
+                    }
+                    for unit in capture.get("units") or []
+                    if isinstance(unit, dict)
+                )
+        return {
+            "impact_known": impact_known,
+            "risk_tags": sorted(tags),
+            "ui_change_type": ui_change_type,
+            "affected_units": [
+                {
+                    "surface_id": key[0],
+                    "state_id": key[1],
+                    "viewport_class": key[2],
+                }
+                for key in sorted(affected_keys)
+            ],
+            "canary_units": [
+                {
+                    "surface_id": key[0],
+                    "state_id": key[1],
+                    "viewport_class": key[2],
+                }
+                for key in sorted(canary_keys)[:4]
+            ],
+            "reusable_units": reusable_units,
+            "reusable_capture_run_ids": reusable_capture_run_ids,
+            "changed_paths": changed_paths,
+            "dependency_proof_complete": dependency_proof_complete,
+        }
+
+    def _ui_changed_paths(self) -> tuple[list[str], bool]:
+        git_dir = self.project_root / ".git"
+        if not git_dir.exists():
+            return [], False
+        try:
+            completed = subprocess.run(
+                ["git", "diff", "--name-only", "HEAD"],
+                cwd=self.project_root,
+                check=False,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return [], False
+        if completed.returncode != 0:
+            return [], False
+        paths = {
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        }
+        paths.update(self._ui_untracked_paths())
+        return sorted(paths), bool(paths)
+
+    def _ui_untracked_paths(self) -> set[str]:
+        try:
+            completed = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                cwd=self.project_root,
+                check=False,
+                shell=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return set()
+        if completed.returncode != 0:
+            return set()
+        return {
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        }
+
+    @staticmethod
+    def _ui_changed_paths_are_local(
+        changed_paths: list[str],
+        *,
+        affected_surface_ids: set[str],
+        affected_route_tokens: set[str],
+    ) -> bool:
+        local_tokens = {
+            token.lower().replace("_", "-")
+            for token in affected_surface_ids | affected_route_tokens
+            if token
+        }
+        if not local_tokens:
+            return False
+        build_paths = 0
+        frontend_suffixes = {".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".html"}
+        ignored_suffixes = {".md", ".txt", ".rst"}
+        shared_markers = {
+            "components",
+            "ui",
+            "shared",
+            "common",
+            "lib",
+            "hooks",
+            "utils",
+            "theme",
+            "themes",
+            "tokens",
+            "styles",
+            "global",
+            "layout",
+            "shell",
+            "navigation",
+            "router",
+        }
+        for raw_path in changed_paths:
+            normalized = raw_path.lower().replace("\\", "/")
+            path = Path(normalized)
+            if path.suffix in ignored_suffixes or any(
+                part in {"tests", "test", "docs", ".github"}
+                for part in path.parts
+            ):
+                continue
+            if path.suffix not in frontend_suffixes:
+                return False
+            build_paths += 1
+            normalized_parts = {
+                part.replace("_", "-") for part in path.parts
+            }
+            if normalized_parts.intersection(shared_markers):
+                return False
+            if not any(
+                token in normalized_parts or token in normalized.replace("_", "-")
+                for token in local_tokens
+            ):
+                return False
+        return build_paths > 0
+
+    @staticmethod
+    def _deduplicate_browser_records(
+        records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Keep one byte-equivalent record per obligation/test/segment identity."""
+        result: list[dict[str, Any]] = []
+        by_key: dict[tuple[Any, Any, Any], str] = {}
+        for record in records:
+            key = (
+                record.get("obligation_id"),
+                record.get("test_id"),
+                record.get("execution_segment_id"),
+            )
+            identity = stable_state_hash(record)
+            previous = by_key.get(key)
+            if previous is not None and previous != identity:
+                raise WorkflowError(
+                    "conflicting TASK slice evidence for " + ":".join(map(str, key))
+                )
+            if previous is None:
+                by_key[key] = identity
+                result.append(record)
+        return result
+
     def _state(self) -> dict[str, Any]:
         return load_state(self.project_root, fallback_state=self.fallback_state)
 
@@ -4881,6 +6650,7 @@ class ProductDeliveryWorkflow:
         allow_host_goal_bootstrap: bool = False,
         allow_host_goal_owner_claim: bool = False,
         host_goal_transition: bool = False,
+        recover_ui_transactions: bool = True,
     ) -> dict[str, Any]:
         state = self._state()
         if not state.get("active"):
@@ -4894,6 +6664,18 @@ class ProductDeliveryWorkflow:
                     f"{current_runtime_status}; call recover_legacy_active_delivery"
                 )
             self._require_current_delivery_authorization(state)
+        if (
+            recover_ui_transactions
+            and state.get("project_type") == "ui"
+            and (state.get("ui_evidence_policy") or {}).get("policy_version")
+            == "v1"
+            and state.get("delivery_id")
+            and state.get("feature_slug")
+        ):
+            with state_write_lock(self.project_root):
+                locked_state = self._state()
+                self._recover_pending_ui_capture_transactions(locked_state)
+                state = self._state()
         execution_authorization = (state.get("multi_agent_policy") or {}).get(
             "execution_authorization"
         )
@@ -5094,6 +6876,36 @@ class ProductDeliveryWorkflow:
         spawn_source = review.get("reviewer_spawn_source")
         if not isinstance(spawn_source, str) or not spawn_source.strip():
             raise ReviewGateError("reviewer_spawn_source is required")
+
+    def _validate_review_mode_authorization(
+        self,
+        state: dict[str, Any],
+        review_type: str,
+        review: dict[str, Any],
+    ) -> None:
+        review_mode = review.get("review_mode", "spawned_subagents")
+        policy = state.get("multi_agent_policy") or {}
+        authorized_types = policy.get("authorized_review_types") or []
+        if review_mode == "spawned_subagents":
+            if (
+                policy.get("execution_authorization") != "authorized"
+                or policy.get("authorization_scope") != "current_delivery"
+                or not policy.get("authorization_source")
+                or review_type not in authorized_types
+            ):
+                raise ReviewGateError(
+                    "spawned_subagents review requires explicit execution authorization for the current delivery"
+                )
+            self._validate_spawned_reviewer_agents(review)
+        elif review_mode == "role_simulation":
+            if (
+                policy.get("mode") != "role_simulation_allowed"
+                or policy.get("execution_authorization") != "degradation_authorized"
+                or policy.get("authorization_scope") != "current_delivery"
+                or not policy.get("authorization_source")
+                or review_type not in authorized_types
+            ):
+                raise ReviewGateError("role_simulation review is not authorized")
 
 
 
@@ -5539,6 +7351,52 @@ class ProductDeliveryWorkflow:
                 "stale_at": stale_at,
             }
             self._add_blockers(state, f"stale_multi_agent_{review_type}_review")
+
+    @staticmethod
+    def _ui_capture_policy_active(state: dict[str, Any]) -> bool:
+        policy = state.get("ui_evidence_policy") or {}
+        return policy.get("policy_version") == "v1" and policy.get("status") not in {
+            None,
+            "not_applicable",
+            "legacy_compatible",
+            "grandfathered",
+        }
+
+    @staticmethod
+    def _authorized_ui_evidence_exemptions(
+        state: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        return {
+            str(item.get("exemption_id")): deepcopy(item)
+            for item in (
+                (state.get("planned_e2e_obligations") or {}).get("exemptions")
+                or []
+            )
+            if isinstance(item, dict)
+            and item.get("allows_closure") is True
+            and isinstance(item.get("exemption_id"), str)
+            and item["exemption_id"].strip()
+        }
+
+    def _invalidate_post_implementation_review_batch(
+        self,
+        state: dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        batch = state.get("post_implementation_review_batch")
+        if not isinstance(batch, dict) or batch.get("status") not in {
+            "prepared",
+            "passed",
+            "stale",
+        }:
+            return
+        state["post_implementation_review_batch"] = {
+            **batch,
+            "status": "stale",
+            "stale_reason": reason,
+            "stale_at": self._timestamp_from_state(state),
+        }
 
     def _invalidate_prototype_production_conformance(
         self,

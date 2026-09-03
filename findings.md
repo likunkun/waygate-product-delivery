@@ -1,5 +1,18 @@
 # Findings
 
+## 2026-09-03 V1.0.39 UI Evidence Efficiency And Trusted Capture
+
+- Approved direction: preserve evidence facts and closure invariants while eliminating repeated browser collection, payload assembly, pixel work, and reviewer input.
+- The current package is validator-heavy and has no unified capture runner. V1.0.39 therefore needs a project-adapter protocol rather than a bundled Playwright dependency.
+- Raw capture facts, deterministic validator conclusions, reviewer judgments, and closure authority must remain separate trust layers; a registry entry cannot self-assert a passing gate.
+- Formal capture identity must bind source tree, build/deployment/environment, actor/session/data state, contract/baseline/policy, surface/state/viewport, execution segment, collector/validator versions, and artifact hashes.
+- First-release reuse is same-build only. Missing provenance, incomplete dependency facts, high-risk domains, shared UI infrastructure, or unknown impact forces `strict`.
+- `iteration` is explicitly non-canonical and non-closure-valid. Formal runs use auto-selected `standard` or user-upgraded `strict`; users and agents cannot downgrade.
+- Existing browser evidence validation has hardening opportunities: console/network lists are not required to be empty, actor identity is only checked for a non-empty object, business-request count is not derived exactly from the probe, and final conformance lacks a shared capture identity across screenshot/semantic/trace/probe.
+- Closure schema remains `v0.11`; V1.0.39 UI deliveries conditionally require the new registry/profile/manifest hashes rather than changing the global schema version.
+- Active pre-V1.0.39 deliveries are not migrated automatically. Historical artifacts remain readable but cannot become new formal evidence.
+- Preserve `plugins/waygate-product-delivery/scripts/recover-blocked-host-goal-current-task-v1037.py` unchanged and untracked.
+
 ## 2026-08-30 V1.0.38 Generic Skill Retirement
 
 - `superpowers:using-superpowers` and `code-simplifier` are current Waygate hard dependencies because the dependency checker flattens every `STAGE_SKILLS` entry.
@@ -991,3 +1004,15 @@
 - OpenCode should participate in external multi-agent review as reviewer, worker, or judge only by adapting output into the V1.1 structured review artifact schema.
 - Failed OpenCode orchestration should become `blocked_with_reason`; it must not silently downgrade to a passing review.
 - Packaging must include both Codex and OpenCode assets in the generated plugin and dist archive so the two execution surfaces stay version-aligned.
+
+## 2026-09-03 V1.0.39 Trusted UI Capture Findings
+
+- Independent forward testing found the first generated Skill was fail-closed but not self-contained: it lacked a callable recipe, nested manifest examples, recovery guidance, and compatible TASK/production semantic schemas. The generated Skill, adapter harness, manifest template, README, and installation guide now document and generate the full path; capture units carry distinct task and production semantic snapshots from one browser run.
+- Independent security review found four capture-trust Critical issues and later a multi-role capture blocker. The implementation now rejects legacy formal payloads for all non-grandfathered v1 policies, admits only the current recomputed plan, binds full execution identity before ingest, validates registry membership/content identity/artifacts, binds units to same-capture segments, validates health/business/actor probe facts, supports an actor identity set, and replays selected captures at closure.
+- Standard plans now treat prior same-execution capture units as reusable and include every otherwise-unproven required unit; closure may select an active registered subset, so corrected/strict captures can supersede failed historical captures without deleting audit history.
+- Changed-path risk analysis escalates CSS, tokens, shell/navigation, breakpoint, new route, OpenAPI/schema, and migration changes; missing Git proof remains strict. Explicit `impact_known=true` no longer overrides incomplete bindings or dependency proof.
+- Registry ingestion stages artifacts atomically and rolls back the new capture and registry bytes if the canonical state commit fails. Host Goal reconciliation consumption remains governed by the existing workflow protocol and is not widened by V1.0.39.
+- Final release review found four same-boundary gaps: strict profile elevation, manifest fields trusted after self-rehash, mutable Browser/production projections trusted by capture ID alone, and unit origins not bound to production deployment. The final implementation now binds capture and plan profiles, requires strict captures from the current strict plan, deterministically rebuilds the closure manifest and both projections, and rejects prototype-origin production units.
+- Capture-backed production artifacts now resolve only from the selected immutable capture directory; legacy evidence remains restricted to the ordinary artifact root.
+- Fresh final source regression passed 573 tests in 179.182 seconds with one default browser skip. Installed runtime passed 51 focused tests in 35.214 seconds, and source/installed real Chromium fixtures passed in 1.643/1.196 seconds with one browser launch each.
+- Independent final release review reported READY with no remaining reproducible Critical or release-blocking Important issue. These timings are individual measured samples, not P90 conclusions.

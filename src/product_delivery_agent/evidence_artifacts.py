@@ -43,6 +43,29 @@ def resolve_project_path(
     return resolved
 
 
+def resolve_capture_artifact_path(
+    project_root: str | Path,
+    artifact_path: str,
+    capture_id: str,
+) -> Path:
+    """Resolve an immutable registry artifact bound to one capture identity."""
+    resolved = resolve_project_path(project_root, artifact_path)
+    root = Path(project_root).resolve()
+    relative = resolved.relative_to(root)
+    parts = relative.parts
+    expected_prefix = (".product-delivery", "deliveries")
+    if (
+        len(parts) < 9
+        or parts[:2] != expected_prefix
+        or parts[4:7] != ("evidence", "captures", str(capture_id or ""))
+        or parts[7] != "artifacts"
+    ):
+        raise EvidenceArtifactError(
+            "capture artifact path must bind the selected immutable capture"
+        )
+    return resolved
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as artifact_file:
@@ -64,14 +87,19 @@ def validate_png(
     artifact_path: str,
     *,
     artifact_only: bool = True,
+    capture_id: str | None = None,
 ) -> dict[str, Any]:
     """Validate a canonical PNG and return runtime-computed metadata."""
     if Path(str(artifact_path or "")).suffix.lower() != ".png":
         raise EvidenceArtifactError("canonical screenshot must be a PNG file")
-    path = resolve_project_path(
-        project_root,
-        artifact_path,
-        artifact_only=artifact_only,
+    path = (
+        resolve_capture_artifact_path(project_root, artifact_path, capture_id)
+        if capture_id
+        else resolve_project_path(
+            project_root,
+            artifact_path,
+            artifact_only=artifact_only,
+        )
     )
     data = path.read_bytes()
     if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
@@ -117,11 +145,16 @@ def load_json_artifact(
     artifact_path: str,
     *,
     artifact_only: bool = True,
+    capture_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    path = resolve_project_path(
-        project_root,
-        artifact_path,
-        artifact_only=artifact_only,
+    path = (
+        resolve_capture_artifact_path(project_root, artifact_path, capture_id)
+        if capture_id
+        else resolve_project_path(
+            project_root,
+            artifact_path,
+            artifact_only=artifact_only,
+        )
     )
     try:
         value = json.loads(path.read_text(encoding="utf-8"))

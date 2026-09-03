@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.38-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.39-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -34,6 +34,7 @@ Waygate Product Delivery turns those failure modes into explicit gates.
 | Layered product confirmation | Product scope and the UI prototype or non-UI behavior contract are confirmed before detailed test design. |
 | Prototype design integrity | Clean product surfaces must inherit the global product context, while review annotations remain on an external review-only surface. |
 | Prototype-bound task execution | Every visible UI task binds an exact frozen prototype slice and must pass per-task semantic and visual conformance before completion. |
+| Trusted reusable UI capture | One project adapter run is ingested as immutable raw facts and independently projected into TASK, Browser E2E, production-conformance, review, and closure evidence. |
 | Prototype-to-production conformance | UI closure requires frozen prototype contracts, production PNG and semantic evidence, plus an independent UI conformance review. |
 | Non-UI behavior gate | API, CLI, service, and background-job projects use behavior contracts instead of HTML prototypes. |
 | Multi-agent review artifacts | Scenario and test coverage reviews must be visible artifacts, not vague chat claims. |
@@ -123,7 +124,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.38.tar.gz
+dist/waygate-product-delivery-1.0.39.tar.gz
 ```
 
 ## Use In Codex
@@ -181,6 +182,45 @@ New or reopened prototypes use bundle v2 and `acceptance_content_separation`. A 
 
 The gate verifies objective facts; multi-agent review judges design quality. Reviewers decide whether the baseline is representative, whether local polish remains coherent with the whole product, and whether an exception is justified. They cannot waive a failed gate, and empty findings are not a substitute for positive review coverage.
 
+### Trusted UI Capture And Evidence Profiles
+
+V1.0.39 adds `prepare_ui_evidence_run()` and `record_ui_evidence_run()` around an immutable `capture-run-v1` registry. Run the packaged `scripts/capture-ui-evidence.py` with a project-owned adapter to collect screenshot, semantic/style/geometry, console/network, actor, trace, and API-probe facts once. The staging CLI never advances a gate; canonical workflow ingestion recomputes hashes and independent validators still decide TASK, Browser E2E, production-conformance, review, and closure results.
+
+`iteration` provides fast noncanonical feedback and can never close a gate. Formal runs automatically resolve to `standard` or fail closed to `strict`; users may upgrade to strict but cannot downgrade. Missing provenance, unknown impact, authentication/authorization, security/privacy/payment/destructive behavior, shared shell/navigation/design tokens, responsive infrastructure, new surfaces/routes, API/schema migrations, and cross-role critical journeys require strict evidence. Passing conclusions never cross build identities.
+
+The packaged `templates/playwright-capture-adapter.mjs` is a reusable fail-closed harness. Copy it into the target project and provide a project module that exports `capture(context)`. The module owns authentication, deterministic data setup, route and journey execution, semantic/style/geometry extraction, traces, screenshots, and API probes. `templates/ui-capture-manifest.json` shows every nested unit and journey field; all artifact references must be project-relative staging paths with hashes calculated from the actual bytes.
+
+Prepare a formal plan through the installed runtime, locate its canonical artifact record, and invoke the adapter without a shell. Run the Python snippet with `PYTHONPATH=<plugin-root>/runtime` so the active delivery never mixes runtimes:
+
+```python
+from pathlib import Path
+from product_delivery_agent.artifact_protocol import load_state
+from product_delivery_agent.workflow import ProductDeliveryWorkflow
+
+root = Path("<project-root>").resolve()
+workflow = ProductDeliveryWorkflow(root)
+plan = workflow.prepare_ui_evidence_run("closure", requested_profile="auto")
+state = load_state(root)
+delivery_root = root / ".product-delivery" / "deliveries" / state["feature_slug"] / state["delivery_id"]
+plan_path = delivery_root / plan["artifact_path"]
+```
+
+```bash
+python3 <plugin-root>/scripts/capture-ui-evidence.py \
+  --project-root <project-root> --plan <plan-path> \
+  --output-dir <project-root>/.product-delivery/staging/<fresh-run-id> \
+  --adapter-executable node \
+  --adapter-arg <project-root>/scripts/waygate-playwright-capture.mjs \
+  --adapter-arg=--project-module \
+  --adapter-arg <project-root>/scripts/waygate-project-capture.mjs
+```
+
+The command returns staging `manifest_path`; pass it to `record_ui_evidence_run(plan_id, manifest_path)`. Each unit carries distinct `task_semantic_snapshot` (`task-production-semantic-snapshot-v1`) and `production_semantic_snapshot` (`ui-semantic-surface-v1`) refs, plus the compatibility `semantic_snapshot`; formal projections consume the two typed refs independently. For each current TASK, record capture-backed TASK E2E and prototype conformance before completion. After all TASK slices pass, call no-argument `record_executed_browser_evidence()` to aggregate the canonical slice union, then record full production conformance and the frozen post-implementation review batch. The canonical v0.11 finalizer, feature closure, delivery goal, and Host Goal reconciliation are still required; capture alone cannot close delivery.
+
+For `standard`, `plan.units` is the affected-plus-canary fast set while `plan.required_units` is the formal closure set. A closure adapter should capture `required_units` in its final same-build run. If an earlier standard run captured only `plan.units`, prepare a current plan and perform a fresh full run; do not blindly merge runs containing duplicate journeys. Ask the user to upgrade to `strict` when impact/provenance is uncertain, a strict risk applies, or complete same-build coverage cannot otherwise be proven.
+
+Failures remain non-authoritative. On adapter/schema/path/hash failure, keep the staging output for diagnosis, fix the source, and rerun into a fresh empty staging directory. Re-prepare after prototype, TASK binding, E2E plan, source, or build changes. Never patch the manifest, registry, or state; do not blindly retry network/auth/data failures or treat inconclusive capture as passed. `performance_report()` reports capture/retry/reuse costs but has no gate authority.
+
 Only the clean prototype and clean screenshots are shown for `product_baseline`. Annotation-only changes invalidate the bound internal scenario review, but not either user confirmation, the test plan, or launch authorization. Product-surface or product-context changes retain full downstream invalidation. Active v1.0.22 deliveries with an already confirmed baseline remain grandfathered until the prototype changes or the baseline is reopened. The workflow still has exactly two user confirmations: `product_baseline` and `test_coverage_plan`; closure remains schema `v0.11`.
 
 ### Host Goal Checkpoint Recovery
@@ -216,6 +256,7 @@ Core runtime modules:
 | `artifact_protocol.py` | Local state and artifact persistence. |
 | `startup_guard.py` | Planning files, Open Spec, and project-type gate checks. |
 | `prototype_design.py` | Clean-surface, product-context, annotation-separation, and design-bundle validation. |
+| `ui_evidence.py` | Trusted capture plans, registry, projections, profiles, closure manifest, and telemetry. |
 | `gatekeeper.py` | Fail-closed invariants for handoff, implementation, and closure. |
 | `delivery_goal.py` | Task queue, task cursor, and stop guard. |
 | `host_goal.py` | Verified Codex Host Goal activation, reconciliation, human waits, and completion. |

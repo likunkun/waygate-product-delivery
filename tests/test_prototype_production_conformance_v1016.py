@@ -21,6 +21,7 @@ from product_delivery_agent.workflow import (
 )
 from tests.conformance_fixtures import (
     PROTOTYPE_DESIGN_DIMENSIONS,
+    enable_legacy_ui_evidence_fixture,
     record_bundled_ui_prototype_review,
     record_prototype_design_bundle,
     record_scenario_review,
@@ -517,6 +518,7 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
                 feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             workflow.record_scenario_matrix([scenario_row()])
             workflow.select_project_type("ui")
+            enable_legacy_ui_evidence_fixture(workflow, root)
 
             record_bundled_ui_prototype_review(
                 workflow, root, prototype_review_payload()
@@ -573,6 +575,7 @@ class PrototypeProductionConformanceV1016Tests(unittest.TestCase):
             workflow.start(
                 feature_slug="v1.0.16-prototype-conformance", multi_agent_mode="spawned_subagents_authorized")
             workflow.select_project_type("ui")
+            enable_legacy_ui_evidence_fixture(workflow, root)
             state = record_prototype_design_bundle(
                 workflow,
                 root,

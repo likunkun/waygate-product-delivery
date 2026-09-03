@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.39
+
+- Adds content-addressed `capture-run-v1` ingestion so one project-owned browser adapter run can supply raw screenshot, semantic/style/geometry, console/network, actor, trace, and API-probe facts to independent UI evidence validators.
+- Adds non-closure `iteration`, automatic fail-closed `standard`, and user-upgradable `strict` evidence profiles; unknown or high-risk UI impact resolves to strict, and cross-build passing-result reuse remains prohibited.
+- Adds capture-backed TASK, Browser E2E, production-conformance, closure-manifest, performance-report, and atomic post-implementation review-batch paths while preserving legacy input compatibility.
+- Hardens capture-backed Browser E2E against unexempted console/network failures, weak actor identity, request-count drift, origin confusion, and capture/probe identity mismatch.
+- Reuses decoded PNG content and computes full-surface plus critical-region differences in one traversal; passing comparisons no longer persist heatmaps by default.
+- Keeps lifecycle request schema `v1`, closure schema `v0.11`, two user confirmations, Host Goal ownership, non-UI behavior, real business API evidence, and existing visual thresholds unchanged.
+
 ## 1.0.38
 
 - Retires `superpowers:using-superpowers` and `code-simplifier` as Waygate hard dependencies; active startup now requires only `planning-with-files` and `waygate-product-delivery`, while the empty `agent_startup` and `refinement` stages are removed.

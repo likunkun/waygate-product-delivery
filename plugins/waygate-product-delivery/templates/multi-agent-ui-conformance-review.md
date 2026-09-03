@@ -1,10 +1,21 @@
 # Multi-Agent UI Conformance Review
 
+- review_id:
 - review_type: ui_conformance
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
+- artifact_version: ui-conformance-v1
 - reviewer_agent_ids: []
 - reviewer_spawn_source:
 - status: draft
+- reviewers: []
+- independent_positions: []
+- cross_challenges: []
+- revisions: []
+- final_adjudication:
+- conclusions: []
+- accepted_suggestions: []
+- rejected_suggestions: []
+- unresolved_questions: []
 - reviewed_surface_ids: []
 - reviewed_state_ids: []
 - reviewed_region_ids: []

@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from product_delivery_agent.evidence_artifacts import (
     EvidenceArtifactError,
@@ -201,7 +202,11 @@ def build_prototype_production_conformance(
 
     browser_records = executed_browser_evidence.get("records") or []
     browser_segments = {
-        (record.get("acceptance_url"), record.get("execution_segment_id"))
+        (
+            record.get("capture_id"),
+            record.get("acceptance_url"),
+            record.get("execution_segment_id"),
+        )
         for record in browser_records
         if record.get("evidence_strength") == FULL_STACK_BROWSER_E2E
     }
@@ -226,7 +231,12 @@ def build_prototype_production_conformance(
             raise CoverageAuditError(f"conformance record {index} is not in prototype contract")
         if key in records_by_key:
             raise CoverageAuditError(f"duplicate conformance record: {key}")
-        if (record.get("acceptance_url"), record.get("execution_segment_id")) not in browser_segments:
+        segment_key = (
+            record.get("capture_id"),
+            record.get("acceptance_url"),
+            record.get("execution_segment_id"),
+        )
+        if segment_key not in browser_segments:
             raise CoverageAuditError(
                 f"conformance record {index} must bind current full-stack execution segment"
             )
@@ -235,13 +245,16 @@ def build_prototype_production_conformance(
                 f"conformance record {index} production route must match prototype contract"
             )
         try:
+            capture_id = record.get("capture_id")
             screenshot = validate_png(
                 project_root,
                 record.get("production_screenshot_path", ""),
+                capture_id=capture_id,
             )
             snapshot, snapshot_metadata = load_json_artifact(
                 project_root,
                 record.get("semantic_snapshot_path", ""),
+                capture_id=capture_id,
             )
         except EvidenceArtifactError as cause:
             raise CoverageAuditError(str(cause)) from cause
@@ -667,12 +680,11 @@ def build_executed_browser_evidence(
     hydrated = []
     for index, record in enumerate(records, start=1):
         probe = _validate_browser_evidence_record(root, index, record)
-        evidence_path = root / record["evidence_path"]
-        if not evidence_path.is_file():
-            raise CoverageAuditError(
-                f"evidence_path does not exist: {record['evidence_path']}"
-            )
-        probe_path = root / record["probe_artifact_path"]
+        try:
+            evidence_path = resolve_project_path(root, record["evidence_path"])
+            probe_path = resolve_project_path(root, record["probe_artifact_path"])
+        except EvidenceArtifactError as cause:
+            raise CoverageAuditError(str(cause)) from cause
         next_record = dict(record)
         next_record["evidence_sha256"] = _sha256(evidence_path)
         next_record["probe_artifact_sha256"] = _sha256(probe_path)
@@ -1036,6 +1048,8 @@ def _validate_browser_evidence_record(
         raise CoverageAuditError(
             f"browser evidence row {index} primary_actor_role must be included in executed_actor_roles"
         )
+    if _has_value(record.get("capture_id")):
+        _validate_capture_backed_browser_record(root, index, record, primary_role)
     strength = record["evidence_strength"]
     if strength not in ACCEPTED_BROWSER_EVIDENCE_STRENGTHS:
         raise CoverageAuditError(
@@ -1047,16 +1061,89 @@ def _validate_browser_evidence_record(
     probe = _load_probe_artifact(root, index, record["probe_artifact_path"])
     if strength == FULL_STACK_BROWSER_E2E:
         _validate_full_stack_probe(index, record, probe)
+    if _has_value(record.get("capture_id")):
+        capture_ref = record.get("capture_run_ref")
+        if not _has_value(capture_ref) or probe.get("capture_run_ref") != capture_ref:
+            raise CoverageAuditError(
+                f"browser evidence row {index} capture reference does not match probe"
+            )
     return probe
 
 
-def _load_probe_artifact(root: Path, index: int, probe_artifact_path: str) -> dict[str, Any]:
-    path = root / probe_artifact_path
-    if not path.is_file():
+def _validate_capture_backed_browser_record(
+    root: Path,
+    index: int,
+    record: dict[str, Any],
+    primary_role: str,
+) -> None:
+    """Apply V1.0.39 provenance rules without breaking frozen legacy evidence."""
+    if not _has_value(record.get("capture_run_ref")):
         raise CoverageAuditError(
-            f"browser evidence row {index} probe_artifact_path does not exist: "
-            + probe_artifact_path
+            f"browser evidence row {index} capture reference is required"
         )
+    capture_id = str(record.get("capture_id") or "")
+    capture_digest = capture_id.removeprefix("capture-")
+    if len(capture_digest) != 64 or any(
+        character not in "0123456789abcdef" for character in capture_digest
+    ):
+        raise CoverageAuditError(
+            f"browser evidence row {index} capture_id must be content-addressed"
+        )
+    for field_name in ("console_errors", "network_errors"):
+        errors = record.get(field_name)
+        if errors:
+            exemptions = record.get("error_exemptions")
+            accepted = {
+                item.get("error_sha256")
+                for item in exemptions or []
+                if isinstance(item, dict)
+                and item.get("field") == field_name
+                and _has_value(item.get("reason"))
+                and item.get("canonical_exemption_ref_verified") is True
+            }
+            for error in errors:
+                if stable_json_hash(error) not in accepted:
+                    raise CoverageAuditError(
+                        f"browser evidence row {index} has unexempted {field_name}"
+                    )
+    actor = record.get("actor_identity_evidence")
+    if not isinstance(actor, dict):
+        raise CoverageAuditError(
+            f"browser evidence row {index} actor identity must be an object"
+        )
+    missing_actor = [
+        field_name
+        for field_name in (
+            "role",
+            "user_id",
+            "session_id",
+            "backend_identity_sha256",
+        )
+        if not _has_value(actor.get(field_name))
+    ]
+    if missing_actor:
+        raise CoverageAuditError(
+            f"browser evidence row {index} actor identity missing fields: "
+            + ", ".join(missing_actor)
+        )
+    backend_hash = str(actor["backend_identity_sha256"])
+    if len(backend_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in backend_hash
+    ):
+        raise CoverageAuditError(
+            f"browser evidence row {index} actor identity backend hash is invalid"
+        )
+    if _normalize_actor_role(actor["role"]) != primary_role:
+        raise CoverageAuditError(
+            f"browser evidence row {index} actor identity role does not match primary role"
+        )
+
+
+def _load_probe_artifact(root: Path, index: int, probe_artifact_path: str) -> dict[str, Any]:
+    try:
+        path = resolve_project_path(root, probe_artifact_path)
+    except EvidenceArtifactError as cause:
+        raise CoverageAuditError(str(cause)) from cause
     try:
         probe = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -1102,7 +1189,7 @@ def _validate_mocked_routes(
         if (
             strength == FULL_STACK_BROWSER_E2E
             and _is_business_api_mock(route)
-            and not _has_value(route.get("exemption_ref"))
+            and route.get("canonical_exemption_ref_verified") is not True
         ):
             raise CoverageAuditError(
                 f"browser evidence row {index} has unexempted business API mock: "
@@ -1128,6 +1215,16 @@ def _validate_full_stack_probe(
         raise CoverageAuditError(
             f"browser evidence row {index} API health probe returned HTML shell"
         )
+    if _has_value(record.get("capture_id")):
+        health_status = probe.get("health_response_status")
+        if (
+            isinstance(health_status, bool)
+            or not isinstance(health_status, int)
+            or not 200 <= health_status < 300
+        ):
+            raise CoverageAuditError(
+                f"browser evidence row {index} API health status must be successful"
+            )
     summary = record["network_probe_summary"]
     request_count = summary.get("business_api_request_count")
     if not isinstance(request_count, int) or request_count < 1:
@@ -1139,6 +1236,66 @@ def _validate_full_stack_probe(
         raise CoverageAuditError(
             f"browser evidence row {index} probe missing business API requests"
         )
+    if _has_value(record.get("capture_id")) and request_count != len(business_requests):
+        raise CoverageAuditError(
+            f"browser evidence row {index} business API request count does not match probe"
+        )
+    if _has_value(record.get("capture_id")):
+        try:
+            api_origin = _origin(record["api_health_url"])
+        except ValueError as cause:
+            raise CoverageAuditError(
+                f"browser evidence row {index} API health URL is invalid"
+            ) from cause
+        for request_index, request in enumerate(business_requests, 1):
+            if not isinstance(request, dict):
+                raise CoverageAuditError(
+                    f"browser evidence row {index} business API request {request_index} must be object"
+                )
+            method = str(request.get("method") or "").upper()
+            if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
+                raise CoverageAuditError(
+                    f"browser evidence row {index} business API request {request_index} method is invalid"
+                )
+            try:
+                request_origin = _origin(request.get("url"))
+            except ValueError as cause:
+                raise CoverageAuditError(
+                    f"browser evidence row {index} business API request {request_index} URL is invalid"
+                ) from cause
+            if request_origin != api_origin or request.get("source") != "network":
+                raise CoverageAuditError(
+                    f"browser evidence row {index} business API request {request_index} is not API-origin network evidence"
+                )
+            status = request.get("status")
+            if isinstance(status, bool) or not isinstance(status, int) or not 100 <= status <= 599:
+                raise CoverageAuditError(
+                    f"browser evidence row {index} business API request {request_index} status is invalid"
+                )
+            if request.get("expected_status") not in {None, status}:
+                raise CoverageAuditError(
+                    f"browser evidence row {index} business API request {request_index} expected status mismatch"
+                )
+        actor_response = probe.get("actor_identity_response")
+        actor = record.get("actor_identity_evidence") or {}
+        if not isinstance(actor_response, dict):
+            raise CoverageAuditError(
+                f"browser evidence row {index} probe actor identity is required"
+            )
+        observed = {
+            field_name: actor_response.get(field_name)
+            for field_name in ("role", "user_id", "session_id")
+        }
+        expected = {
+            field_name: actor.get(field_name)
+            for field_name in ("role", "user_id", "session_id")
+        }
+        if observed != expected or stable_json_hash(actor_response) != actor.get(
+            "backend_identity_sha256"
+        ):
+            raise CoverageAuditError(
+                f"browser evidence row {index} probe actor identity does not match browser actor"
+            )
 
 
 def _probe_is_html_shell(probe: dict[str, Any]) -> bool:
@@ -1151,6 +1308,14 @@ def _probe_is_html_shell(probe: dict[str, Any]) -> bool:
         or body_sample.startswith("<html")
         or "<div id=\"root\"" in body_sample
     )
+
+
+def _origin(value: Any) -> tuple[str, str, int | None]:
+    parsed = urlsplit(str(value or ""))
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("not an HTTP(S) URL")
+    default_port = 443 if parsed.scheme == "https" else 80
+    return parsed.scheme, parsed.hostname.lower(), parsed.port or default_port
 
 
 def _is_business_api_mock(route: dict[str, Any]) -> bool:

@@ -59,6 +59,12 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     control_path = scripts_dir / "waygate-control.py"
     control_path.write_text(_control_script(), encoding="utf-8")
     control_path.chmod(0o755)
+    capture_path = scripts_dir / "capture-ui-evidence.py"
+    capture_path.write_text(_capture_script(), encoding="utf-8")
+    capture_path.chmod(0o755)
+    report_path = scripts_dir / "report-ui-evidence-performance.py"
+    report_path.write_text(_performance_report_script(), encoding="utf-8")
+    report_path.chmod(0o755)
     receipt_recovery_path = (
         scripts_dir / "recover-runtime-receipt-v1036-to-v1037.py"
     )
@@ -103,9 +109,18 @@ def build_codex_plugin_distribution(repo_root: str | Path) -> Path:
     if archive_path.exists():
         archive_path.unlink()
     with tarfile.open(archive_path, "w:gz") as archive:
-        archive.add(plugin_root, arcname=PLUGIN_NAME)
+        archive.add(plugin_root, arcname=PLUGIN_NAME, filter=_distribution_filter)
         archive.add(package["marketplace_path"], arcname=".agents/plugins/marketplace.json")
     return archive_path
+
+
+def _distribution_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    """Exclude local-only recovery experiments from release archives."""
+    if member.name.endswith(
+        "/scripts/recover-blocked-host-goal-current-task-v1037.py"
+    ):
+        return None
+    return member
 
 
 def _plugin_manifest() -> dict[str, Any]:
@@ -225,6 +240,17 @@ def _write_templates(templates_dir: Path) -> None:
                     "ui_conformance_review_sha256": "",
                     "covered_surface_ids": [],
                     "covered_region_ids": [],
+                },
+                "ui_evidence": {
+                    "policy_version": "v1",
+                    "profile": "standard",
+                    "registry_root_sha256": "",
+                    "closure_manifest_sha256": "",
+                    "closure_manifest_artifact_sha256": "",
+                    "executed_browser_projection_sha256": "",
+                    "production_conformance_projection_sha256": "",
+                    "test_implementation_review_sha256": "",
+                    "ui_conformance_review_sha256": "",
                 },
                 "high_risk_gate_subresults": {},
                 "negative_scope_guard_result": "passed",
@@ -516,11 +542,23 @@ def _write_templates(templates_dir: Path) -> None:
         ),
         "multi-agent-test-implementation-review.md": (
             "# Multi-Agent Test Implementation Review\n\n"
+            "- review_id:\n"
             "- review_type: test_implementation\n"
             "- review_mode: spawned_subagents | role_simulation | blocked_with_reason\n"
+            "- artifact_version: test-implementation-review-v1\n"
             "- reviewer_agent_ids: []\n"
             "- reviewer_spawn_source:\n"
             "- status: draft\n"
+            "- reviewers: []\n"
+            "- independent_positions: []\n"
+            "- cross_challenges: []\n"
+            "- revisions: []\n"
+            "- final_adjudication:\n"
+            "- conclusions: []\n"
+            "- accepted_suggestions: []\n"
+            "- rejected_suggestions: []\n"
+            "- unresolved_questions: []\n"
+            "- blocking_findings: []\n"
             "- actual_test_code_paths: []\n"
             "- execution_evidence_paths: []\n"
             "- reviewed_test_ids: []\n"
@@ -547,11 +585,22 @@ def _write_templates(templates_dir: Path) -> None:
         ),
         "multi-agent-ui-conformance-review.md": (
             "# Multi-Agent UI Conformance Review\n\n"
+            "- review_id:\n"
             "- review_type: ui_conformance\n"
             "- review_mode: spawned_subagents | role_simulation | blocked_with_reason\n"
+            "- artifact_version: ui-conformance-v1\n"
             "- reviewer_agent_ids: []\n"
             "- reviewer_spawn_source:\n"
             "- status: draft\n"
+            "- reviewers: []\n"
+            "- independent_positions: []\n"
+            "- cross_challenges: []\n"
+            "- revisions: []\n"
+            "- final_adjudication:\n"
+            "- conclusions: []\n"
+            "- accepted_suggestions: []\n"
+            "- rejected_suggestions: []\n"
+            "- unresolved_questions: []\n"
             "- reviewed_surface_ids: []\n"
             "- reviewed_state_ids: []\n"
             "- reviewed_region_ids: []\n"
@@ -654,6 +703,188 @@ def _write_templates(templates_dir: Path) -> None:
             "- remaining_tasks:\n"
             "  - None\n"
         ),
+        "ui-capture-manifest.json": json.dumps(
+            {
+                "schema_version": "capture-run-v1",
+                "capture_run_ref": "capture-run-<WAYGATE_CAPTURE_RUN_ID>",
+                "plan_id": "capture-plan-<sha256>",
+                "purpose": "closure",
+                "profile": "standard",
+                "closure_valid": True,
+                "source_identity": {"tree_sha256": "", "commit_sha": ""},
+                "build_identity": {"build_digest": ""},
+                "deployment_identity": {
+                    "deployment_id": "",
+                    "origin": "",
+                    "api_origin": "",
+                },
+                "environment_identity": {
+                    "environment_id": "",
+                    "feature_flags_sha256": "",
+                    "locale": "",
+                    "timezone": "",
+                    "reduced_motion": False,
+                },
+                "collector_identity": {
+                    "name": "",
+                    "version": "",
+                    "browser_name": "",
+                    "browser_version": "",
+                    "validator_version": PLUGIN_VERSION,
+                },
+                "actor_identities": [
+                    {
+                        "role": "",
+                        "user_id": "",
+                        "session_id": "",
+                        "backend_identity_sha256": "",
+                    }
+                ],
+                "data_state_identity": {"seed_id": "", "version": ""},
+                "units": [
+                    {
+                        "surface_id": "surface-example",
+                        "state_id": "state-example",
+                        "viewport_class": "desktop",
+                        "route": "/example",
+                        "origin": "https://ui.example.test",
+                        "acceptance_url": "https://ui.example.test/example",
+                        "execution_segment_id": "segment-example",
+                        "dpr": 1,
+                        "console_errors": [],
+                        "network_errors": [],
+                        "error_exemptions": [],
+                        "screenshot": {
+                            "path": ".product-delivery/staging/<run>/surface.png",
+                            "sha256": "<sha256>",
+                        },
+                        "semantic_snapshot": {
+                            "path": ".product-delivery/staging/<run>/surface-compat.json",
+                            "sha256": "<sha256>",
+                        },
+                        "task_semantic_snapshot": {
+                            "path": ".product-delivery/staging/<run>/surface-task.json",
+                            "sha256": "<sha256>",
+                        },
+                        "production_semantic_snapshot": {
+                            "path": ".product-delivery/staging/<run>/surface-production.json",
+                            "sha256": "<sha256>",
+                        },
+                        "computed_style": {
+                            "comparisons": [
+                                {
+                                    "region_id": "region-example",
+                                    "prototype": {"display": "grid"},
+                                    "production": {"display": "grid"},
+                                }
+                            ]
+                        },
+                        "geometry": {
+                            "observations": [
+                                {
+                                    "region_id": "region-example",
+                                    "x": 0,
+                                    "y": 0,
+                                    "width": 1280,
+                                    "height": 720,
+                                }
+                            ]
+                        },
+                        "production_component_refs": [
+                            {
+                                "path": "src/example-component.tsx",
+                                "kind": "component",
+                                "note": "Owns the captured surface",
+                            }
+                        ],
+                        "region_results": [
+                            {"region_id": "region-example", "observed": True}
+                        ],
+                        "relationship_results": [
+                            {
+                                "source_region_id": "region-example",
+                                "relation": "contains",
+                                "target_region_id": "control-example",
+                                "observed": True,
+                            }
+                        ],
+                        "interaction_results": [
+                            {
+                                "interaction_id": "interaction-example",
+                                "observed": True,
+                                "result": "Expected state became visible",
+                            }
+                        ],
+                    }
+                ],
+                "journey_segments": [
+                    {
+                        "obligation_id": "OBL-example",
+                        "test_id": "TC-example",
+                        "execution_segment_id": "segment-example",
+                        "command": "npx playwright test example.spec.ts",
+                        "exit_code": 0,
+                        "evidence_strength": "full_stack_browser_e2e",
+                        "acceptance_url": "https://ui.example.test/example",
+                        "api_health_url": "https://api.example.test/health",
+                        "api_health_identity": "api-example-build",
+                        "console_errors": [],
+                        "network_errors": [],
+                        "error_exemptions": [],
+                        "mocked_routes": [],
+                        "semantic_assertions": ["Example result is visible"],
+                        "executed_actor_roles": ["example-role"],
+                        "primary_actor_role": "example-role",
+                        "ordinary_path_observed": True,
+                        "test_title_or_step": "Example role completes the ordinary path",
+                        "actor_identity_evidence": {
+                            "role": "example-role",
+                            "user_id": "example-user",
+                            "session_id": "example-session",
+                            "backend_identity_sha256": "<sha256>",
+                        },
+                        "trace": {
+                            "path": ".product-delivery/staging/<run>/trace.zip",
+                            "sha256": "<sha256>",
+                        },
+                        "screenshot": {
+                            "path": ".product-delivery/staging/<run>/journey.png",
+                            "sha256": "<sha256>",
+                        },
+                        "evidence": {
+                            "path": ".product-delivery/staging/<run>/journey.json",
+                            "sha256": "<sha256>",
+                        },
+                        "probe": {
+                            "path": ".product-delivery/staging/<run>/api-probe.json",
+                            "sha256": "<sha256>",
+                        },
+                        "segment_metadata": {
+                            "path": ".product-delivery/staging/<run>/journey-segment.json",
+                            "sha256": "<sha256>",
+                        },
+                    }
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        ) + "\n",
+        "playwright-capture-adapter.mjs": _playwright_capture_adapter_template(),
+        "post-implementation-review-batch.json": json.dumps(
+            {
+                "batch_id": "post-review-batch-<snapshot-prefix>",
+                "closure_review_snapshot_sha256": "<sha256>",
+                "test_implementation_review": {
+                    "template": "multi-agent-test-implementation-review.md"
+                },
+                "ui_conformance_review": {
+                    "template": "multi-agent-ui-conformance-review.md"
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
     }
     for filename, content in templates.items():
         (templates_dir / filename).write_text(content, encoding="utf-8")
@@ -1020,7 +1251,8 @@ def _skill_markdown() -> str:
         "`intended_product_ui_callouts`。污染属于 `prototype_design_integrity` 硬错误，不得进入视觉偏差裁决。"
         "历史 v1 bundle 与已确认 active delivery 不自动重开；原型修改、替换或主动重开后必须升级 v2。"
         "scan report、mapping 和验收说明只进入 review/integrity domain，不进入 `product_domain_hash`。\n\n"
-        "不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。"
+        + _trusted_ui_capture_guidance()
+        + "不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。"
         "插件 hook 只能读取状态并提供 guardrail；真正的跨 turn 续跑必须由 Codex Host Goal 调度。"
         "只有真实宿主 smoke 证明无需用户发送 `继续` 也会进入下一 turn，才可以宣称自动续跑。\n\n"
         "## Goal-Driven Closure\n\n"
@@ -1136,6 +1368,314 @@ def _control_script() -> str:
         "if __name__ == '__main__':\n"
         "    raise SystemExit(run_control_cli())\n"
     )
+
+
+def _trusted_ui_capture_guidance() -> str:
+    return """## V1.0.39 Trusted UI Capture
+
+V1.0.39 UI delivery 使用 `prepare_ui_evidence_run()` 生成采集计划，并由项目 adapter 通过
+`scripts/capture-ui-evidence.py` 在一次 browser invocation 中生成 screenshot、semantic/style/geometry、
+console/network、actor、trace 和 API probe 原始事实。随后必须调用 `record_ui_evidence_run()` 摄取不可变
+`capture-run-v1`；采集器不得自报 passed，TASK、Browser E2E、production conformance 和 closure 仍分别运行
+确定性 validator。
+
+### 档位和完整性
+
+- `purpose="iteration"` 只用于快速反馈，永远 `closure_valid=false`，不得调用
+  `record_ui_evidence_run()`，也不得进入 TASK、E2E、conformance 或 closure。
+- 正式证据使用 `purpose="closure"`、`requested_profile="auto"`。已知的低风险小改动解析为
+  `standard`；未知影响、缺少 provenance、认证/权限/安全/隐私/支付/破坏性操作、global shell/navigation/
+  design tokens、响应式基础、新 surface/route、API/schema/migration 或跨角色关键 Journey 自动解析为
+  `strict`。用户可显式传 `requested_profile="strict"` 升档；不得主动降档。
+- `standard` 的 `plan.units` 只列 affected + canary 快速集合，但 formal closure 最终必须覆盖
+  `plan.required_units` 全集。项目 adapter 的 closure 模式应在同一 frozen build 的最终正式运行中采集
+  `required_units`。如果早先 standard run 只采了 `plan.units`，它只能关闭所覆盖的 TASK slice；closure 前
+  必须重新 prepare 当前 plan 并在一次新 run 中补齐全部 `required_units`。不要把两个含重复 Journey 的
+  capture IDs 盲目合并。如果无法证明影响集合、build 稳定性或完整补采，应请用户升档 strict 后全量重采。
+- 旧 build、iteration、缺字段、未覆盖或 hash 不匹配的证据不得提升为 closure truth。
+
+### 可执行调用顺序
+
+以下 recipe 在 installed plugin root 下执行；Python 调用必须使用
+`PYTHONPATH=<plugin-root>/runtime`。每次 canonical workflow 写入前仍须完成当前 Host Goal reconciliation。
+`waygate-control.py` 只处理 lifecycle action，不处理 evidence API。
+
+1. 通过 installed runtime 调用 prepare，并从 canonical state 读取计划路径：
+
+   ```python
+   import json
+   from pathlib import Path
+   from product_delivery_agent.artifact_protocol import load_state
+   from product_delivery_agent.gatekeeper import (
+       prototype_conformance_closure_binding,
+       ui_evidence_closure_binding,
+   )
+   from product_delivery_agent.workflow import ProductDeliveryWorkflow
+
+   project_root = Path("<project-root>").resolve()
+   workflow = ProductDeliveryWorkflow(project_root)
+   plan = workflow.prepare_ui_evidence_run(
+       purpose="closure", requested_profile="auto"
+   )
+   state = load_state(project_root)
+   delivery_root = (
+       project_root / ".product-delivery" / "deliveries"
+       / state["feature_slug"] / state["delivery_id"]
+   )
+   plan_path = delivery_root / plan["artifact_path"]
+   print(json.dumps({"plan_id": plan["plan_id"], "plan_path": str(plan_path)}))
+   ```
+
+2. 把 `templates/playwright-capture-adapter.mjs` 复制到项目并实现其 `--project-module` contract。使用全新、
+   空的 staging 目录；Node 必须作为 executable，adapter 和 project module 分别作为参数，不能拼 shell：
+
+   ```bash
+   python3 <plugin-root>/scripts/capture-ui-evidence.py \\
+     --project-root <project-root> \\
+     --plan <plan-path> \\
+     --output-dir <project-root>/.product-delivery/staging/<fresh-run-id> \\
+     --adapter-executable node \\
+     --adapter-arg <project-root>/scripts/waygate-playwright-capture.mjs \\
+     --adapter-arg=--project-module \\
+     --adapter-arg <project-root>/scripts/waygate-project-capture.mjs
+   ```
+
+3. CLI 只返回 `staging_capture_ready`。读取其 `manifest_path`，再调用 canonical ingest：
+
+   ```python
+   result = workflow.record_ui_evidence_run(
+       plan_id=plan["plan_id"], manifest_path="<manifest-path>"
+   )
+   capture_id = result["capture_id"]
+   ```
+
+4. 当前 TASK 先分别调用
+   `record_task_executed_evidence(task_id, capture_run_ids=[capture_id])` 和
+   `record_task_prototype_conformance(task_id, capture_run_ids=[capture_id])`，两者通过后才允许 canonical TASK
+   completion。全部 TASK slice 完成后，优先调用无参数 `record_executed_browser_evidence()`，由 runtime 对
+   slice 并集去重并生成 current UI closure manifest；不得用 capture manifest 冒充 E2E verdict。
+5. Browser E2E 通过且 TASK 全部完成后，调用
+   `record_prototype_production_conformance(capture_run_ids=[<current-full-capture-id>])`。然后调用
+   `prepare_post_implementation_review_batch()` 冻结单一 index，所有评审者基于同一 snapshot 独立完成后，
+   使用 `record_post_implementation_review_batch()` 原子登记 test_implementation 与 ui_conformance；任何一类
+   无效都不得先登记另一类 passed。两个 typed payload 分别遵循
+   `templates/multi-agent-test-implementation-review.md` 与
+   `templates/multi-agent-ui-conformance-review.md` 的字段；使用
+   `templates/post-implementation-review-batch.json` 作为 outer wrapper，把 prepare 返回的 `batch_id` 和
+   `closure_review_snapshot_sha256` 放在两个 typed review 对象之外。
+6. 从 `templates/closure-artifact-template.json` 创建 closure payload，通过
+   `prototype_conformance_closure_binding(state)` 与 `ui_evidence_closure_binding(state)` 填入 canonical binding，
+   在 fresh state 上合并：`payload["prototype_conformance"] = prototype_conformance_closure_binding(state)`、
+   `payload["ui_evidence"] = ui_evidence_closure_binding(state)`，再调用 `record_feature_closure(payload)`；
+   不得手写 passed state。该 canonical write 完成后必须再次执行一次 fresh Host Goal reconciliation，并消费
+   validator 对应 checkpoint，才能运行 installed packaged
+   `scripts/validate-closure-artifact.py --project-root <project-root> --closure-artifact <path>`；通过后仍须完成
+   feature closure、delivery goal 和 Host Goal 对账。capture 或 `performance_report()` 本身不能关闭交付。
+
+### Adapter 输出 contract
+
+`templates/ui-capture-manifest.json` 给出完整 nested row 示例。artifact path 必须是 project-relative 且位于
+本次 staging 目录；每个 `{path, sha256}` 由 adapter 对实际 bytes 计算。production UI/API 可以同源，
+但 production origin 必须与冻结的本地 prototype origin 分离；API health 必须返回成功的非 HTML 响应，
+business request 必须是 API-origin 的真实 network 记录。正式 Journey 必须是 ordinary、role-accurate
+`full_stack_browser_e2e`，有独立 segment、trace、PNG、
+evidence、API probe 和非空 semantic assertions；probe JSON 必须含非空 `business_api_requests`。未豁免的
+console/network error 或 business API mock 会阻塞后续 validator。unit 必须包含真实 PNG、
+`task_semantic_snapshot`（`task-production-semantic-snapshot-v1`）、`production_semantic_snapshot`
+（`ui-semantic-surface-v1`）和兼容 `semantic_snapshot` reference；两个正式 projection 分别使用对应 snapshot，
+不得用改 schema 名的同一 JSON 冒充。还必须包含 computed-style comparisons、production component
+provenance，以及完整 region/relationship/interaction observations。
+每个 Journey 还必须提供 `segment_metadata`（`ui-journey-segment-metadata-v1`），精确绑定
+`capture_run_ref`、`execution_segment_id`、actor identity hash，以及 screenshot、trace、evidence、probe hashes。
+
+### 失败恢复
+
+- adapter 非 0、缺 manifest、schema/identity/path/hash 错误：本次仍是 staging，任何 gate 都未推进。保留输出供
+  诊断，不手改 manifest、registry 或 state；修复 adapter 后使用新的空 staging 目录重跑。
+- plan 创建后若 prototype、TASK binding、planned E2E、source tree 或 build 改变，丢弃旧 plan 并重新
+  `prepare_ui_evidence_run()`；不得重放 stale plan。build mismatch 必须从当前 frozen build 重新采集。
+- network/auth/data 环境故障先诊断并恢复确定性 seed/session；不得盲重试或把 inconclusive 当 passed。
+- TASK conformance 的结构、语义、interaction、证据错误是 hard blocker。视觉可裁决失败仍按统一分类器执行
+  两轮 systematic-debugging 修复；不得改冻结原型、mask 或阈值来让证据通过。
+- review input 变化后旧 batch stale；重新 prepare batch。评审者失败必须重试、替换或记录
+  `blocked_with_reason`，不能部分登记 passed。
+- closure validator 非 0 时 Goal 保持 active，按返回 blocker 修复并生成新的 canonical closure；禁止手填
+  passing 状态。
+
+"""
+
+
+def _capture_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""Run one project UI evidence adapter into non-canonical staging."""\n\n'
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.ui_evidence import run_capture_cli\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(run_capture_cli())\n"
+    )
+
+
+def _performance_report_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""Report non-authoritative Waygate UI evidence telemetry."""\n\n'
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.ui_evidence import run_performance_report_cli\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(run_performance_report_cli())\n"
+    )
+
+
+def _playwright_capture_adapter_template() -> str:
+    return """// Reusable fail-closed Waygate Playwright adapter harness.
+//
+// Copy this file into the target project. Pass a project module with
+// `--project-module <path>`. That module must export:
+//
+//   async function capture({ browser, plan, outputDir, writeArtifact }) {
+//     return {
+//       source_identity, build_identity, deployment_identity,
+//       environment_identity, collector_identity, actor_identities,
+//       data_state_identity, units, journey_segments
+//     };
+//   }
+//
+// Each unit and journey row must follow ui-capture-manifest.json. Use
+// writeArtifact("name.ext", bytesOrText) for every referenced artifact; it
+// returns the project-relative {path, sha256}. A formal closure capture should
+// cover plan.required_units, not only plan.units. The project module owns
+// authentication, deterministic data setup, route/interaction execution,
+// task and production semantic snapshots, style/geometry extraction, trace
+// capture, and API probing. Keep semantic_snapshot only as the compatibility
+// reference; formal projections consume task_semantic_snapshot and
+// production_semantic_snapshot separately.
+// Never return passed/status verdicts: canonical Waygate validators decide gates.
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { chromium } from 'playwright';
+
+function failClosed(message) {
+  throw new Error(`Waygate capture rejected: ${message}`);
+}
+
+function requiredEnvironment(name) {
+  const value = process.env[name];
+  if (!value) failClosed(`missing ${name}`);
+  return value;
+}
+
+function argument(name) {
+  const index = process.argv.indexOf(name);
+  if (index < 0 || !process.argv[index + 1]) failClosed(`missing ${name}`);
+  return process.argv[index + 1];
+}
+
+function rejectVerdicts(value, location = '$') {
+  const forbidden = new Set([
+    'status', 'passed', 'gate_status', 'closure_status', 'authoritative_verdict',
+  ]);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => rejectVerdicts(item, `${location}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    if (forbidden.has(key)) failClosed(`authoritative verdict at ${location}.${key}`);
+    rejectVerdicts(child, `${location}.${key}`);
+  }
+}
+
+const projectRoot = process.cwd();
+const planPath = requiredEnvironment('WAYGATE_CAPTURE_PLAN');
+const outputDir = path.resolve(requiredEnvironment('WAYGATE_CAPTURE_OUTPUT_DIR'));
+const captureRunRef = requiredEnvironment('WAYGATE_CAPTURE_RUN_ID');
+const projectModulePath = path.resolve(argument('--project-module'));
+const plan = JSON.parse(await fs.readFile(planPath, 'utf8'));
+if (plan.schema_version !== 'capture-plan-v1' || !plan.plan_id) {
+  failClosed('capture plan schema or plan_id is invalid');
+}
+if (!outputDir.startsWith(`${projectRoot}${path.sep}`)) {
+  failClosed('output directory must be below the project root');
+}
+if (!projectModulePath.startsWith(`${projectRoot}${path.sep}`)) {
+  failClosed('project module must be below the project root');
+}
+await fs.mkdir(outputDir, { recursive: true });
+if ((await fs.readdir(outputDir)).length !== 0) {
+  failClosed('output directory must be empty');
+}
+
+async function writeArtifact(relativeName, content) {
+  if (!relativeName || path.isAbsolute(relativeName) || relativeName.split(path.sep).includes('..')) {
+    failClosed(`unsafe artifact name: ${relativeName}`);
+  }
+  const target = path.resolve(outputDir, relativeName);
+  if (!target.startsWith(`${outputDir}${path.sep}`)) {
+    failClosed(`artifact escapes output directory: ${relativeName}`);
+  }
+  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(String(content));
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, bytes);
+  return {
+    path: path.relative(projectRoot, target),
+    sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+  };
+}
+
+const projectModule = await import(pathToFileURL(projectModulePath).href);
+if (typeof projectModule.capture !== 'function') {
+  failClosed('project module must export async capture(context)');
+}
+
+const browser = await chromium.launch();
+try {
+  const facts = await projectModule.capture({
+    browser,
+    plan,
+    outputDir,
+    writeArtifact,
+    // Formal standard and strict captures must eventually cover this full set.
+    requiredUnits: plan.required_units ?? [],
+    selectedUnits: plan.units ?? [],
+    journeys: plan.journeys ?? [],
+  });
+  if (!facts || typeof facts !== 'object') failClosed('capture() returned no facts');
+  rejectVerdicts(facts);
+  const manifest = {
+    schema_version: 'capture-run-v1',
+    capture_run_ref: captureRunRef,
+    plan_id: plan.plan_id,
+    purpose: plan.purpose,
+    profile: plan.resolved_profile,
+    closure_valid: plan.closure_valid,
+    source_identity: facts.source_identity,
+    build_identity: facts.build_identity,
+    deployment_identity: facts.deployment_identity,
+    environment_identity: facts.environment_identity,
+    collector_identity: facts.collector_identity,
+    actor_identities: facts.actor_identities,
+    data_state_identity: facts.data_state_identity,
+    units: facts.units,
+    journey_segments: facts.journey_segments,
+  };
+  await fs.writeFile(
+    path.join(outputDir, 'capture-manifest.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    { flag: 'wx' },
+  );
+} finally {
+  await browser.close();
+}
+"""
 
 
 def _runtime_receipt_recovery_script() -> str:

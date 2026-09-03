@@ -70,6 +70,11 @@ _MASK_FIELDS = {
 _MAX_PNG_FILE_BYTES = 16 * 1024 * 1024
 _MAX_PNG_PIXELS = 16_000_000
 _MAX_PNG_DECODED_BYTES = 64 * 1024 * 1024
+_MAX_PNG_CACHE_BYTES = 128 * 1024 * 1024
+_PNG_DECODE_CACHE: dict[str, dict[str, Any]] = {}
+_PNG_DECODE_CACHE_BYTES = 0
+_PNG_DECODE_CACHE_HITS = 0
+_PNG_DECODE_CACHE_MISSES = 0
 
 
 def implementation_baseline_required(state: dict[str, Any]) -> bool:
@@ -739,11 +744,6 @@ def _validate_task_unit(
                 unit_key=key,
             )
         else:
-            pixel_diff_artifact_path = _write_pixel_diff_artifact(
-                project_root,
-                prototype_image,
-                production_image,
-            )
             prototype_regions = {
                 region.get("region_id"): region
                 for region in unit.get("prototype_regions", [])
@@ -754,15 +754,23 @@ def _validate_task_unit(
                 for region_id in unit.get("dynamic_mask_region_ids", [])
                 if region_id in prototype_regions
             ]
-            full_surface_diff_ratio = _pixel_diff_ratio(
+            comparison = _pixel_diff_summary(
                 prototype_image,
                 production_image,
                 threshold=float(visual_policy.get("pixel_threshold", 0.2)),
+                region_boxes={
+                    region_id: prototype_regions[region_id].get("bounds")
+                    for region_id in binding.get("region_ids") or []
+                    if region_id in prototype_regions
+                },
                 excluded_boxes=mask_boxes,
             )
+            full_surface_diff_ratio = comparison["full_surface_diff_ratio"]
+            pixel_failed = False
             if full_surface_diff_ratio > float(
                 visual_policy.get("full_surface_max_diff_ratio", 0.05)
             ):
+                pixel_failed = True
                 _record_failure(
                     local_failures,
                     "full_surface_pixel_diff",
@@ -780,13 +788,7 @@ def _validate_task_unit(
                         region_id=region_id,
                     )
                     continue
-                ratio = _pixel_diff_ratio(
-                    prototype_image,
-                    production_image,
-                    threshold=float(visual_policy.get("pixel_threshold", 0.2)),
-                    include_box=prototype_region.get("bounds"),
-                    excluded_boxes=mask_boxes,
-                )
+                ratio = comparison["region_diff_ratios"][region_id]
                 critical_results.append(
                     {
                         "region_id": region_id,
@@ -801,6 +803,7 @@ def _validate_task_unit(
                 if ratio > float(
                     visual_policy.get("critical_region_max_diff_ratio", 0.02)
                 ):
+                    pixel_failed = True
                     _record_failure(
                         local_failures,
                         "critical_region_pixel_diff",
@@ -808,6 +811,13 @@ def _validate_task_unit(
                         unit_key=key,
                         region_id=region_id,
                     )
+            if pixel_failed:
+                pixel_diff_artifact_path = _write_pixel_diff_artifact(
+                    project_root,
+                    prototype_image,
+                    production_image,
+                    changed_mask=comparison["changed_mask"],
+                )
 
     if snapshot is not None and production_image is not None:
         geometry_results = _validate_task_semantics(
@@ -1168,6 +1178,8 @@ def _decode_png(
     expected_width: int | None = None,
     expected_height: int | None = None,
 ) -> dict[str, Any]:
+    global _PNG_DECODE_CACHE_HITS
+    global _PNG_DECODE_CACHE_MISSES
     path = resolve_project_path(project_root, artifact_path, artifact_only=True)
     if path.stat().st_size > _MAX_PNG_FILE_BYTES:
         raise _PNGResourceLimitError("PNG file exceeds the decoder size limit")
@@ -1185,6 +1197,10 @@ def _decode_png(
         )
     if metadata["width"] * metadata["height"] > _MAX_PNG_PIXELS:
         raise _PNGResourceLimitError("PNG pixel count exceeds the decoder limit")
+    cached = _PNG_DECODE_CACHE.get(metadata["sha256"])
+    if cached is not None:
+        _PNG_DECODE_CACHE_HITS += 1
+        return {**metadata, "pixels": cached["pixels"]}
     if (
         reuse_pixels_from is not None
         and metadata["sha256"] == reuse_pixels_from.get("sha256")
@@ -1192,6 +1208,7 @@ def _decode_png(
         and metadata["height"] == reuse_pixels_from.get("height")
     ):
         return {**metadata, "pixels": reuse_pixels_from["pixels"]}
+    _PNG_DECODE_CACHE_MISSES += 1
     data = path.read_bytes()
     offset = 8
     ihdr: tuple[int, int, int, int, int, int, int] | None = None
@@ -1275,10 +1292,52 @@ def _decode_png(
                 rgba.extend(row[pixel_offset : pixel_offset + 3])
                 rgba.append(255)
         previous = row
-    return {
+    result = {
         **metadata,
         "pixels": bytes(rgba),
         "sha256": sha256_file(path),
+    }
+    _cache_decoded_png(result)
+    return result
+
+
+def _cache_decoded_png(value: dict[str, Any]) -> None:
+    global _PNG_DECODE_CACHE_BYTES
+    pixels = value["pixels"]
+    digest = value["sha256"]
+    if digest in _PNG_DECODE_CACHE or len(pixels) > _MAX_PNG_CACHE_BYTES:
+        return
+    while _PNG_DECODE_CACHE and (
+        _PNG_DECODE_CACHE_BYTES + len(pixels) > _MAX_PNG_CACHE_BYTES
+    ):
+        oldest = next(iter(_PNG_DECODE_CACHE))
+        removed = _PNG_DECODE_CACHE.pop(oldest)
+        _PNG_DECODE_CACHE_BYTES -= len(removed["pixels"])
+    _PNG_DECODE_CACHE[digest] = {
+        "pixels": pixels,
+        "width": value["width"],
+        "height": value["height"],
+    }
+    _PNG_DECODE_CACHE_BYTES += len(pixels)
+
+
+def _clear_png_decode_cache() -> None:
+    """Clear process-local deterministic PNG reuse."""
+    global _PNG_DECODE_CACHE_BYTES
+    global _PNG_DECODE_CACHE_HITS
+    global _PNG_DECODE_CACHE_MISSES
+    _PNG_DECODE_CACHE.clear()
+    _PNG_DECODE_CACHE_BYTES = 0
+    _PNG_DECODE_CACHE_HITS = 0
+    _PNG_DECODE_CACHE_MISSES = 0
+
+
+def _png_decode_cache_stats() -> dict[str, int]:
+    return {
+        "entries": len(_PNG_DECODE_CACHE),
+        "bytes": _PNG_DECODE_CACHE_BYTES,
+        "hits": _PNG_DECODE_CACHE_HITS,
+        "misses": _PNG_DECODE_CACHE_MISSES,
     }
 
 
@@ -1298,6 +1357,8 @@ def _write_pixel_diff_artifact(
     project_root: str | Path,
     prototype: dict[str, Any],
     production: dict[str, Any],
+    *,
+    changed_mask: bytes | bytearray | None = None,
 ) -> str:
     relative = (
         ".product-delivery/artifacts/task-conformance/"
@@ -1314,7 +1375,11 @@ def _write_pixel_diff_artifact(
         rows.append(0)
         for x in range(width):
             index = (y * width + x) * 4
-            changed = before[index : index + 4] != after[index : index + 4]
+            changed = (
+                bool(changed_mask[y * width + x])
+                if changed_mask is not None
+                else before[index : index + 4] != after[index : index + 4]
+            )
             rows.extend((255, 0, 0, 255) if changed else (0, 0, 0, 0))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
@@ -1370,6 +1435,72 @@ def _pixel_diff_ratio(
             ):
                 different += 1
     return round(different / total, 10) if total else 0.0
+
+
+def _pixel_diff_summary(
+    prototype: dict[str, Any],
+    production: dict[str, Any],
+    *,
+    threshold: float,
+    region_boxes: dict[str, dict[str, Any] | None],
+    excluded_boxes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Compute the full surface and every critical region in one traversal."""
+    width = int(prototype["width"])
+    height = int(prototype["height"])
+    before = prototype["pixels"]
+    after = production["pixels"]
+    excluded = [
+        _integer_box(box, width, height)
+        for box in (excluded_boxes or [])
+        if isinstance(box, dict)
+    ]
+    regions = {
+        region_id: _integer_box(box, width, height)
+        for region_id, box in region_boxes.items()
+        if isinstance(box, dict)
+    }
+    totals = {region_id: 0 for region_id in regions}
+    differences = {region_id: 0 for region_id in regions}
+    full_total = full_different = 0
+    channel_limit = threshold * 255
+    changed_mask = bytearray(width * height)
+    for y in range(height):
+        for x in range(width):
+            if any(
+                left <= x < right and top <= y < bottom
+                for left, top, right, bottom in excluded
+            ):
+                continue
+            offset = (y * width + x) * 4
+            changed = any(
+                abs(before[offset + channel] - after[offset + channel])
+                > channel_limit
+                for channel in range(4)
+            )
+            changed_mask[y * width + x] = 1 if changed else 0
+            full_total += 1
+            if changed:
+                full_different += 1
+            for region_id, (left, top, right, bottom) in regions.items():
+                if left <= x < right and top <= y < bottom:
+                    totals[region_id] += 1
+                    if changed:
+                        differences[region_id] += 1
+    return {
+        "full_surface_diff_ratio": (
+            round(full_different / full_total, 10) if full_total else 0.0
+        ),
+        "region_diff_ratios": {
+            region_id: (
+                round(differences[region_id] / totals[region_id], 10)
+                if totals[region_id]
+                else 0.0
+            )
+            for region_id in regions
+        },
+        "changed_mask": bytes(changed_mask),
+    }
 
 
 def _integer_box(

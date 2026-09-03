@@ -26,7 +26,7 @@
   "matrix_range": "TC-V008-001..TC-V008-001",
   "negative_scope_guard_result": "passed",
   "passed": true,
-  "plugin_version": "1.0.38",
+  "plugin_version": "1.0.39",
   "prototype_conformance": {
     "conformance_artifact_sha256": "",
     "conformance_evidence_sha256": "",
@@ -53,5 +53,16 @@
       "result_artifact": "",
       "status": "supporting_only"
     }
-  ]
+  ],
+  "ui_evidence": {
+    "closure_manifest_artifact_sha256": "",
+    "closure_manifest_sha256": "",
+    "executed_browser_projection_sha256": "",
+    "policy_version": "v1",
+    "production_conformance_projection_sha256": "",
+    "profile": "standard",
+    "registry_root_sha256": "",
+    "test_implementation_review_sha256": "",
+    "ui_conformance_review_sha256": ""
+  }
 }

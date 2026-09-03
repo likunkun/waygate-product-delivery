@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.38-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.39-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -34,6 +34,7 @@ Waygate Product Delivery 把这些失败模式变成明确的门禁。
 | 分层产品确认 | 先确认需求范围和 UI 原型或非 UI 行为契约，再生成详细测试设计。 |
 | 原型设计完整性 | 纯净产品表面必须继承全局产品上下文，评审标注只能放在独立评审页。 |
 | 原型绑定 TASK | 每个可见 UI TASK 都绑定冻结原型的精确切片，并在完成前通过逐任务语义与视觉一致性检查。 |
+| 可信可复用 UI 采集 | 项目 adapter 一次采集不可变原始事实，再独立投影为 TASK、Browser E2E、生产一致性、评审和 closure 证据。 |
 | 非 UI 行为契约 | API、CLI、服务、后台任务用行为契约替代 HTML 原型。 |
 | 多 Agent 评审 artifact | 场景和测试覆盖评审必须留下可见 artifact，不能只在聊天里说做过。 |
 | Goal 驱动实现 | 实现阶段必须按 TASK 队列推进，不能无阻塞就中途停下。 |
@@ -121,7 +122,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.0.38.tar.gz
+dist/waygate-product-delivery-1.0.39.tar.gz
 ```
 
 ## Codex 使用方式
@@ -179,6 +180,45 @@ UI 设计判断继续使用 `ui-ux-pro-max`，浏览器可见行为使用 `webap
 
 门禁验证客观事实，多 Agent 判断设计质量。评审负责判断基线是否有代表性、局部精美是否与全局产品协调、例外是否合理；不能覆盖门禁失败，也不能用空 findings 代替完整正向评审。
 
+### 可信 UI 采集与证据档位
+
+V1.0.39 使用 `prepare_ui_evidence_run()` 和 `record_ui_evidence_run()` 管理不可变 `capture-run-v1` registry。通过打包的 `scripts/capture-ui-evidence.py` 调用项目自有 adapter，一次采集截图、semantic/style/geometry、console/network、actor、trace 和 API probe。staging CLI 不推进任何门禁；canonical workflow 摄取时重新计算 hash，TASK、Browser E2E、production conformance、评审和 closure 仍由独立 validator 判定。
+
+`iteration` 只提供快速、非 canonical 的开发反馈，永远不能关闭门禁。正式运行自动解析为 `standard`，或对未知/高风险影响 fail closed 到 `strict`；用户只能升到 strict，不能降档。缺少 provenance、认证授权、安全隐私支付、破坏性操作、共享 shell/navigation/design tokens、响应式基础、新 surface/route、API/schema migration 和跨角色关键 Journey 都强制 strict。passing 结论不得跨 build 复用。
+
+打包的 `templates/playwright-capture-adapter.mjs` 是可复用、fail-closed 的 harness。复制到目标项目后，提供一个导出 `capture(context)` 的 project module；认证、确定性数据准备、route/Journey 执行、semantic/style/geometry 抽取、trace、截图和 API probe 都由该 module 负责。`templates/ui-capture-manifest.json` 给出完整 unit/Journey nested 字段；所有 artifact reference 都必须是 project-relative staging path，并按真实 bytes 计算 hash。
+
+通过 installed runtime prepare 正式计划，读取其 canonical artifact record，再以非 shell 方式调用 adapter。执行 Python 片段时设置 `PYTHONPATH=<plugin-root>/runtime`，避免 active delivery 混用 runtime：
+
+```python
+from pathlib import Path
+from product_delivery_agent.artifact_protocol import load_state
+from product_delivery_agent.workflow import ProductDeliveryWorkflow
+
+root = Path("<project-root>").resolve()
+workflow = ProductDeliveryWorkflow(root)
+plan = workflow.prepare_ui_evidence_run("closure", requested_profile="auto")
+state = load_state(root)
+delivery_root = root / ".product-delivery" / "deliveries" / state["feature_slug"] / state["delivery_id"]
+plan_path = delivery_root / plan["artifact_path"]
+```
+
+```bash
+python3 <plugin-root>/scripts/capture-ui-evidence.py \
+  --project-root <project-root> --plan <plan-path> \
+  --output-dir <project-root>/.product-delivery/staging/<fresh-run-id> \
+  --adapter-executable node \
+  --adapter-arg <project-root>/scripts/waygate-playwright-capture.mjs \
+  --adapter-arg=--project-module \
+  --adapter-arg <project-root>/scripts/waygate-project-capture.mjs
+```
+
+命令只返回 staging `manifest_path`；再将它传给 `record_ui_evidence_run(plan_id, manifest_path)`。每个 unit 分别携带 `task_semantic_snapshot`（`task-production-semantic-snapshot-v1`）与 `production_semantic_snapshot`（`ui-semantic-surface-v1`），同时保留兼容 `semantic_snapshot`；两个正式 projection 分别消费对应 typed ref。每个当前 TASK 完成前都要登记 capture-backed TASK E2E 与 prototype conformance。全部 slice 通过后，优先无参数调用 `record_executed_browser_evidence()` 聚合 canonical slice 并集，再登记全量 production conformance 和冻结的执行后 review batch。最后仍需 canonical v0.11 finalizer、feature closure、delivery goal 与 Host Goal 对账；capture 本身不能关闭交付。
+
+`standard` 的 `plan.units` 是 affected + canary 快速集合，`plan.required_units` 才是 formal closure 全集。closure adapter 的最终同 build run 应采集 `required_units`。如果早先 standard run 只采集了 `plan.units`，重新 prepare 当前 plan 并进行一次全量新 run；不要盲目合并含重复 Journey 的多次 run。影响/provenance 不确定、命中 strict 风险或无法证明同 build 完整覆盖时，应请用户升档 `strict`。
+
+失败结果始终没有门禁权限。adapter/schema/path/hash 失败时保留 staging 输出供诊断，修复源头后换全新空 staging 目录重跑；prototype、TASK binding、E2E plan、source 或 build 变化后必须重新 prepare。禁止手改 manifest、registry 或 state，也不能盲重试 network/auth/data 错误或把 inconclusive 当 passed。`performance_report()` 只报告采集、重试和复用成本，不具备门禁权限。
+
 `product_baseline` 只展示纯净原型和纯净截图。仅评审标注变化，只使绑定旧标注的内部 scenario review stale，不影响两次用户确认、测试计划或实现授权；产品页面或全局上下文变化仍触发完整下游失效。已确认基线的 v1.0.22 active delivery 暂时 grandfathered，直到再次修改原型或重开产品基线。用户确认仍严格只有两次：`product_baseline` 和 `test_coverage_plan`；closure schema 保持 `v0.11`。
 
 ### Host Goal Checkpoint 恢复
@@ -214,6 +254,7 @@ waygate-product-delivery
 | `artifact_protocol.py` | 本地状态和 artifact 持久化。 |
 | `startup_guard.py` | planning files、Open Spec、项目类型门禁。 |
 | `prototype_design.py` | 纯净表面、产品上下文、标注分离和设计 bundle 校验。 |
+| `ui_evidence.py` | 可信采集计划、registry、projection、档位、closure manifest 和遥测。 |
 | `gatekeeper.py` | handoff、implementation、closure 的 fail-closed invariants。 |
 | `delivery_goal.py` | TASK 队列、任务游标、停止门禁。 |
 | `host_goal.py` | 经验证的 Codex Host Goal 激活、对账、人工等待与完成。 |

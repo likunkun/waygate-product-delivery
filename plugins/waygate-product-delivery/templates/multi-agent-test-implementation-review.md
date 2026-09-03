@@ -1,10 +1,22 @@
 # Multi-Agent Test Implementation Review
 
+- review_id:
 - review_type: test_implementation
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
+- artifact_version: test-implementation-review-v1
 - reviewer_agent_ids: []
 - reviewer_spawn_source:
 - status: draft
+- reviewers: []
+- independent_positions: []
+- cross_challenges: []
+- revisions: []
+- final_adjudication:
+- conclusions: []
+- accepted_suggestions: []
+- rejected_suggestions: []
+- unresolved_questions: []
+- blocking_findings: []
 - actual_test_code_paths: []
 - execution_evidence_paths: []
 - reviewed_test_ids: []

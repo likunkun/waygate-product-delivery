@@ -149,13 +149,144 @@ V1.0.33 起，视觉裁决使用统一失败分类器，不再把可裁决视觉
 
 V1.0.34 起，高保真产品原型只能包含真实产品内容。新建或重开的 UI 原型必须使用 bundle v2，提交 `acceptance_content_separation`，并绑定 review-only 的 `prototype-acceptance-content-scan-v1` 报告。门禁同时扫描静态 DOM、渲染 DOM、semantic snapshot、属性、资源和可激活 review mode；验收标准、测试步骤/预期结果、AC/TC/SC 编号、评审意见、证据路径、mock/fixture/test-only 和开发说明都必须移出 clean surface。不可见 `data-testid` 与稳定 ID 可以保留。可能属于真实产品的文案必须通过 `product_content_mappings` 绑定到具备真实角色、需求、场景、触发和生命周期的 `intended_product_ui_callouts`。污染属于 `prototype_design_integrity` 硬错误，不得进入视觉偏差裁决。历史 v1 bundle 与已确认 active delivery 不自动重开；原型修改、替换或主动重开后必须升级 v2。scan report、mapping 和验收说明只进入 review/integrity domain，不进入 `product_domain_hash`。
 
+## V1.0.39 Trusted UI Capture
+
+V1.0.39 UI delivery 使用 `prepare_ui_evidence_run()` 生成采集计划，并由项目 adapter 通过
+`scripts/capture-ui-evidence.py` 在一次 browser invocation 中生成 screenshot、semantic/style/geometry、
+console/network、actor、trace 和 API probe 原始事实。随后必须调用 `record_ui_evidence_run()` 摄取不可变
+`capture-run-v1`；采集器不得自报 passed，TASK、Browser E2E、production conformance 和 closure 仍分别运行
+确定性 validator。
+
+### 档位和完整性
+
+- `purpose="iteration"` 只用于快速反馈，永远 `closure_valid=false`，不得调用
+  `record_ui_evidence_run()`，也不得进入 TASK、E2E、conformance 或 closure。
+- 正式证据使用 `purpose="closure"`、`requested_profile="auto"`。已知的低风险小改动解析为
+  `standard`；未知影响、缺少 provenance、认证/权限/安全/隐私/支付/破坏性操作、global shell/navigation/
+  design tokens、响应式基础、新 surface/route、API/schema/migration 或跨角色关键 Journey 自动解析为
+  `strict`。用户可显式传 `requested_profile="strict"` 升档；不得主动降档。
+- `standard` 的 `plan.units` 只列 affected + canary 快速集合，但 formal closure 最终必须覆盖
+  `plan.required_units` 全集。项目 adapter 的 closure 模式应在同一 frozen build 的最终正式运行中采集
+  `required_units`。如果早先 standard run 只采了 `plan.units`，它只能关闭所覆盖的 TASK slice；closure 前
+  必须重新 prepare 当前 plan 并在一次新 run 中补齐全部 `required_units`。不要把两个含重复 Journey 的
+  capture IDs 盲目合并。如果无法证明影响集合、build 稳定性或完整补采，应请用户升档 strict 后全量重采。
+- 旧 build、iteration、缺字段、未覆盖或 hash 不匹配的证据不得提升为 closure truth。
+
+### 可执行调用顺序
+
+以下 recipe 在 installed plugin root 下执行；Python 调用必须使用
+`PYTHONPATH=<plugin-root>/runtime`。每次 canonical workflow 写入前仍须完成当前 Host Goal reconciliation。
+`waygate-control.py` 只处理 lifecycle action，不处理 evidence API。
+
+1. 通过 installed runtime 调用 prepare，并从 canonical state 读取计划路径：
+
+   ```python
+   import json
+   from pathlib import Path
+   from product_delivery_agent.artifact_protocol import load_state
+   from product_delivery_agent.gatekeeper import (
+       prototype_conformance_closure_binding,
+       ui_evidence_closure_binding,
+   )
+   from product_delivery_agent.workflow import ProductDeliveryWorkflow
+
+   project_root = Path("<project-root>").resolve()
+   workflow = ProductDeliveryWorkflow(project_root)
+   plan = workflow.prepare_ui_evidence_run(
+       purpose="closure", requested_profile="auto"
+   )
+   state = load_state(project_root)
+   delivery_root = (
+       project_root / ".product-delivery" / "deliveries"
+       / state["feature_slug"] / state["delivery_id"]
+   )
+   plan_path = delivery_root / plan["artifact_path"]
+   print(json.dumps({"plan_id": plan["plan_id"], "plan_path": str(plan_path)}))
+   ```
+
+2. 把 `templates/playwright-capture-adapter.mjs` 复制到项目并实现其 `--project-module` contract。使用全新、
+   空的 staging 目录；Node 必须作为 executable，adapter 和 project module 分别作为参数，不能拼 shell：
+
+   ```bash
+   python3 <plugin-root>/scripts/capture-ui-evidence.py \
+     --project-root <project-root> \
+     --plan <plan-path> \
+     --output-dir <project-root>/.product-delivery/staging/<fresh-run-id> \
+     --adapter-executable node \
+     --adapter-arg <project-root>/scripts/waygate-playwright-capture.mjs \
+     --adapter-arg=--project-module \
+     --adapter-arg <project-root>/scripts/waygate-project-capture.mjs
+   ```
+
+3. CLI 只返回 `staging_capture_ready`。读取其 `manifest_path`，再调用 canonical ingest：
+
+   ```python
+   result = workflow.record_ui_evidence_run(
+       plan_id=plan["plan_id"], manifest_path="<manifest-path>"
+   )
+   capture_id = result["capture_id"]
+   ```
+
+4. 当前 TASK 先分别调用
+   `record_task_executed_evidence(task_id, capture_run_ids=[capture_id])` 和
+   `record_task_prototype_conformance(task_id, capture_run_ids=[capture_id])`，两者通过后才允许 canonical TASK
+   completion。全部 TASK slice 完成后，优先调用无参数 `record_executed_browser_evidence()`，由 runtime 对
+   slice 并集去重并生成 current UI closure manifest；不得用 capture manifest 冒充 E2E verdict。
+5. Browser E2E 通过且 TASK 全部完成后，调用
+   `record_prototype_production_conformance(capture_run_ids=[<current-full-capture-id>])`。然后调用
+   `prepare_post_implementation_review_batch()` 冻结单一 index，所有评审者基于同一 snapshot 独立完成后，
+   使用 `record_post_implementation_review_batch()` 原子登记 test_implementation 与 ui_conformance；任何一类
+   无效都不得先登记另一类 passed。两个 typed payload 分别遵循
+   `templates/multi-agent-test-implementation-review.md` 与
+   `templates/multi-agent-ui-conformance-review.md` 的字段；使用
+   `templates/post-implementation-review-batch.json` 作为 outer wrapper，把 prepare 返回的 `batch_id` 和
+   `closure_review_snapshot_sha256` 放在两个 typed review 对象之外。
+6. 从 `templates/closure-artifact-template.json` 创建 closure payload，通过
+   `prototype_conformance_closure_binding(state)` 与 `ui_evidence_closure_binding(state)` 填入 canonical binding，
+   在 fresh state 上合并：`payload["prototype_conformance"] = prototype_conformance_closure_binding(state)`、
+   `payload["ui_evidence"] = ui_evidence_closure_binding(state)`，再调用 `record_feature_closure(payload)`；
+   不得手写 passed state。该 canonical write 完成后必须再次执行一次 fresh Host Goal reconciliation，并消费
+   validator 对应 checkpoint，才能运行 installed packaged
+   `scripts/validate-closure-artifact.py --project-root <project-root> --closure-artifact <path>`；通过后仍须完成
+   feature closure、delivery goal 和 Host Goal 对账。capture 或 `performance_report()` 本身不能关闭交付。
+
+### Adapter 输出 contract
+
+`templates/ui-capture-manifest.json` 给出完整 nested row 示例。artifact path 必须是 project-relative 且位于
+本次 staging 目录；每个 `{path, sha256}` 由 adapter 对实际 bytes 计算。production UI/API 可以同源，
+但 production origin 必须与冻结的本地 prototype origin 分离；API health 必须返回成功的非 HTML 响应，
+business request 必须是 API-origin 的真实 network 记录。正式 Journey 必须是 ordinary、role-accurate
+`full_stack_browser_e2e`，有独立 segment、trace、PNG、
+evidence、API probe 和非空 semantic assertions；probe JSON 必须含非空 `business_api_requests`。未豁免的
+console/network error 或 business API mock 会阻塞后续 validator。unit 必须包含真实 PNG、
+`task_semantic_snapshot`（`task-production-semantic-snapshot-v1`）、`production_semantic_snapshot`
+（`ui-semantic-surface-v1`）和兼容 `semantic_snapshot` reference；两个正式 projection 分别使用对应 snapshot，
+不得用改 schema 名的同一 JSON 冒充。还必须包含 computed-style comparisons、production component
+provenance，以及完整 region/relationship/interaction observations。
+每个 Journey 还必须提供 `segment_metadata`（`ui-journey-segment-metadata-v1`），精确绑定
+`capture_run_ref`、`execution_segment_id`、actor identity hash，以及 screenshot、trace、evidence、probe hashes。
+
+### 失败恢复
+
+- adapter 非 0、缺 manifest、schema/identity/path/hash 错误：本次仍是 staging，任何 gate 都未推进。保留输出供
+  诊断，不手改 manifest、registry 或 state；修复 adapter 后使用新的空 staging 目录重跑。
+- plan 创建后若 prototype、TASK binding、planned E2E、source tree 或 build 改变，丢弃旧 plan 并重新
+  `prepare_ui_evidence_run()`；不得重放 stale plan。build mismatch 必须从当前 frozen build 重新采集。
+- network/auth/data 环境故障先诊断并恢复确定性 seed/session；不得盲重试或把 inconclusive 当 passed。
+- TASK conformance 的结构、语义、interaction、证据错误是 hard blocker。视觉可裁决失败仍按统一分类器执行
+  两轮 systematic-debugging 修复；不得改冻结原型、mask 或阈值来让证据通过。
+- review input 变化后旧 batch stale；重新 prepare batch。评审者失败必须重试、替换或记录
+  `blocked_with_reason`，不能部分登记 passed。
+- closure validator 非 0 时 Goal 保持 active，按返回 blocker 修复并生成新的 canonical closure；禁止手填
+  passing 状态。
+
 不得使用 20 秒 watchdog、定时发送 `继续`、网络异常后盲目重试或把 hook 输出伪装成用户输入。插件 hook 只能读取状态并提供 guardrail；真正的跨 turn 续跑必须由 Codex Host Goal 调度。只有真实宿主 smoke 证明无需用户发送 `继续` 也会进入下一 turn，才可以宣称自动续跑。
 
 ## Goal-Driven Closure
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.38`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.39`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 

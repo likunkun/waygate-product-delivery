@@ -11,13 +11,16 @@ from product_delivery_agent.gatekeeper import (
     PLUGIN_VERSION,
     GatekeeperError,
     prototype_conformance_closure_binding,
+    ui_evidence_closure_binding,
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.conformance_fixtures import (
     activate_host_goal,
+    attach_v1039_ui_closure_evidence,
     complete_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
+    enable_legacy_ui_evidence_fixture,
     prototype_contract,
     record_bundled_ui_prototype_review,
     record_passing_task_prototype_conformance,
@@ -372,9 +375,20 @@ def closure_artifact(state=None):
         "created_fake_controller_state": False,
     }
     if state is not None:
+        artifact["e2e_evidence_paths"] = sorted(
+            {
+                record["evidence_path"]
+                for record in (
+                    state.get("executed_browser_evidence") or {}
+                ).get("records")
+                or []
+                if isinstance(record, dict) and record.get("evidence_path")
+            }
+        )
         artifact["prototype_conformance"] = prototype_conformance_closure_binding(
             state
         )
+        artifact["ui_evidence"] = ui_evidence_closure_binding(state)
     return artifact
 
 
@@ -386,6 +400,7 @@ def workflow_ready_for_handoff(project_root):
                 feature_slug="v1.0.4-goal-driven-closure", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.select_project_type("ui")
+    enable_legacy_ui_evidence_fixture(workflow, project_root)
     record_bundled_ui_prototype_review(
         workflow, project_root, ui_review_payload(prototype_path)
     )
@@ -595,6 +610,7 @@ class GoalDrivenClosureV104Tests(unittest.TestCase):
                 multi_agent_review("test_implementation"),
             )
             record_ui_conformance(workflow, project_root)
+            attach_v1039_ui_closure_evidence(workflow, project_root)
             reconcile_host_goal(workflow)
             state = workflow.record_feature_closure(
                 closure_artifact(workflow.status())

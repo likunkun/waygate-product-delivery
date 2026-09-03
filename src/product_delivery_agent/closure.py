@@ -118,6 +118,19 @@ def render_feature_closure(closure: dict[str, Any]) -> str:
                 *_bullets(prototype_conformance.get("covered_region_ids", [])),
             ]
         )
+    ui_evidence = closure.get("ui_evidence")
+    if isinstance(ui_evidence, dict):
+        lines.extend(
+            [
+                "",
+                "## Trusted UI Evidence",
+                f"- Profile: {ui_evidence.get('profile', '')}",
+                f"- Registry Root: {ui_evidence.get('registry_root_sha256', '')}",
+                f"- Closure Manifest: {ui_evidence.get('closure_manifest_sha256', '')}",
+                f"- Browser Projection: {ui_evidence.get('executed_browser_projection_sha256', '')}",
+                f"- Production Projection: {ui_evidence.get('production_conformance_projection_sha256', '')}",
+            ]
+        )
     lines.extend(
         [
             "",
