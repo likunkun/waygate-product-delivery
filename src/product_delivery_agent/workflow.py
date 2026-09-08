@@ -134,6 +134,13 @@ from product_delivery_agent.implementation_baseline import (
     validate_implementation_baseline,
     validate_task_prototype_conformance,
 )
+from product_delivery_agent.ui_visual_loop import (
+    VisualLoopError,
+    build_visual_loop_plan,
+    compare_visual_loop,
+    default_ui_visual_loop_policy,
+    ui_visual_loop_required,
+)
 from product_delivery_agent.non_ui_behavior import (
     render_non_ui_behavior_contract,
     validate_non_ui_behavior_contract,
@@ -2136,6 +2143,9 @@ class ProductDeliveryWorkflow:
             state["implementation_visual_policy"] = deepcopy(
                 DEFAULT_VISUAL_POLICY
             )
+            state["ui_visual_loop_policy"] = default_ui_visual_loop_policy(
+                status="required"
+            )
             state["stage"] = "ui_prototype_confirmation"
             state["next_gate"] = "ui_prototype_review"
             if "ui_html_prototype_confirmation" not in blocked_until:
@@ -2150,6 +2160,9 @@ class ProductDeliveryWorkflow:
                 "status": "not_applicable",
                 "introduced_in": "1.0.28",
             }
+            state["ui_visual_loop_policy"] = default_ui_visual_loop_policy(
+                status="not_applicable"
+            )
             state["journey_slice_task_policy"] = default_journey_slice_task_policy(
                 status="required"
             )
@@ -3243,31 +3256,47 @@ class ProductDeliveryWorkflow:
         )
         implementation_baseline = self._load_current_implementation_baseline(state)
         verified_task_conformance = state.get("task_prototype_conformance") or {}
+        verified_visual_loop = state.get("ui_visual_loop") or {}
         if implementation_baseline_required(state):
             verified_records = {}
             for task in delivery_goal["planned_tasks"]:
                 if task.get("ui_impact") != "prototype_bound":
                     continue
                 try:
-                    verified_records[task["task_id"]] = (
-                        self._load_passed_task_prototype_conformance(
-                            state,
-                            task["task_id"],
-                            task,
-                            implementation_baseline,
+                    if ui_visual_loop_required(state):
+                        verified_records[task["task_id"]] = (
+                            self._load_passed_task_visual_loop(
+                                state,
+                                task["task_id"],
+                                task,
+                            )
                         )
-                    )
+                    else:
+                        verified_records[task["task_id"]] = (
+                            self._load_passed_task_prototype_conformance(
+                                state,
+                                task["task_id"],
+                                task,
+                                implementation_baseline,
+                            )
+                        )
                 except WorkflowError:
                     continue
-            verified_task_conformance = {
+            verified_bundle = {
                 "status": "passed" if verified_records else "missing",
                 "records": verified_records,
             }
+            if ui_visual_loop_required(state):
+                verified_visual_loop = verified_bundle
+            else:
+                verified_task_conformance = verified_bundle
         reusable_completions = self._matching_task_completions(
             previous_goal,
             delivery_goal,
             implementation_baseline=implementation_baseline,
             task_prototype_conformance=verified_task_conformance,
+            ui_visual_loop=verified_visual_loop,
+            visual_loop_required=ui_visual_loop_required(state),
         )
         if reusable_completions:
             delivery_goal = self._apply_reused_task_completions(
@@ -3754,6 +3783,161 @@ class ProductDeliveryWorkflow:
     def derive_remaining_tasks(self) -> list[dict[str, Any]]:
         state = self._require_started()
         return derive_goal_remaining_tasks(state)
+
+
+    def prepare_ui_visual_loop(
+        self,
+        task_id: str,
+        surface_id: str,
+        state_id: str,
+        viewport_class: str,
+        region_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Prepare one bound-unit chrome comparison without consuming Host Goal."""
+        state = self._require_started()
+        self._require_current_prototype_progression(state)
+        if not implementation_baseline_required(state):
+            raise WorkflowError("visual loop is only available for required UI baselines")
+        goal = state.get("delivery_goal") or {}
+        if goal.get("current_task_cursor") != task_id:
+            raise WorkflowError("visual loop must match the current task cursor")
+        planned_task = next(
+            (
+                task
+                for task in goal.get("planned_tasks", [])
+                if task.get("task_id") == task_id
+            ),
+            None,
+        )
+        if not isinstance(planned_task, dict):
+            raise WorkflowError(f"task is not in planned TASK queue: {task_id}")
+        try:
+            implementation_baseline = self._load_current_implementation_baseline(state)
+            plan = build_visual_loop_plan(
+                delivery_id=str(state.get("delivery_id") or ""),
+                feature_slug=str(state.get("feature_slug") or ""),
+                task_id=task_id,
+                planned_task=planned_task,
+                implementation_baseline=implementation_baseline,
+                surface_id=surface_id,
+                state_id=state_id,
+                viewport_class=viewport_class,
+                region_ids=region_ids,
+            )
+        except VisualLoopError as cause:
+            raise WorkflowError(str(cause)) from cause
+        plan["visual_policy"] = deepcopy(
+            implementation_baseline.get("visual_policy") or DEFAULT_VISUAL_POLICY
+        )
+        plan_path = self._write_delivery_artifact(
+            state,
+            "ui_visual_loop_plan",
+            f"ui-visual-loop-plan-{plan['plan_id']}.json",
+            json.dumps(plan, indent=2, sort_keys=True) + "\n",
+        )
+        loop = deepcopy(state.get("ui_visual_loop") or {})
+        plans = dict(loop.get("plans") or {})
+        plans[plan["plan_id"]] = {
+            **plan,
+            "status": "prepared",
+            "artifact_path": f"artifacts/{plan_path.name}",
+            "artifact_sha256": self._artifact_hash(str(plan_path)),
+        }
+        loop["plans"] = plans
+        loop["current_plan_id"] = plan["plan_id"]
+        state["ui_visual_loop"] = loop
+        state = append_transition(
+            state,
+            "ui_visual_loop_plan_prepared",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            output_artifact_hashes={
+                f"artifacts/{plan_path.name}": self._artifact_hash(str(plan_path))
+            },
+            metadata={
+                "task_id": task_id,
+                "plan_id": plan["plan_id"],
+                "closure_valid": False,
+            },
+        )
+        return write_state(self.project_root, state)
+
+    def record_ui_visual_loop(
+        self,
+        plan_id: str,
+        manifest: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Record one chrome comparison. Never closes a TASK or obligation."""
+        state = self._require_started()
+        self._require_current_prototype_progression(state)
+        loop = deepcopy(state.get("ui_visual_loop") or {})
+        plans = dict(loop.get("plans") or {})
+        plan = plans.get(plan_id)
+        if not isinstance(plan, dict) or plan.get("status") not in {"prepared", "compared"}:
+            raise WorkflowError("visual loop plan is not prepared")
+        goal = state.get("delivery_goal") or {}
+        if goal.get("current_task_cursor") != plan.get("task_id"):
+            raise WorkflowError("visual loop must match the current task cursor")
+        try:
+            implementation_baseline = self._load_current_implementation_baseline(state)
+            evidence = compare_visual_loop(
+                self.project_root,
+                plan,
+                dict(manifest, plan_id=plan_id),
+                visual_policy=plan.get("visual_policy")
+                or implementation_baseline.get("visual_policy")
+                or DEFAULT_VISUAL_POLICY,
+            )
+        except VisualLoopError as cause:
+            raise WorkflowError(str(cause)) from cause
+        artifact_name = (
+            f"ui-visual-loop-{plan_id[:16]}-{evidence['evidence_sha256'][:12]}.json"
+        )
+        artifact_path = self._write_delivery_artifact(
+            state,
+            f"ui_visual_loop_{plan_id[:16]}",
+            artifact_name,
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+        )
+        artifact_sha256 = self._artifact_hash(str(artifact_path))
+        unit_key = (
+            f"{plan['surface_id']}::{plan['state_id']}::{plan['viewport_class']}"
+        )
+        records = dict(loop.get("records") or {})
+        task_records = dict(records.get(plan["task_id"]) or {})
+        task_records[unit_key] = {
+            "status": evidence["status"],
+            "plan_id": plan_id,
+            "evidence_sha256": evidence["evidence_sha256"],
+            "artifact_path": f"artifacts/{artifact_name}",
+            "artifact_sha256": artifact_sha256,
+            "implementation_baseline_sha256": evidence[
+                "implementation_baseline_sha256"
+            ],
+            "planned_task_hash": evidence["planned_task_hash"],
+            "closure_valid": False,
+            "next_fix": list(evidence.get("next_fix") or []),
+        }
+        records[plan["task_id"]] = task_records
+        plans[plan_id] = {**plan, "status": "compared"}
+        loop["plans"] = plans
+        loop["records"] = records
+        state["ui_visual_loop"] = loop
+        state = append_transition(
+            state,
+            "ui_visual_loop_recorded",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            output_artifact_hashes={f"artifacts/{artifact_name}": artifact_sha256},
+            metadata={
+                "task_id": plan["task_id"],
+                "plan_id": plan_id,
+                "status": evidence["status"],
+                "closure_valid": False,
+                "failure_codes": list(evidence.get("failure_codes") or []),
+            },
+        )
+        return write_state(self.project_root, state)
 
     def record_task_prototype_conformance(
         self,
@@ -4306,16 +4490,20 @@ class ProductDeliveryWorkflow:
                 {},
             )
             if planned_task.get("ui_impact") == "prototype_bound":
-                canonical_artifact.update(
-                    {
-                        "implementation_baseline_sha256": implementation_baseline.get(
-                            "baseline_sha256"
-                        ),
-                        "task_prototype_conformance_sha256": task_conformance.get(
-                            "evidence_sha256"
-                        ),
-                    }
-                )
+                extra = {
+                    "implementation_baseline_sha256": implementation_baseline.get(
+                        "baseline_sha256"
+                    ),
+                }
+                if ui_visual_loop_required(state):
+                    extra["task_visual_loop_sha256"] = task_conformance.get(
+                        "evidence_sha256"
+                    )
+                else:
+                    extra["task_prototype_conformance_sha256"] = task_conformance.get(
+                        "evidence_sha256"
+                    )
+                canonical_artifact.update(extra)
         try:
             next_state = record_delivery_task_completion(
                 state,
@@ -4403,6 +4591,12 @@ class ProductDeliveryWorkflow:
             "prototype_bound"
         ):
             return implementation_baseline, {}
+        if ui_visual_loop_required(state):
+            return implementation_baseline, self._load_passed_task_visual_loop(
+                state,
+                task_id,
+                planned_task,
+            )
         return implementation_baseline, self._load_passed_task_prototype_conformance(
             state,
             task_id,
@@ -5631,6 +5825,42 @@ class ProductDeliveryWorkflow:
             "artifact_sha256": artifact_sha256,
         }
 
+
+    def _load_passed_task_visual_loop(
+        self,
+        state: dict[str, Any],
+        task_id: str,
+        planned_task: dict[str, Any],
+    ) -> dict[str, Any]:
+        records = ((state.get("ui_visual_loop") or {}).get("records") or {}).get(task_id)
+        if not isinstance(records, dict) or not records:
+            raise WorkflowError(
+                "passed visual loop records are required before TASK completion"
+            )
+        expected = []
+        for binding in planned_task.get("prototype_bindings") or []:
+            for viewport in binding.get("viewport_classes") or []:
+                expected.append(
+                    f"{binding.get('surface_id')}::{binding.get('state_id')}::{viewport}"
+                )
+        hashes = []
+        for key in expected:
+            record = records.get(key)
+            if not isinstance(record, dict) or record.get("status") != "passed":
+                raise WorkflowError(
+                    f"passed visual loop is required for bound unit {key}"
+                )
+            hashes.append(str(record.get("evidence_sha256") or ""))
+        return {
+            "status": "passed",
+            "evidence_sha256": stable_json_hash(hashes),
+            "implementation_baseline_sha256": next(iter(records.values())).get(
+                "implementation_baseline_sha256"
+            ),
+            "planned_task_hash": planned_task.get("planned_task_hash"),
+            "records": records,
+        }
+
     def _load_passed_task_prototype_conformance(
         self,
         state: dict[str, Any],
@@ -5760,6 +5990,33 @@ class ProductDeliveryWorkflow:
                 "stale_reason": reason,
                 "stale_at": stale_at,
             }
+        loop = state.get("ui_visual_loop")
+        if isinstance(loop, dict):
+            records = loop.get("records") or {}
+            stale_loop_records = {}
+            for task_id, task_records in records.items():
+                if not isinstance(task_records, dict):
+                    continue
+                stale_task = {}
+                for key, record in task_records.items():
+                    if isinstance(record, dict):
+                        stale_task[key] = {
+                            **record,
+                            "status": "stale",
+                            "stale_reason": reason,
+                            "stale_at": stale_at,
+                        }
+                    else:
+                        stale_task[key] = record
+                stale_loop_records[task_id] = stale_task
+            if stale_loop_records or loop.get("status") not in {None, "missing"}:
+                state["ui_visual_loop"] = {
+                    **loop,
+                    "status": "stale",
+                    "stale_reason": reason,
+                    "stale_at": stale_at,
+                    "records": stale_loop_records,
+                }
         conformance = state.get("task_prototype_conformance")
         if not isinstance(conformance, dict):
             return
@@ -6011,6 +6268,8 @@ class ProductDeliveryWorkflow:
         *,
         implementation_baseline: dict[str, Any] | None = None,
         task_prototype_conformance: dict[str, Any] | None = None,
+        ui_visual_loop: dict[str, Any] | None = None,
+        visual_loop_required: bool = False,
     ) -> dict[str, dict[str, Any]]:
         previous_tasks = {
             task.get("task_id"): task
@@ -6032,27 +6291,45 @@ class ProductDeliveryWorkflow:
                 continue
             if task.get("ui_impact") == "prototype_bound":
                 baseline = implementation_baseline or {}
-                conformance_records = (
-                    task_prototype_conformance or {}
-                ).get("records") or {}
-                conformance = (
-                    conformance_records.get(task_id)
-                    if isinstance(conformance_records, dict)
-                    else None
-                )
-                if not (
-                    baseline.get("status") == "ready"
-                    and isinstance(conformance, dict)
-                    and conformance.get("status") in {"passed", "accepted_by_user"}
-                    and artifact.get("implementation_baseline_sha256")
-                    == baseline.get("baseline_sha256")
-                    == conformance.get("implementation_baseline_sha256")
-                    and artifact.get("task_prototype_conformance_sha256")
-                    == conformance.get("evidence_sha256")
-                    and conformance.get("planned_task_hash")
-                    == task.get("planned_task_hash")
-                ):
-                    continue
+                if visual_loop_required:
+                    loop_records = ((ui_visual_loop or {}).get("records") or {}).get(
+                        task_id
+                    )
+                    if not (
+                        baseline.get("status") == "ready"
+                        and isinstance(loop_records, dict)
+                        and loop_records.get("status") == "passed"
+                        and artifact.get("implementation_baseline_sha256")
+                        == baseline.get("baseline_sha256")
+                        == loop_records.get("implementation_baseline_sha256")
+                        and artifact.get("task_visual_loop_sha256")
+                        == loop_records.get("evidence_sha256")
+                        and loop_records.get("planned_task_hash")
+                        == task.get("planned_task_hash")
+                    ):
+                        continue
+                else:
+                    conformance_records = (
+                        task_prototype_conformance or {}
+                    ).get("records") or {}
+                    conformance = (
+                        conformance_records.get(task_id)
+                        if isinstance(conformance_records, dict)
+                        else None
+                    )
+                    if not (
+                        baseline.get("status") == "ready"
+                        and isinstance(conformance, dict)
+                        and conformance.get("status") in {"passed", "accepted_by_user"}
+                        and artifact.get("implementation_baseline_sha256")
+                        == baseline.get("baseline_sha256")
+                        == conformance.get("implementation_baseline_sha256")
+                        and artifact.get("task_prototype_conformance_sha256")
+                        == conformance.get("evidence_sha256")
+                        and conformance.get("planned_task_hash")
+                        == task.get("planned_task_hash")
+                    ):
+                        continue
             matches[str(task_id)] = dict(artifact)
         return matches
 

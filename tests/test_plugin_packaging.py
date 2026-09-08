@@ -21,7 +21,7 @@ class PluginPackagingTests(unittest.TestCase):
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.38")
+            self.assertEqual(manifest["version"], "1.0.42")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -120,6 +120,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/stop-guard-result.md",
                 "scripts/validate-closure-artifact.py",
                 "scripts/waygate-control.py",
+                "scripts/compare-ui-visual-loop.py",
                 "scripts/recover-runtime-receipt-v1036-to-v1037.py",
                 "scripts/formal-gate-validation-plan.md",
                 "agents/openai.yaml",
@@ -130,6 +131,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "runtime/product_delivery_agent/transition_journal.py",
                 "runtime/product_delivery_agent/evidence_artifacts.py",
                 "runtime/product_delivery_agent/implementation_baseline.py",
+                "runtime/product_delivery_agent/ui_visual_loop.py",
                 "runtime/product_delivery_agent/journey_slice_tasks.py",
                 "runtime/product_delivery_agent/prototype_design.py",
                 "runtime/product_delivery_agent/ui_prototype.py",
@@ -182,6 +184,7 @@ class PluginPackagingTests(unittest.TestCase):
             self.assertIn("implementation_baseline", skill_markdown)
             self.assertIn("prototype_bindings", skill_markdown)
             self.assertIn("record_task_prototype_conformance", skill_markdown)
+            self.assertIn("prepare_ui_visual_loop", skill_markdown)
             self.assertIn("不得静默降级", skill_markdown)
             self.assertIn("semantic snapshot", skill_markdown)
             self.assertIn("record_ui_prototype_design_bundle", skill_markdown)
@@ -412,7 +415,7 @@ class PluginPackagingTests(unittest.TestCase):
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.38")
+            self.assertEqual(closure_template["plugin_version"], "1.0.42")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -485,7 +488,7 @@ class PluginPackagingTests(unittest.TestCase):
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.38.tar.gz",
+                "waygate-product-delivery-1.0.42.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

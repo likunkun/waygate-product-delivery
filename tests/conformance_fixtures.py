@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from product_delivery_agent.evidence_artifacts import sha256_file, stable_json_hash
+from product_delivery_agent.ui_visual_loop import ui_visual_loop_required
 
 
 os.environ.setdefault("CODEX_THREAD_ID", "test-host-goal-thread")
@@ -818,12 +819,45 @@ def task_prototype_conformance_payload(
     }
 
 
+def record_passing_task_visual_loop(
+    workflow,
+    project_root: Path,
+    task_id: str,
+) -> dict:
+    payload = task_prototype_conformance_payload(
+        project_root,
+        workflow.status(),
+        task_id,
+    )
+    for record in payload["records"]:
+        prepared = workflow.prepare_ui_visual_loop(
+            task_id,
+            record["surface_id"],
+            record["state_id"],
+            record["viewport_class"],
+        )
+        plan_id = prepared["ui_visual_loop"]["current_plan_id"]
+        workflow.record_ui_visual_loop(
+            plan_id,
+            {
+                "plan_id": plan_id,
+                "production_screenshot_path": record["production_screenshot_path"],
+                "semantic_snapshot_path": record["semantic_snapshot_path"],
+                "production_route": record["production_route"],
+            },
+        )
+    return workflow.status()
+
+
 def record_passing_task_prototype_conformance(
     workflow,
     project_root: Path,
     task_id: str,
 ) -> dict:
     reconcile_host_goal(workflow)
+    state = workflow.status()
+    if ui_visual_loop_required(state):
+        record_passing_task_visual_loop(workflow, project_root, task_id)
     result = workflow.record_task_prototype_conformance(
         task_id,
         task_prototype_conformance_payload(

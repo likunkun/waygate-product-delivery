@@ -59,6 +59,9 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     control_path = scripts_dir / "waygate-control.py"
     control_path.write_text(_control_script(), encoding="utf-8")
     control_path.chmod(0o755)
+    visual_loop_path = scripts_dir / "compare-ui-visual-loop.py"
+    visual_loop_path.write_text(_visual_loop_script(), encoding="utf-8")
+    visual_loop_path.chmod(0o755)
     receipt_recovery_path = (
         scripts_dir / "recover-runtime-receipt-v1036-to-v1037.py"
     )
@@ -970,7 +973,13 @@ def _skill_markdown() -> str:
         "明确要求保持 route、区域层级、控件顺序、关键状态和交互结果一致；允许调整内部代码架构，"
         "禁止自行增删、移动、合并或重设计可见 UI。无法按原型实现时必须停止 TASK 并发起 CR，"
         "不得静默降级。\n\n"
-        "每个 UI TASK 完成前必须调用 `record_task_prototype_conformance()`，记录生产截图、"
+        "V1.0.42 起，新 UI delivery 用 `prepare_ui_visual_loop()` / `record_ui_visual_loop()` "
+        "做开发态壳层对照：一次只比当前 TASK 的一个绑定单元，对照参考图并只修 `next_fix[0]`。"
+        "TASK 完成条件是绑定单元 visual loop 通过加上本 TASK 测试；原型与生产的像素差只作诊断，"
+        "2%/5% 不再作为 TASK 或 closure 门禁。数据区允许行数、数值和高度变化。循环不消耗 Host Goal，"
+        "也不能关闭 obligation。1.0.38 及更早、未启用 visual loop policy 的 UI delivery 仍走 "
+        "`record_task_prototype_conformance()`。\n\n"
+        "每个未升级的 UI TASK 完成前必须调用 `record_task_prototype_conformance()`，记录生产截图、"
         "semantic snapshot、结构与交互观察、geometry、computed-style fingerprint 和像素差异。"
         "route、region 存在性、父子层级、显示顺序、可访问角色/名称、必要控件及绑定 interaction "
         "零容忍；关键区域像素差异默认不超过 2%，全页面不超过 5%，单像素阈值为 0.2；"
@@ -1121,6 +1130,21 @@ def _hooks_readme() -> str:
         "paused until a matching user response is recorded. The Host Goal owner is "
         "the top-level delivery coordinator captured from `CODEX_THREAD_ID`; hooks "
         "and spawned review subagents must never claim or transfer that ownership.\n"
+    )
+
+
+
+def _visual_loop_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""Compare one production unit to a prepared visual-loop plan."""\n\n'
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.ui_visual_loop import run_compare_cli\n\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit(run_compare_cli())\n"
     )
 
 

@@ -991,3 +991,10 @@
 - OpenCode should participate in external multi-agent review as reviewer, worker, or judge only by adapting output into the V1.1 structured review artifact schema.
 - Failed OpenCode orchestration should become `blocked_with_reason`; it must not silently downgrade to a passing review.
 - Packaging must include both Codex and OpenCode assets in the generated plugin and dist archive so the two execution surfaces stay version-aligned.
+
+
+## 1.0.42 test helper contract
+
+- New UI deliveries (`ui_visual_loop_policy.status=required`) complete via passed chrome loops, not `record_task_prototype_conformance()`.
+- Shared test helper still writes both artifacts so 1.0.28 staleness fixtures keep conformance records to mark stale.
+- Pixel ratio remains diagnostic; 2%/5% is not a TASK/closure gate for prototype-versus-production.

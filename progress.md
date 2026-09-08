@@ -2694,3 +2694,10 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Final source and packaged CodeGraph inspection confirmed the reduced stage map and `PLUGIN_VERSION=1.0.38` on both sides of the packaging boundary.
 - One final visibility command used the unsupported combination `codex --strict-config debug`; Codex rejected it before rendering prompt input. Re-run visibility with the supported `codex debug prompt-input` command while retaining separate TOML parsing and Doctor config checks.
 - **Status:** complete; final verification evidence is recorded in the handoff response.
+
+
+## 2026-09-08T05:51:02+00:00 - 1.0.42 closeout
+
+- Helper `record_passing_task_prototype_conformance` now records visual loop AND conformance plus slice evidence.
+- `_invalidate_implementation_baseline` marks `ui_visual_loop` records stale even when conformance is missing.
+- Completion tests updated: fake conformance override expects visual-loop error; pixel adjudication records a passing visual loop before TASK complete.

@@ -2,6 +2,28 @@
 
 ## Goal
 
+Ship Waygate Product Delivery `1.0.42` from the reverted 1.0.38 tree: chrome visual loops for new UI deliveries, no prototype-versus-production pixel gate, then package, install, commit, and push `main`.
+
+## Current Phase
+
+Waygate Product Delivery `1.0.42` chrome visual-loop closeout is complete on `main`. Revert `534c492` plus the 1.0.42 release are ready to push to `origin/main`.
+
+### Active Phase - V1.0.42 Chrome Visual Loop
+
+- [x] Archive unpublished 1.0.40/41 and revert 1.0.39 on `main`.
+- [x] Implement `prepare_ui_visual_loop` / `record_ui_visual_loop` and policy wiring.
+- [x] Record both visual-loop and conformance in test helpers; mark `ui_visual_loop` stale with the implementation baseline.
+- [x] Re-run focused and full unittest suites.
+- [x] Package 1.0.42 from `src`, cachebust, validate, reinstall this repo, commit, and push `origin/main`.
+- **Status:** complete
+
+
+---
+
+## Historical Plan
+
+## Goal
+
 Create a clean independent project under `<waygate-product-delivery-repo>` for designing the Waygate Product Delivery Agent methodology, Codex-native plugin product shape, roadmap, and future implementation path.
 
 ## Current Phase

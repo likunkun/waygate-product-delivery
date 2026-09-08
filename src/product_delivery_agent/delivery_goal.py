@@ -12,6 +12,11 @@ from product_delivery_agent.gatekeeper import state_requires_delivery_goal
 from product_delivery_agent.implementation_baseline import (
     implementation_baseline_required,
 )
+from product_delivery_agent.ui_visual_loop import (
+    VisualLoopError,
+    ui_visual_loop_required,
+    validate_task_visual_loop_records,
+)
 
 
 class DeliveryGoalError(RuntimeError):
@@ -425,6 +430,12 @@ def _validate_task_prototype_conformance(
         implementation_baseline_required(state)
         and planned_task.get("ui_impact") == "prototype_bound"
     ):
+        return
+    if ui_visual_loop_required(state):
+        try:
+            validate_task_visual_loop_records(state, planned_task)
+        except VisualLoopError as error:
+            raise DeliveryGoalError(str(error)) from error
         return
     baseline = state.get("implementation_baseline") or {}
     conformance = state.get("task_prototype_conformance") or {}

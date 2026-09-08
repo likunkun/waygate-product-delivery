@@ -13,6 +13,7 @@ from tests.conformance_fixtures import (
     PROTOTYPE_DESIGN_DIMENSIONS,
     prototype_contract,
     record_passing_task_slice_evidence,
+    record_passing_task_visual_loop,
     ui_conformance_review_payload,
 )
 from tests.test_goal_driven_closure_v104 import (
@@ -207,6 +208,7 @@ class VisualConformanceAdjudicationV1030Tests(unittest.TestCase):
             )
 
             reconcile_host_goal(workflow)
+            record_passing_task_visual_loop(workflow, root, "TASK-001")
             record_passing_task_slice_evidence(workflow, root, "TASK-001")
             reconcile_host_goal(workflow)
             completed = workflow.record_task_completion(

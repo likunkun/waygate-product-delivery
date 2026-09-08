@@ -196,6 +196,17 @@ Scope:
 - Treat contamination as a hard integrity failure while preserving real product copy through lifecycle-bound callout mappings.
 - Keep historical v1 bundles and already confirmed active deliveries unchanged until the prototype is modified or reopened.
 
+### V1.0.42 - Chrome Visual Loop
+
+Goal: keep prototype screenshots as a layout brief, not a pixel oracle for live data.
+
+Scope:
+
+- Revert the 1.0.39 capture-registry platform from the product line.
+- Add a development visual loop that compares one bound TASK unit at a time.
+- Pass or fail chrome structure and geometry only; treat data cardinality and pixel gaps as diagnostics.
+- Keep 1.0.38 prototype conformance for deliveries that never enabled the visual-loop policy.
+
 ### V1.1 - Multi-Agent Review Orchestration
 
 Goal: productize multi-agent review as a reusable orchestration layer instead of loose templates and prose rules.

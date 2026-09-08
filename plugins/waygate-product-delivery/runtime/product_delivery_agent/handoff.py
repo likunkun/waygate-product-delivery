@@ -219,9 +219,10 @@ def render_current_task_prompt(
             + str(implementation_baseline.get("visual_policy_sha256")),
             "",
             "你正在实现用户已确认的 UI 产品基线，不是在重新设计。",
-            "必须保持绑定页面的 route、区域层级、控件顺序、关键状态和交互结果一致。",
+            "必须保持绑定页面的 route、壳层层级、控件顺序和关键状态一致。",
             "允许调整内部代码架构；禁止自行重设计可见 UI。",
-            "完成前必须生成生产截图、语义快照和一致性证据。",
+            "先对当前绑定单元跑 visual loop：对照参考图，只修 next_fix[0] 的壳层差异，再跑本 TASK 测试。",
+            "生产数据可以与原型演示数据不同；不要用整页像素差当完成条件。",
             "",
             "## Bound Prototype Units",
         ]

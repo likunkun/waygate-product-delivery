@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.42
+
+- Reverts the 1.0.39 capture-registry evidence platform. New UI deliveries compare prototype chrome during implementation instead of gating TASKs on prototype-versus-production pixel ratios.
+- Adds `prepare_ui_visual_loop()`, `record_ui_visual_loop()`, and packaged `scripts/compare-ui-visual-loop.py`. One bound unit is compared at a time; Host Goal is not consumed; obligations cannot close; `closure_valid` stays false.
+- TASK completion for new UI requires passed chrome loops plus existing TASK tests. Data regions may change cardinality, values, and height. Pixel differences are diagnostic only.
+- Refuses to install over a delivery that still has `ui_capture_registry` or `ui_evidence_policy`. 1.0.38 deliveries without that policy keep `record_task_prototype_conformance()`.
+- Keeps lifecycle schema v1, closure schema v0.11, two user confirmations, real-backend E2E, and production structural conformance.
+
 ## 1.0.38
 
 - Retires `superpowers:using-superpowers` and `code-simplifier` as Waygate hard dependencies; active startup now requires only `planning-with-files` and `waygate-product-delivery`, while the empty `agent_startup` and `refinement` stages are removed.

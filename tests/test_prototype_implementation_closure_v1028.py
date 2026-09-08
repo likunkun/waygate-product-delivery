@@ -923,7 +923,7 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
             state = workflow.status()
 
             reconcile_host_goal(workflow)
-            with self.assertRaisesRegex(WorkflowError, "task prototype conformance"):
+            with self.assertRaisesRegex(WorkflowError, "visual loop"):
                 workflow.record_task_completion(
                     "TASK-001",
                     artifact=task_completion_artifact(state, "TASK-001"),
@@ -952,7 +952,7 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
                 "inconclusive",
             )
             reconcile_host_goal(workflow)
-            with self.assertRaisesRegex(WorkflowError, "task prototype conformance"):
+            with self.assertRaisesRegex(WorkflowError, "visual loop"):
                 workflow.record_task_completion(
                     "TASK-001",
                     artifact=task_completion_artifact(
@@ -962,19 +962,15 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
                 )
 
             reconcile_host_goal(workflow)
-            conformance = workflow.record_task_prototype_conformance(
-                "TASK-001",
-                self.workflow_conformance_payload(root, workflow.status()),
+            from tests.conformance_fixtures import (
+                record_passing_task_slice_evidence,
+                record_passing_task_visual_loop,
             )
-            self.assertEqual(
-                conformance["task_prototype_conformance"]["records"]["TASK-001"][
-                    "status"
-                ],
-                "passed",
-            )
+            record_passing_task_visual_loop(workflow, root, "TASK-001")
+            loop = workflow.status()["ui_visual_loop"]["records"]["TASK-001"]
+            self.assertTrue(all(item["status"] == "passed" for item in loop.values()))
 
             reconcile_host_goal(workflow)
-            from tests.conformance_fixtures import record_passing_task_slice_evidence
             record_passing_task_slice_evidence(workflow, root, "TASK-001")
             reconcile_host_goal(workflow)
             completed = workflow.record_task_completion(
@@ -990,7 +986,7 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
             self.assertTrue(
                 any(
                     event["transition_name"]
-                    == "task_prototype_conformance_recorded"
+                    == "ui_visual_loop_recorded"
                     for event in completed["transition_journal"]["events"]
                 )
             )
@@ -1066,7 +1062,7 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
             reconcile_host_goal(workflow)
             with self.assertRaisesRegex(
                 WorkflowError,
-                "canonical task prototype conformance",
+                "visual loop",
             ):
                 workflow.record_task_completion(
                     "TASK-001",
@@ -1239,11 +1235,16 @@ class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
 
             self.assertEqual(changed["implementation_baseline"]["status"], "stale")
             self.assertEqual(changed["task_prototype_conformance"]["status"], "stale")
+            self.assertEqual(changed["ui_visual_loop"]["status"], "stale")
             self.assertEqual(
                 changed["task_prototype_conformance"]["records"]["TASK-001"][
                     "status"
                 ],
                 "stale",
+            )
+            unit_records = changed["ui_visual_loop"]["records"]["TASK-001"]
+            self.assertTrue(
+                all(record.get("status") == "stale" for record in unit_records.values())
             )
             self.assertEqual(
                 changed["implementation_launch_authorization"]["status"],

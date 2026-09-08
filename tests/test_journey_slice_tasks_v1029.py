@@ -301,10 +301,8 @@ class JourneySliceWorkflowV1029Tests(unittest.TestCase):
             )
             activate_host_goal(workflow)
             reconcile_host_goal(workflow)
-            workflow.record_task_prototype_conformance(
-                "TASK-001",
-                task_prototype_conformance_payload(root, workflow.status(), "TASK-001"),
-            )
+            from tests.conformance_fixtures import record_passing_task_visual_loop
+            record_passing_task_visual_loop(workflow, root, "TASK-001")
             reconcile_host_goal(workflow)
             with self.assertRaisesRegex(WorkflowError, "slice"):
                 workflow.record_task_completion(
