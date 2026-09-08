@@ -4,23 +4,19 @@ import json
 from pathlib import Path
 
 from product_delivery_agent.closure import ClosureGateError
-from product_delivery_agent.evidence_artifacts import sha256_file, stable_json_hash
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
 from product_delivery_agent.gatekeeper import (
     CANONICAL_SCHEMA_VERSION,
     CANONICAL_VALIDATOR,
     PLUGIN_VERSION,
     prototype_conformance_closure_binding,
-    review_input_hash,
 )
-from product_delivery_agent.ui_evidence import stable_hash as ui_stable_hash
 from tests.conformance_fixtures import (
     activate_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
     prototype_contract,
     record_bundled_ui_prototype_review,
-    attach_v1039_ui_closure_evidence,
     record_passing_task_prototype_conformance,
     record_ui_conformance,
     reconcile_host_goal,
@@ -365,7 +361,6 @@ def ready_workflow(project_root):
     )
     record_ui_conformance(workflow, project_root)
     reconcile_host_goal(workflow)
-    attach_v1039_ui_closure_evidence(workflow, project_root)
     return workflow
 
 
@@ -403,220 +398,13 @@ def valid_closure_artifact(state=None):
         "created_fake_controller_state": False,
     }
     if state is not None:
-        artifact["e2e_evidence_paths"] = sorted(
-            {
-                record["evidence_path"]
-                for record in (
-                    state.get("executed_browser_evidence") or {}
-                ).get("records")
-                or []
-                if isinstance(record, dict) and record.get("evidence_path")
-            }
-        )
         artifact["prototype_conformance"] = prototype_conformance_closure_binding(
             state
         )
-        from product_delivery_agent.gatekeeper import ui_evidence_closure_binding
-
-        artifact["ui_evidence"] = ui_evidence_closure_binding(state)
     return artifact
 
 
 class FeatureClosureGateTests(unittest.TestCase):
-    @staticmethod
-    def _refresh_v1039_review_bindings(state):
-        state["multi_agent_reviews"]["test_implementation"][
-            "input_snapshot_hash"
-        ] = review_input_hash(state, "test_implementation")
-        state["multi_agent_reviews"]["ui_conformance"][
-            "input_snapshot_hash"
-        ] = review_input_hash(state, "ui_conformance")
-        state["post_implementation_review_batch"][
-            "test_implementation_review_sha256"
-        ] = stable_json_hash(
-            state["multi_agent_reviews"]["test_implementation"]
-        )
-        state["post_implementation_review_batch"][
-            "ui_conformance_review_sha256"
-        ] = stable_json_hash(state["multi_agent_reviews"]["ui_conformance"])
-
-    def test_v1039_ui_formal_apis_reject_legacy_payloads(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            reconcile_host_goal(workflow)
-            with self.assertRaises(Exception) as caught:
-                workflow.record_executed_browser_evidence(
-                    [browser_evidence(project_root)]
-                )
-            self.assertIn("capture_run_ids", str(caught.exception))
-
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            reconcile_host_goal(workflow)
-            state = workflow.status()
-            with self.assertRaises(Exception) as caught:
-                workflow.record_prototype_production_conformance(
-                    {
-                        "prototype_revision": state["ui_prototype"][
-                            "prototype_revision"
-                        ],
-                        "prototype_contract_hash": state["prototype_contract"][
-                            "contract_sha256"
-                        ],
-                        "records": [],
-                    }
-                )
-            self.assertIn("capture_run_ids", str(caught.exception))
-
-    def test_v1039_ui_closure_rejects_projection_capture_detachment(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            state = workflow.status()
-            state["executed_browser_evidence"]["capture_run_ids"] = []
-            state["multi_agent_reviews"]["test_implementation"][
-                "input_snapshot_hash"
-            ] = review_input_hash(state, "test_implementation")
-            state["multi_agent_reviews"]["ui_conformance"][
-                "input_snapshot_hash"
-            ] = review_input_hash(state, "ui_conformance")
-            from product_delivery_agent.artifact_protocol import write_state
-
-            write_state(project_root, state)
-            with self.assertRaises(Exception) as caught:
-                workflow.record_feature_closure(valid_closure_artifact(state))
-            self.assertIn("capture set", str(caught.exception))
-
-    def test_v1039_ui_closure_requires_canonical_capture_binding(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            artifact = valid_closure_artifact(workflow.status())
-            artifact.pop("ui_evidence")
-
-            with self.assertRaises(Exception) as caught:
-                workflow.record_feature_closure(artifact)
-
-            self.assertIn("ui_evidence", str(caught.exception))
-
-    def test_v1039_ui_closure_rejects_forged_manifest_execution_identity(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            state = workflow.status()
-            delivery = (
-                project_root
-                / ".product-delivery"
-                / "deliveries"
-                / state["feature_slug"]
-                / state["delivery_id"]
-            )
-            manifest_path = delivery / state["ui_closure_manifest"]["artifact_path"]
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["execution_identity_sha256"] = "f" * 64
-            manifest_body = dict(manifest)
-            manifest_body.pop("manifest_sha256")
-            manifest["manifest_sha256"] = ui_stable_hash(manifest_body)
-            manifest_path.write_text(
-                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            state["ui_closure_manifest"].update(manifest)
-            state["ui_closure_manifest"]["artifact_sha256"] = sha256_file(
-                manifest_path
-            )
-            self._refresh_v1039_review_bindings(state)
-            from product_delivery_agent.artifact_protocol import write_state
-
-            write_state(project_root, state)
-            with self.assertRaises(Exception) as caught:
-                workflow.record_feature_closure(valid_closure_artifact(state))
-            self.assertIn("manifest", str(caught.exception).lower())
-
-    def test_v1039_ui_closure_rejects_forged_capture_backed_browser_projection(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            state = workflow.status()
-            state["executed_browser_evidence"]["records"][0][
-                "test_title_or_step"
-            ] = "FORGED-NOT-IN-CAPTURE"
-            self._refresh_v1039_review_bindings(state)
-            from product_delivery_agent.artifact_protocol import write_state
-
-            write_state(project_root, state)
-            with self.assertRaises(Exception) as caught:
-                workflow.record_feature_closure(valid_closure_artifact(state))
-            self.assertIn("browser", str(caught.exception).lower())
-
-    def test_v1039_ui_closure_rejects_forged_capture_backed_production_projection(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            state = workflow.status()
-            state["prototype_production_conformance"]["records"][0][
-                "production_route"
-            ] = "/forged"
-            self._refresh_v1039_review_bindings(state)
-            from product_delivery_agent.artifact_protocol import write_state
-
-            write_state(project_root, state)
-            with self.assertRaises(Exception) as caught:
-                workflow.record_feature_closure(valid_closure_artifact(state))
-            self.assertIn("production", str(caught.exception).lower())
-
-    def test_v1039_ui_closure_rejects_standard_capture_after_strict_reprepare(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            workflow = ready_workflow(project_root)
-            state = workflow.status()
-            standard_plan = next(iter(state["ui_capture_plans"].values()))
-            strict_plan_id = "capture-plan-strict-reprepare"
-            state["ui_capture_plans"][strict_plan_id] = {
-                **standard_plan,
-                "plan_id": strict_plan_id,
-                "requested_profile": "strict",
-                "resolved_profile": "strict",
-                "status": "prepared",
-                "capture_id": None,
-            }
-            state["ui_evidence_policy"].update(
-                {
-                    "resolved_profile": "strict",
-                    "current_plan_id": strict_plan_id,
-                }
-            )
-            manifest_path = (
-                project_root
-                / ".product-delivery"
-                / "deliveries"
-                / state["feature_slug"]
-                / state["delivery_id"]
-                / state["ui_closure_manifest"]["artifact_path"]
-            )
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["profile"] = "strict"
-            manifest_body = dict(manifest)
-            manifest_body.pop("manifest_sha256")
-            manifest["manifest_sha256"] = ui_stable_hash(manifest_body)
-            manifest_path.write_text(
-                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            state["ui_closure_manifest"].update(manifest)
-            state["ui_closure_manifest"]["artifact_sha256"] = sha256_file(
-                manifest_path
-            )
-            self._refresh_v1039_review_bindings(state)
-            from product_delivery_agent.artifact_protocol import write_state
-
-            write_state(project_root, state)
-            with self.assertRaises(Exception) as caught:
-                workflow.record_feature_closure(valid_closure_artifact(state))
-            self.assertIn("profile", str(caught.exception).lower())
-
     def test_records_passing_feature_closure_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
@@ -637,7 +425,7 @@ class FeatureClosureGateTests(unittest.TestCase):
             closure_text = closure_path.read_text("utf-8")
             self.assertIn("Artifact Metadata", closure_text)
             self.assertIn(".product-delivery/artifacts", closure_text)
-            self.assertIn("evidence/captures/capture-", closure_text)
+            self.assertIn("browser-e2e-results.json", closure_text)
             self.assertIn("Prototype Conformance", closure_text)
             self.assertIn("primary-surface", closure_text)
 

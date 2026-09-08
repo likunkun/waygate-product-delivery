@@ -196,18 +196,6 @@ Scope:
 - Treat contamination as a hard integrity failure while preserving real product copy through lifecycle-bound callout mappings.
 - Keep historical v1 bundles and already confirmed active deliveries unchanged until the prototype is modified or reopened.
 
-### V1.0.39 - UI Evidence Efficiency And Trusted Capture
-
-Goal: reduce UI evidence wall-clock and reviewer cost without reducing factual coverage or closure trust.
-
-Scope:
-
-- Capture runtime UI facts once through a project adapter, ingest them into an immutable content-addressed registry, and derive independent gate projections.
-- Provide non-closure iteration feedback plus automatic standard/strict formal profiles; unknown and high-risk impact fails closed to strict.
-- Aggregate TASK slices, reuse same-build evidence and deterministic pixel work, and batch the two post-implementation reviews against one frozen evidence index.
-- Strengthen build/deployment/actor/capture provenance and add non-authoritative performance telemetry.
-- Keep lifecycle, Host Goal, confirmation, non-UI, and closure schemas unchanged. This is a performance-and-trust hardening exception within the V1.0.x patch line, not a new external product surface.
-
 ### V1.1 - Multi-Agent Review Orchestration
 
 Goal: productize multi-agent review as a reusable orchestration layer instead of loose templates and prose rules.

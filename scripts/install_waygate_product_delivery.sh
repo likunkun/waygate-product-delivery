@@ -7,10 +7,6 @@ CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 PLUGIN_REGISTRY_JSON="$(mktemp "${TMPDIR:-/tmp}/waygate-plugin-registry.XXXXXX.json")"
 trap 'rm -f "$PLUGIN_REGISTRY_JSON"' EXIT
 
-python3 "$ROOT/scripts/check_active_delivery_upgrade.py" \
-  --project-root "$ROOT" \
-  --target-version "1.0.39"
-
 PYTHONPATH="$ROOT/src" python3 "$ROOT/scripts/check_waygate_product_delivery_dependencies.py" \
   --plugin-root "$PLUGIN_ROOT"
 PYTHONPATH="$ROOT/src" python3 "$ROOT/scripts/package_waygate_product_delivery.py" >/dev/null

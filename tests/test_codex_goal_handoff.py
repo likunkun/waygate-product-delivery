@@ -10,7 +10,6 @@ from tests.conformance_fixtures import (
     activate_host_goal,
     confirm_product_baseline,
     confirm_test_coverage_plan,
-    enable_legacy_ui_evidence_fixture,
     prototype_contract,
     record_bundled_ui_prototype_review,
     reconcile_host_goal,
@@ -229,7 +228,6 @@ def ready_workflow(project_root):
                 feature_slug="v2.5-key-owner-ops", multi_agent_mode="spawned_subagents_authorized")
     workflow.record_scenario_matrix([scenario_row()])
     workflow.select_project_type("ui")
-    enable_legacy_ui_evidence_fixture(workflow, project_root)
     workflow.confirm("product_brief")
     workflow.confirm("version_scope")
     record_bundled_ui_prototype_review(

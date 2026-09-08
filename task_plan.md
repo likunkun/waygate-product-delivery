@@ -687,19 +687,6 @@ Waygate Product Delivery `1.0.28` lightweight prototype-driven implementation cl
 - [x] Disable the four retired local Skills through Codex user configuration after the updated dependency check passes.
 - **Status:** complete; installed version `1.0.38+codex.20260830083909` and retired Skills are absent from new-session prompt input.
 
-### Phase 51 - Waygate Product Delivery V1.0.39 UI Evidence Efficiency And Trusted Capture
-
-- [x] Create the V1.0.39 Open Spec package with locked scope, interfaces, traceability, tests, release evidence, and explicit non-goals.
-- [x] Add RED coverage for trusted capture identity, append-only registry behavior, independent projections, evidence profiles, aggregation, review batching, telemetry, packaging, and release metadata.
-- [x] Implement `capture-run-v1`, staging ingestion, content-addressed registry storage, capture-backed projections, and the adapter CLI without adding a Playwright runtime dependency.
-- [x] Harden browser evidence provenance, actor identity, console/network handling, business-request derivation, origin separation, and capture/segment binding.
-- [x] Implement `iteration`, auto-selected `standard`, and user-upgradable `strict` profiles with fail-closed risk classification and no cross-build passed-result reuse.
-- [x] Automate TASK-slice aggregation, production-conformance materialization, deterministic pixel reuse, performance telemetry, and atomic post-implementation review batching.
-- [x] Preserve lifecycle request schema `v1`, closure schema `v0.11`, the two user confirmations, Host Goal semantics, non-UI behavior, and frozen historical evidence.
-- [x] Regenerate the repository plugin and `dist/waygate-product-delivery-1.0.39.tar.gz`; exclude the unrelated local V1.0.37 recovery script from the archive.
-- [x] Complete the final cachebuster/reinstall, installed-runtime smoke, release-correctness re-review, and fresh full verification after the last hardening changes.
-- **Status:** complete; source 573-test suite, installed 51-test suite, real Chromium samples, package parity, validation checks, and independent release review passed. Installed version: `1.0.39+codex.20260903131234`.
-
 ## Out Of Scope For V0.1
 
 - No Waygate source code changes.

@@ -1724,13 +1724,6 @@ def _normalize_product_context(
     if not isinstance(value, dict):
         raise PrototypeDesignError("prototype design requires product_context_contract")
     rows = value.get("coverage_rows")
-    grouped = value.get("surface_state_artifacts")
-    if rows is not None and grouped is not None:
-        raise PrototypeDesignError(
-            "product_context_contract accepts coverage_rows or surface_state_artifacts, not both"
-        )
-    if grouped is not None:
-        rows = _expand_surface_state_context_artifacts(grouped)
     if not isinstance(rows, list) or not rows:
         raise PrototypeDesignError("product_context_contract requires coverage_rows")
 
@@ -1928,66 +1921,6 @@ def _normalize_product_context(
             evidence_registry[path] for path in sorted(evidence_registry)
         ],
     }
-
-
-def _expand_surface_state_context_artifacts(value: Any) -> list[dict[str, Any]]:
-    """Expand one surface/state carrier into the existing six typed rows."""
-    if not isinstance(value, list) or not value:
-        raise PrototypeDesignError(
-            "product_context_contract surface_state_artifacts must be a non-empty list"
-        )
-    rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for index, artifact in enumerate(value, 1):
-        if not isinstance(artifact, dict):
-            raise PrototypeDesignError(
-                f"surface-state context artifact {index} must be an object"
-            )
-        surface_id = _required_string(
-            artifact.get("surface_id"),
-            f"surface-state context artifact {index} missing surface_id",
-        )
-        state_id = _required_string(
-            artifact.get("state_id"),
-            f"surface-state context artifact {index} missing state_id",
-        )
-        key = (surface_id, state_id)
-        if key in seen:
-            raise PrototypeDesignError(
-                f"duplicate surface-state context artifact: {key}"
-            )
-        seen.add(key)
-        dimensions = artifact.get("dimensions")
-        if not isinstance(dimensions, dict):
-            raise PrototypeDesignError(
-                f"surface-state context artifact {index} requires dimensions"
-            )
-        missing = [
-            dimension
-            for dimension in PRODUCT_CONTEXT_DIMENSIONS
-            if dimension not in dimensions
-        ]
-        extra = sorted(set(dimensions) - set(PRODUCT_CONTEXT_DIMENSIONS))
-        if missing or extra:
-            raise PrototypeDesignError(
-                f"surface-state context artifact {index} dimension mismatch: "
-                f"missing={missing}, extra={extra}"
-            )
-        for dimension in PRODUCT_CONTEXT_DIMENSIONS:
-            dimension_value = dimensions[dimension]
-            if not isinstance(dimension_value, dict):
-                raise PrototypeDesignError(
-                    f"surface-state context artifact {index} {dimension} must be an object"
-                )
-            rows.append(
-                {
-                    "surface_id": surface_id,
-                    "state_id": state_id,
-                    "dimension": dimension,
-                    **deepcopy(dimension_value),
-                }
-            )
-    return rows
 
 
 def _normalize_baseline_identity(

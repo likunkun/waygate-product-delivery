@@ -493,41 +493,6 @@ def mutate_design_evidence(
 
 
 class PrototypeDesignIntegrityV1023Tests(unittest.TestCase):
-    def test_surface_state_context_artifact_expands_to_six_dimensions(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            prepare_project(root)
-            payload = valid_payload(root)
-            rows = payload["product_context_contract"].pop("coverage_rows")
-            payload["product_context_contract"]["surface_state_artifacts"] = [
-                {
-                    "surface_id": "course-catalog",
-                    "state_id": "catalog-ready",
-                    "dimensions": {
-                        row["dimension"]: {
-                            key: copy.deepcopy(value)
-                            for key, value in row.items()
-                            if key not in {"surface_id", "state_id", "dimension"}
-                        }
-                        for row in rows
-                    },
-                }
-            ]
-
-            result = build_prototype_design_bundle(
-                root,
-                payload,
-                prototype_contract=semantic_prototype_contract(),
-            )
-
-            self.assertEqual(
-                [
-                    row["dimension"]
-                    for row in result["product_context_contract"]["coverage_rows"]
-                ],
-                list(PRODUCT_CONTEXT_DIMENSIONS),
-            )
-
     def test_complete_prototype_contract_identity_is_bound_to_product_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

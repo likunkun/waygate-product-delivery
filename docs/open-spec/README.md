@@ -15,7 +15,6 @@ This directory contains versioned Open Spec packages for the Product Delivery Ag
 | V0.9 | [Codex Goal Handoff](./v0.9-codex-goal-handoff/01-requirements.md) | Generate a frozen version package that can be handed to implementation Codex. |
 | V0.10 | [Feature Closure Gate](./v0.10-feature-closure-gate/01-requirements.md) | Require formal closure gate and a version-specific closure artifact after implementation. |
 | V1.0 | [Codex Plugin Packaging](./v1.0-codex-plugin-packaging/01-requirements.md) | Package the stable workflow as an installable Codex plugin. |
-| V1.0.39 | [UI Evidence Efficiency And Trusted Capture](./v1.0.39-ui-evidence-efficiency/01-requirements.md) | Reuse one trusted browser capture across independent UI evidence gates without weakening closure. |
 
 ## Rules
 

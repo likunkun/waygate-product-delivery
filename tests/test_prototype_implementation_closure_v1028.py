@@ -15,9 +15,6 @@ from product_delivery_agent.implementation_baseline import (
     build_implementation_baseline,
     implementation_baseline_required,
     normalize_visual_policy,
-    _clear_png_decode_cache,
-    _decode_png,
-    _png_decode_cache_stats,
 )
 from product_delivery_agent.prototype_design import build_prototype_design_bundle
 from product_delivery_agent.ui_prototype import build_prototype_contract
@@ -28,7 +25,6 @@ from tests.conformance_fixtures import (
     prototype_design_bundle_payload,
     record_bundled_ui_prototype_review,
     record_passing_task_prototype_conformance,
-    write_prototype_screenshot,
 )
 from tests.test_goal_driven_closure_v104 import (
     activate_host_goal,
@@ -125,26 +121,6 @@ def _write_crafted_rgba_png(path: Path, *, width: int, height: int, decoded: byt
 
 
 class PrototypeImplementationBaselineV1028Tests(unittest.TestCase):
-    def test_png_decode_cache_reuses_identical_content_by_sha(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            screenshot = ".product-delivery/artifacts/cache/source.png"
-            duplicate = ".product-delivery/artifacts/cache/duplicate.png"
-            write_prototype_screenshot(root, screenshot, width=8, height=8)
-            (root / duplicate).parent.mkdir(parents=True, exist_ok=True)
-            (root / duplicate).write_bytes((root / screenshot).read_bytes())
-            _clear_png_decode_cache()
-
-            first = _decode_png(root, screenshot)
-            second = _decode_png(root, duplicate)
-
-            self.assertEqual(first["sha256"], second["sha256"])
-            self.assertIs(first["pixels"], second["pixels"])
-            self.assertEqual(
-                _png_decode_cache_stats(),
-                {"entries": 1, "bytes": 256, "hits": 1, "misses": 1},
-            )
-
     def build_inputs(self, root: Path):
         raw_contract = prototype_contract()
         payload = prototype_design_bundle_payload(root, contract=raw_contract)
@@ -522,15 +498,6 @@ class PrototypeBoundTaskAndPromptV1028Tests(unittest.TestCase):
 
 
 class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
-    @staticmethod
-    def _enable_legacy_capture_compatibility(root: Path, workflow) -> None:
-        state = workflow.status()
-        state["ui_evidence_policy"] = {
-            **(state.get("ui_evidence_policy") or {}),
-            "status": "legacy_compatible",
-        }
-        write_state(root, state)
-
     @staticmethod
     def _white_rows(width=10, height=5):
         return [[(255, 255, 255, 255) for _ in range(width)] for _ in range(height)]
@@ -941,7 +908,6 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workflow = workflow_ready_for_handoff(root)
-            self._enable_legacy_capture_compatibility(root, workflow)
             task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
             workflow.record_implementation_launch_authorization(
                 scope="Implement the confirmed UI",
@@ -1033,7 +999,6 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workflow = workflow_ready_for_handoff(root)
-            self._enable_legacy_capture_compatibility(root, workflow)
             task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
             workflow.record_implementation_launch_authorization(
                 scope="Implement the confirmed UI",
@@ -1064,7 +1029,6 @@ class TaskPrototypeConformanceV1028Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workflow = workflow_ready_for_handoff(root)
-            self._enable_legacy_capture_compatibility(root, workflow)
             task = PrototypeBoundTaskAndPromptV1028Tests.bound_task(workflow.status())
             workflow.record_implementation_launch_authorization(
                 scope="Implement the confirmed UI",

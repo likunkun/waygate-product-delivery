@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from product_delivery_agent.evidence_artifacts import stable_json_hash
 from product_delivery_agent.coverage_audit import (
     CoverageAuditError,
     build_executed_browser_evidence,
@@ -65,29 +64,17 @@ def closure_artifact():
     }
 
 
-def write_evidence_files(
-    project_root: Path,
-    *,
-    html_health: bool = False,
-    capture_run_ref: str | None = None,
-) -> None:
+def write_evidence_files(project_root: Path, *, html_health: bool = False) -> None:
     evidence_path = project_root / ".product-delivery" / "artifacts" / "e2e" / "tc-v008-001.json"
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_path.write_text('{"status":"passed"}\n', encoding="utf-8")
     probe_path = project_root / ".product-delivery" / "artifacts" / "e2e" / "tc-v008-001-probe.json"
-    actor_response = {
-        "role": "teacher",
-        "user_id": "teacher-1",
-        "session_id": "session-1",
-    }
     probe = {
         "acceptance_url": "http://127.0.0.1:15082/customer/course-production",
         "api_health_url": "http://127.0.0.1:15082/api/health",
         "api_health_identity": "classroom-api",
-        "health_response_status": 200,
         "health_response_content_type": "application/json",
         "health_response_body_sample": '{"service":"classroom-api"}',
-        "actor_identity_response": actor_response,
         "business_api_requests": [
             {
                 "method": "GET",
@@ -97,8 +84,6 @@ def write_evidence_files(
             }
         ],
     }
-    if capture_run_ref:
-        probe["capture_run_ref"] = capture_run_ref
     if html_health:
         probe["health_response_content_type"] = "text/html"
         probe["health_response_body_sample"] = "<html><div id=\"root\"></div></html>"
@@ -183,71 +168,6 @@ def review_payload(**overrides):
 
 
 class FullStackBrowserEvidenceV1013Tests(unittest.TestCase):
-    def test_capture_backed_evidence_rejects_errors_weak_actor_and_probe_drift(self):
-        strict_actor = {
-            "role": "teacher",
-            "user_id": "teacher-1",
-            "session_id": "session-1",
-            "backend_identity_sha256": stable_json_hash({
-                "role": "teacher",
-                "user_id": "teacher-1",
-                "session_id": "session-1",
-            }),
-        }
-        base = {
-            "capture_id": "capture-" + "b" * 64,
-            "capture_run_ref": "run-123",
-            "actor_identity_evidence": strict_actor,
-        }
-        variants = [
-            ({"console_errors": ["boom"]}, "console_errors"),
-            ({"network_errors": ["timeout"]}, "network_errors"),
-            ({"actor_identity_evidence": {"role": "teacher"}}, "actor identity"),
-            (
-                {"network_probe_summary": {"business_api_request_count": 2}},
-                "request count",
-            ),
-        ]
-        for overrides, message in variants:
-            with self.subTest(message=message), tempfile.TemporaryDirectory() as tmp:
-                project_root = Path(tmp)
-                write_evidence_files(project_root, capture_run_ref="run-123")
-                capture_record = {**base, **overrides}
-                with self.assertRaises(CoverageAuditError) as caught:
-                    build_executed_browser_evidence(
-                        project_root,
-                        [full_stack_record(**capture_record)],
-                        planned_obligations=[planned_obligation()],
-                    )
-                self.assertIn(message, str(caught.exception))
-
-    def test_capture_backed_evidence_requires_shared_capture_reference(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            project_root = Path(tmp)
-            write_evidence_files(project_root, capture_run_ref="another-run")
-            with self.assertRaises(CoverageAuditError) as caught:
-                build_executed_browser_evidence(
-                    project_root,
-                    [
-                        full_stack_record(
-                            capture_id="capture-" + "b" * 64,
-                            capture_run_ref="run-123",
-                            actor_identity_evidence={
-                                "role": "teacher",
-                                "user_id": "teacher-1",
-                                "session_id": "session-1",
-                                "backend_identity_sha256": stable_json_hash({
-                                    "role": "teacher",
-                                    "user_id": "teacher-1",
-                                    "session_id": "session-1",
-                                }),
-                            },
-                        )
-                    ],
-                    planned_obligations=[planned_obligation()],
-                )
-            self.assertIn("capture reference", str(caught.exception))
-
     def test_full_stack_evidence_rejects_business_api_route_mocks(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

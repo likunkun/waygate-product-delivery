@@ -173,15 +173,7 @@ def _write_state_locked(
     with temp_path.open("w", encoding="utf-8") as state_file:
         json.dump(next_state, state_file, indent=2, sort_keys=True)
         state_file.write("\n")
-        state_file.flush()
-        os.fsync(state_file.fileno())
     os.replace(temp_path, state_path)
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    directory_fd = os.open(workspace, flags)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
     if next_state.get("delivery_id") and (next_state.get("feature_slug") or next_state.get("active")):
         # Local import avoids a module cycle: artifact_store depends on
         # protocol constants but state persistence owns layout refresh.

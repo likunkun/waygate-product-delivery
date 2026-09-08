@@ -12,7 +12,6 @@ from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowErr
 from tests.conformance_fixtures import (
     confirm_product_baseline,
     confirm_test_coverage_plan,
-    enable_legacy_ui_evidence_fixture,
     prototype_contract,
     record_bundled_ui_prototype_review,
     record_scenario_review,
@@ -295,7 +294,6 @@ class DeliveryHardeningGateTests(unittest.TestCase):
         )
         workflow.record_scenario_matrix([scenario_row()])
         workflow.select_project_type("ui")
-        enable_legacy_ui_evidence_fixture(workflow, project_root)
         record_bundled_ui_prototype_review(
             workflow, project_root, ui_review_payload(prototype_path)
         )
