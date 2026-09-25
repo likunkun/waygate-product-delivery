@@ -11,6 +11,7 @@ FORMAL_USER_CONFIRMATION_TARGETS = frozenset(
 
 LEGACY_USER_CONFIRMATION_TARGETS = frozenset(
     {
+        "input_enrichment",
         "open_spec_freeze",
         "ui_prototype",
         "planned_e2e_obligations",

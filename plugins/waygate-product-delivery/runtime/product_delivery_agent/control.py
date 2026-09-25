@@ -36,6 +36,7 @@ ACTIONS = frozenset(
         "prepare_abandon",
         "abandon",
         "close",
+        "confirm_input_enrichment",
     }
 )
 START_MODES = frozenset({"resume_or_create", "resume_only", "create_only"})
@@ -83,10 +84,20 @@ def validate_request(raw: dict[str, Any]) -> dict[str, Any]:
                 "review_mode_if_created",
                 "expected_delivery_id",
                 "idempotency_key",
+                "user_request",
             }
         )
     elif action in {"pause", "resume", "prepare_abandon", "abandon", "close"}:
         allowed.add("delivery_id")
+    elif action == "confirm_input_enrichment":
+        allowed.update(
+            {
+                "delivery_id",
+                "raw_request_sha256",
+                "enhanced_prompt",
+                "understanding",
+            }
+        )
     if action == "prepare_abandon":
         allowed.add("reason")
     if action == "abandon":
@@ -122,6 +133,8 @@ def validate_request(raw: dict[str, Any]) -> dict[str, Any]:
         for field in ("expected_delivery_id", "idempotency_key"):
             if raw.get(field) is not None:
                 result[field] = _required_string(raw[field], field)
+        if raw.get("user_request") is not None:
+            result["user_request"] = _required_string(raw["user_request"], "user_request")
 
     if action == "resume":
         result["delivery_id"] = _required_string(raw.get("delivery_id"), "delivery_id")
@@ -129,6 +142,24 @@ def validate_request(raw: dict[str, Any]) -> dict[str, Any]:
         result["delivery_id"] = _required_string(raw["delivery_id"], "delivery_id")
     elif action in {"prepare_abandon", "abandon"}:
         result["delivery_id"] = _required_string(raw.get("delivery_id"), "delivery_id")
+
+    if action == "confirm_input_enrichment":
+        result["delivery_id"] = _required_string(raw.get("delivery_id"), "delivery_id")
+        raw_hash = _required_string(
+            raw.get("raw_request_sha256"), "raw_request_sha256"
+        )
+        if len(raw_hash) != 64 or any(
+            character not in "0123456789abcdefABCDEF" for character in raw_hash
+        ):
+            raise ControlError("raw_request_sha256 must be a SHA-256 hex digest")
+        result["raw_request_sha256"] = raw_hash.lower()
+        result["enhanced_prompt"] = _required_string(
+            raw.get("enhanced_prompt"), "enhanced_prompt"
+        )
+        understanding = raw.get("understanding")
+        if not isinstance(understanding, dict):
+            raise ControlError("understanding must be an object")
+        result["understanding"] = dict(understanding)
 
     if action == "prepare_abandon":
         result["reason"] = _required_string(raw.get("reason"), "reason")
@@ -297,6 +328,20 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
             warnings=validate_current_artifact_identity(project_root, state),
         )
 
+    if action == "confirm_input_enrichment":
+        state = load_state(project_root)
+        if not state:
+            raise ControlError("no current delivery", exit_code=EXIT_IDENTITY_CONFLICT)
+        _assert_target_delivery(state, validated["delivery_id"])
+        if dry_run:
+            return _response("confirm_input_enrichment", "dry_run", state)
+        confirmed = workflow.confirm_input_enrichment(
+            raw_request_sha256=validated["raw_request_sha256"],
+            enhanced_prompt=validated["enhanced_prompt"],
+            understanding=validated["understanding"],
+        )
+        return _response("confirm_input_enrichment", "confirmed", confirmed)
+
     if action == "start":
         return _dispatch_start(project_root, workflow, validated)
 
@@ -389,6 +434,10 @@ def _dispatch_start(
             "create_only requested but this feature already has a resumable delivery",
             exit_code=EXIT_IDENTITY_CONFLICT,
         )
+    if startup_action == "new_delivery_required":
+        request["user_request"] = _required_string(
+            request.get("user_request"), "user_request"
+        )
     current_id = inspection.get("current_delivery_id")
     expected_id = request.get("expected_delivery_id")
     if expected_id and expected_id != current_id:
@@ -417,9 +466,24 @@ def _dispatch_start(
     runtime_mode = None if mode == "pending_selection" else mode
     created = workflow.start(
         feature_slug=feature_slug,
+        user_request=request.get("user_request"),
         multi_agent_mode=runtime_mode,
     )
-    return _response("start", "created", created, created_new_delivery=True)
+    result = (
+        "input_enrichment_required"
+        if created.get("next_gate") == "input_enrichment_confirmation"
+        else "created"
+    )
+    extra = {}
+    if result == "input_enrichment_required":
+        extra["input_enrichment"] = created.get("input_enrichment")
+    return _response(
+        "start",
+        result,
+        created,
+        created_new_delivery=True,
+        extra=extra,
+    )
 
 
 def _closure_is_passed(state: dict[str, Any]) -> bool:

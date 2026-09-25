@@ -283,6 +283,7 @@ class ProductDeliveryWorkflow:
         self,
         *,
         feature_slug: str | None = None,
+        user_request: str | None = None,
         allow_review_degradation: bool = False,
         multi_agent_mode: str | None = None,
         **deprecated_options: Any,
@@ -348,9 +349,118 @@ class ProductDeliveryWorkflow:
 
         return self._start_fresh_delivery(
             feature_slug=feature_slug,
+            user_request=user_request,
             multi_agent_mode=multi_agent_mode,
             previous_state=raw_existing_state or existing_state,
         )
+
+    @staticmethod
+    def _input_request_sha256(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _input_enrichment_pending_state_hash(state: dict[str, Any]) -> str:
+        material = deepcopy(state)
+        pending = material.get("pending_confirmations") or {}
+        input_pending = pending.get("input_enrichment")
+        if isinstance(input_pending, dict):
+            input_pending.pop("state_hash", None)
+        return lifecycle_state_hash(material)
+
+    @staticmethod
+    def _input_enrichment_is_confirmed(state: dict[str, Any]) -> bool:
+        return (state.get("input_enrichment") or {}).get("status") in {
+            "confirmed",
+            "legacy_accepted",
+        }
+
+    def confirm_input_enrichment(
+        self,
+        *,
+        raw_request_sha256: str,
+        enhanced_prompt: str,
+        understanding: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist the single user-reviewed understanding of the request."""
+        state = self._require_started(
+            allow_pending_authorization=True,
+            allow_input_enrichment=True,
+        )
+        pending = (state.get("pending_confirmations") or {}).get(
+            "input_enrichment"
+        )
+        if not isinstance(pending, dict) or pending.get("status") != "pending":
+            raise WorkflowError("pending input enrichment confirmation is required")
+        if raw_request_sha256 != pending.get("raw_request_sha256"):
+            raise WorkflowError("raw request hash does not match pending input enrichment")
+        if pending.get("state_hash") != self._input_enrichment_pending_state_hash(state):
+            raise WorkflowError("delivery state changed since input enrichment started")
+        if not isinstance(enhanced_prompt, str) or not enhanced_prompt.strip():
+            raise WorkflowError("enhanced_prompt is required")
+        if not isinstance(understanding, dict):
+            raise WorkflowError("understanding must be an object")
+        goal = understanding.get("goal")
+        if not isinstance(goal, str) or not goal.strip():
+            raise WorkflowError("understanding.goal is required")
+        list_fields = (
+            "users",
+            "scenarios",
+            "scope_in",
+            "scope_out",
+            "constraints",
+            "assumptions",
+            "open_questions",
+            "success_signals",
+        )
+        normalized_understanding = {"goal": goal.strip()}
+        for field in list_fields:
+            value = understanding.get(field, [])
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) and item.strip() for item in value
+            ):
+                raise WorkflowError(f"understanding.{field} must be a string list")
+            normalized_understanding[field] = [item.strip() for item in value]
+
+        raw_request = str(
+            (state.get("input_enrichment") or {}).get("raw_request") or ""
+        )
+        confirmed_at = self._timestamp_from_state(state)
+        confirmed = {
+            "schema_version": "v1",
+            "status": "confirmed",
+            "source": "user_reviewed_agent_draft",
+            "raw_request": raw_request,
+            "raw_request_sha256": raw_request_sha256,
+            "enhanced_prompt": enhanced_prompt.strip(),
+            "enhanced_prompt_sha256": self._input_request_sha256(
+                enhanced_prompt.strip()
+            ),
+            "understanding": normalized_understanding,
+            "confirmed_at": confirmed_at,
+            "resume_gate": pending.get("resume_gate") or "product_blueprint",
+        }
+        artifact_content = (
+            "# Input Enrichment\n\n"
+            "## Raw Request\n\n"
+            f"{raw_request}\n\n"
+            "## Enhanced Prompt\n\n"
+            f"{confirmed['enhanced_prompt']}\n\n"
+            "## Structured Understanding\n\n"
+            "```json\n"
+            + json.dumps(normalized_understanding, indent=2, ensure_ascii=False)
+            + "\n```\n"
+        )
+        self._write_delivery_artifact(
+            state,
+            "input_enrichment",
+            "input-enrichment.md",
+            artifact_content,
+        )
+        state["input_enrichment"] = confirmed
+        state.setdefault("pending_confirmations", {}).pop("input_enrichment", None)
+        state["stage"] = pending.get("resume_stage") or "product_blueprint"
+        state["next_gate"] = confirmed["resume_gate"]
+        return write_state(self.project_root, state)
 
     def recover_legacy_active_delivery(
         self,
@@ -822,6 +932,7 @@ class ProductDeliveryWorkflow:
         self,
         *,
         feature_slug: str | None,
+        user_request: str | None = None,
         multi_agent_mode: str | None,
         previous_state: dict[str, Any] | None,
     ) -> dict[str, Any]:
@@ -942,6 +1053,31 @@ class ProductDeliveryWorkflow:
                 "reason": "select multi-Agent review execution mode",
             }
             state["next_gate"] = "multi_agent_mode_selection"
+        resume_gate = state.get("next_gate") or "product_blueprint"
+        if isinstance(user_request, str) and user_request.strip():
+            raw_request = user_request.strip()
+            raw_request_sha256 = self._input_request_sha256(raw_request)
+            state["input_enrichment"] = {
+                "schema_version": "v1",
+                "status": "pending_confirmation",
+                "source": "startup_request",
+                "raw_request": raw_request,
+                "raw_request_sha256": raw_request_sha256,
+            }
+            state["pending_confirmations"]["input_enrichment"] = {
+                "status": "pending",
+                "raw_request_sha256": raw_request_sha256,
+                "resume_gate": resume_gate,
+                "resume_stage": state.get("stage") or "product_blueprint",
+            }
+            state["stage"] = "input_enrichment_pending"
+            state["next_gate"] = "input_enrichment_confirmation"
+        else:
+            state["input_enrichment"] = {
+                "schema_version": "v1",
+                "status": "legacy_accepted",
+                "source": "direct_workflow_start",
+            }
         state["delivery_goal"] = None
         state["delivery_lifecycle"] = {
             "schema_version": "v1",
@@ -988,6 +1124,10 @@ class ProductDeliveryWorkflow:
             runtime_version=PLUGIN_VERSION,
             metadata=state["runtime_provenance"],
         )
+        if state.get("input_enrichment", {}).get("status") == "pending_confirmation":
+            state["pending_confirmations"]["input_enrichment"][
+                "state_hash"
+            ] = self._input_enrichment_pending_state_hash(state)
         return write_state(self.project_root, state)
 
 
@@ -1889,6 +2029,7 @@ class ProductDeliveryWorkflow:
         state = self._require_started(
             allow_pending_authorization=True,
             host_goal_transition=True,
+            allow_input_enrichment=True,
         )
         if state.get("paused"):
             return state
@@ -1913,6 +2054,7 @@ class ProductDeliveryWorkflow:
         state = self._require_started(
             allow_pending_authorization=True,
             host_goal_transition=True,
+            allow_input_enrichment=True,
         )
         state = self._migrate_current_legacy_layout(state)
         if not state.get("paused"):
@@ -1936,7 +2078,10 @@ class ProductDeliveryWorkflow:
 
     def record_pending_abandon_token(self, token_info: dict[str, Any]) -> dict[str, Any]:
         """Store a pending abandon token in state for two-phase confirmation."""
-        state = self._require_started(allow_pending_authorization=True)
+        state = self._require_started(
+            allow_pending_authorization=True,
+            allow_input_enrichment=True,
+        )
         tokens = {}
         state["pending_abandon_tokens"] = tokens
         tokens[token_info["confirmation_token"]] = {
@@ -1956,7 +2101,10 @@ class ProductDeliveryWorkflow:
         (terminal), and invalidates review authorization.  The
         delivery_id is preserved in history and never reused.
         """
-        state = self._require_started(allow_pending_authorization=True)
+        state = self._require_started(
+            allow_pending_authorization=True,
+            allow_input_enrichment=True,
+        )
         pending = state.get("pending_abandon_tokens") or {}
         record = pending.get(confirmation_token)
         if not record:
@@ -2030,6 +2178,7 @@ class ProductDeliveryWorkflow:
         """
         state = self._require_started(
             allow_pending_authorization=True,
+            allow_input_enrichment=True,
         )
         cv = state.get("closure_validation") or {}
         fc = state.get("feature_closure") or {}
@@ -5075,10 +5224,17 @@ class ProductDeliveryWorkflow:
         allow_host_goal_bootstrap: bool = False,
         allow_host_goal_owner_claim: bool = False,
         host_goal_transition: bool = False,
+        allow_input_enrichment: bool = False,
     ) -> dict[str, Any]:
         state = self._state()
         if not state.get("active"):
             raise WorkflowError("workflow is not active; run start first")
+        if not allow_input_enrichment and not self._input_enrichment_is_confirmed(
+            state
+        ):
+            raise WorkflowError(
+                "input enrichment confirmation is required before workflow progress"
+            )
         raw_state = self._load_raw_state()
         if raw_state.get("status") not in TERMINAL_STATUSES:
             current_runtime_status = runtime_status(state, raw_state)

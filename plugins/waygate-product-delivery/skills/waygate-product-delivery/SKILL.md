@@ -5,9 +5,9 @@ description: "Codex-native product delivery workflow with shorthand commands for
 
 # Product Delivery Agent
 
-默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 `$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 `scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。支持 `inspect`、`status`、`start`、`pause`、`resume`、`prepare_abandon`、`abandon` 和 `close`。`review_mode_if_created=pending_selection` 会进入 `multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。
+默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 `$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 `scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。支持 `inspect`、`status`、`start`、`confirm_input_enrichment`、`pause`、`resume`、`prepare_abandon`、`abandon` 和 `close`。`review_mode_if_created=pending_selection` 会进入 `multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。
 
-示例：`$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}`。
+示例：`$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","user_request":"增加逐页建课能力","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}`。
 
 ## Shorthand Commands
 
@@ -22,9 +22,10 @@ V1.0.32 起，`$waygate-product-delivery` 支持简写命令。Codex 必须在�
 
 | Shorthand | 展开后 JSON |
 |---|---|
-| `start <slug>` | `{"schema_version":"v1","action":"start","feature_slug":"<slug>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}` |
-| `start <slug> multi-agent` | 同上，`review_mode_if_created` 改为 `"spawned_subagents_authorized"` |
-| `start <slug> role-play` | 同上，`review_mode_if_created` 改为 `"role_simulation_allowed"` |
+| `start <slug>` | 恢复已有 delivery 时展开为原有 JSON；新建 delivery 时必须改用带 `user_request` 的严格 JSON。 |
+| `start <slug> "<request>"` | 同上，并加入 `"user_request":"<request>"`。 |
+| `start <slug> multi-agent "<request>"` | 同上，`review_mode_if_created` 为 `"spawned_subagents_authorized"`，并加入 `user_request`。 |
+| `start <slug> role-play "<request>"` | 同上，`review_mode_if_created` 为 `"role_simulation_allowed"`，并加入 `user_request`。 |
 | `status` | `{"schema_version":"v1","action":"status"}` |
 | `inspect` | `{"schema_version":"v1","action":"inspect"}` |
 | `inspect <slug>` | `{"schema_version":"v1","action":"inspect","feature_slug":"<slug>"}` |
@@ -39,6 +40,17 @@ V1.0.32 起，`$waygate-product-delivery` 支持简写命令。Codex 必须在�
 - `stop` 已退役，shorthand 也不支持。
 - 不支持的关键词（如 `help`、`list`、`config`）直接拒绝并提示可用命令。
 - `<slug>` 必须是合法的 feature slug（字母、数字、连字符、点、下划线）。
+
+## Input Enrichment Gate
+
+新建 delivery 必须先完成一次输入理解往返，恢复已有 delivery 不重复触发：
+
+1. 将用户原始需求原样放入 `start.user_request` 并调用 `start`。
+2. 如果返回 `result=input_enrichment_required`，只展示理解完善草案，至少包含目标、用户/场景、范围、约束、假设、开放问题和成功标准。
+3. 在用户下一次回复前，不调用 Open Spec、评审、原型、测试或实现相关动作，也不修改代码。
+4. 用户可以直接确认，也可以在同一条回复中提出修改；将修改合并为最终增强提示词后，只调用一次 `confirm_input_enrichment`。
+5. `confirm_input_enrichment` 必须提交 `delivery_id`、`raw_request_sha256`、`enhanced_prompt` 和结构化 `understanding`。确认后才恢复原来的下一门。
+6. 用户没有回复时停在 `input_enrichment_confirmation`，不得按默认理解继续执行。
 
 ## Active Mode Hard Rules
 
@@ -157,7 +169,7 @@ V1.0.34 起，高保真产品原型只能包含真实产品内容。新建或重
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.42`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.0.43`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 

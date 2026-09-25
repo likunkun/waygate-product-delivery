@@ -94,6 +94,22 @@ class ContinuationGuardTests(unittest.TestCase):
         self.assertTrue(result["can_stop"])
         self.assertIn("pending_confirmation:product_baseline", result["blockers"])
 
+    def test_pending_input_enrichment_allows_waiting_for_user(self):
+        result = derive_continuation_status(
+            active_state(
+                stage="input_enrichment_pending",
+                next_gate="input_enrichment_confirmation",
+                pending_confirmations={
+                    "input_enrichment": {"status": "pending"},
+                },
+            )
+        )
+
+        self.assertEqual(result["status"], "wait_for_user")
+        self.assertTrue(result["can_stop"])
+        self.assertEqual(result["next_action"], "input_enrichment_confirmation")
+        self.assertIn("pending_confirmation:input_enrichment", result["blockers"])
+
     def test_internal_pending_confirmation_must_continue(self):
         result = derive_continuation_status(
             active_state(

@@ -16,7 +16,7 @@
     "defaultPrompt": [
       "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"inspect\"}",
       "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"status\"}",
-      "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"start\",\"feature_slug\":\"<feature-slug>\",\"start_mode\":\"resume_or_create\",\"review_mode_if_created\":\"pending_selection\"}",
+      "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"start\",\"feature_slug\":\"<feature-slug>\",\"user_request\":\"<original-request>\",\"start_mode\":\"resume_or_create\",\"review_mode_if_created\":\"pending_selection\"}",
       "$waygate-product-delivery {\"schema_version\":\"v1\",\"action\":\"pause\"}",
       "$waygate-product-delivery start <feature-slug> multi-agent",
       "$waygate-product-delivery status",
@@ -41,5 +41,5 @@
   "name": "waygate-product-delivery",
   "repository": "https://example.com/waygate-product-delivery.git",
   "skills": "./skills/",
-  "version": "1.0.42+codex.20260908060146"
+  "version": "1.0.43+codex.20260925081624"
 }

@@ -1,5 +1,6 @@
 """Tests for parameterized delivery lifecycle control."""
 
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,28 @@ from tests.test_feature_closure import ready_workflow, valid_closure_artifact
 
 
 class RequestValidationTests(unittest.TestCase):
+    def test_new_start_requires_user_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ControlError):
+                dispatch(tmp, {
+                    "schema_version": "v1",
+                    "action": "start",
+                    "feature_slug": "v1-intake",
+                    "start_mode": "create_only",
+                    "review_mode_if_created": "spawned_subagents_authorized",
+                })
+
+    def test_confirm_input_enrichment_request_validates(self):
+        request = validate_request({
+            "schema_version": "v1",
+            "action": "confirm_input_enrichment",
+            "delivery_id": "delivery-1",
+            "raw_request_sha256": "a" * 64,
+            "enhanced_prompt": "Build a classroom page workspace.",
+            "understanding": {"goal": "Build a classroom page workspace."},
+        })
+        self.assertEqual(request["action"], "confirm_input_enrichment")
+
     def test_valid_start_request_passes(self):
         req = validate_request({
             "schema_version": "v1",
@@ -87,6 +110,188 @@ class RequestValidationTests(unittest.TestCase):
 
 
 class ControlDispatchTests(unittest.TestCase):
+    def test_new_start_enters_input_enrichment_pending(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_request = "Add page-by-page classroom authoring."
+            result = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": raw_request,
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            self.assertEqual(result["result"], "input_enrichment_required")
+            self.assertEqual(result["next_gate"], "input_enrichment_confirmation")
+            state = ProductDeliveryWorkflow(tmp).status()
+            self.assertEqual(state["stage"], "input_enrichment_pending")
+            self.assertEqual(
+                state["input_enrichment"]["raw_request"], raw_request
+            )
+            self.assertEqual(
+                state["pending_confirmations"]["input_enrichment"]["status"],
+                "pending",
+            )
+
+    def test_input_enrichment_confirmation_records_final_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_request = "Add page-by-page classroom authoring."
+            created = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": raw_request,
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            enhanced_prompt = (
+                "Implement page-by-page classroom authoring with draft previews."
+            )
+            result = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "confirm_input_enrichment",
+                "delivery_id": created["delivery_id"],
+                "raw_request_sha256": hashlib.sha256(
+                    raw_request.encode("utf-8")
+                ).hexdigest(),
+                "enhanced_prompt": enhanced_prompt,
+                "understanding": {
+                    "goal": "Support page-by-page classroom authoring.",
+                    "users": ["teacher"],
+                    "scenarios": ["teacher edits one page at a time"],
+                    "scope_in": ["page drafts", "preview"],
+                    "scope_out": ["publishing redesign"],
+                    "constraints": ["preserve existing authoring flow"],
+                    "assumptions": ["existing worker remains available"],
+                    "open_questions": [],
+                    "success_signals": ["page changes remain independently editable"],
+                },
+            })
+            self.assertEqual(result["result"], "confirmed")
+            state = ProductDeliveryWorkflow(tmp).status()
+            self.assertEqual(state["input_enrichment"]["status"], "confirmed")
+            self.assertEqual(
+                state["input_enrichment"]["enhanced_prompt"], enhanced_prompt
+            )
+            self.assertEqual(state["next_gate"], "product_blueprint")
+            artifact = state["artifact_refs"]["input_enrichment"]
+            self.assertTrue(
+                (Path(tmp) / ".product-delivery" / artifact["canonical_path"]).is_file()
+            )
+
+    def test_pending_input_enrichment_blocks_workflow_progress(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": "Add page-by-page classroom authoring.",
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            with self.assertRaisesRegex(WorkflowError, "input enrichment"):
+                ProductDeliveryWorkflow(tmp).select_project_type("non_ui")
+
+    def test_input_enrichment_rejects_wrong_raw_request_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            created = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": "Add page-by-page classroom authoring.",
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            with self.assertRaisesRegex(WorkflowError, "raw request hash"):
+                dispatch(tmp, {
+                    "schema_version": "v1",
+                    "action": "confirm_input_enrichment",
+                    "delivery_id": created["delivery_id"],
+                    "raw_request_sha256": "a" * 64,
+                    "enhanced_prompt": "Implement page authoring.",
+                    "understanding": {"goal": "Support page authoring."},
+                })
+
+    def test_input_enrichment_rejects_state_changed_after_pending_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_request = "Add page-by-page classroom authoring."
+            created = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": raw_request,
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            ProductDeliveryWorkflow(tmp).pause_delivery()
+            with self.assertRaisesRegex(WorkflowError, "state changed"):
+                dispatch(tmp, {
+                    "schema_version": "v1",
+                    "action": "confirm_input_enrichment",
+                    "delivery_id": created["delivery_id"],
+                    "raw_request_sha256": hashlib.sha256(
+                        raw_request.encode("utf-8")
+                    ).hexdigest(),
+                    "enhanced_prompt": "Implement page authoring.",
+                    "understanding": {"goal": "Support page authoring."},
+                })
+
+    def test_input_enrichment_confirmation_cannot_be_replayed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_request = "Add page-by-page classroom authoring."
+            created = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": raw_request,
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            confirmation = {
+                "schema_version": "v1",
+                "action": "confirm_input_enrichment",
+                "delivery_id": created["delivery_id"],
+                "raw_request_sha256": hashlib.sha256(
+                    raw_request.encode("utf-8")
+                ).hexdigest(),
+                "enhanced_prompt": "Implement page authoring.",
+                "understanding": {"goal": "Support page authoring."},
+            }
+            dispatch(tmp, confirmation)
+            with self.assertRaisesRegex(
+                WorkflowError, "pending input enrichment confirmation"
+            ):
+                dispatch(tmp, confirmation)
+
+    def test_resume_reuses_confirmed_input_without_reasking(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_request = "Add page-by-page classroom authoring."
+            created = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "user_request": raw_request,
+                "start_mode": "create_only",
+                "review_mode_if_created": "spawned_subagents_authorized",
+            })
+            dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "confirm_input_enrichment",
+                "delivery_id": created["delivery_id"],
+                "raw_request_sha256": hashlib.sha256(
+                    raw_request.encode("utf-8")
+                ).hexdigest(),
+                "enhanced_prompt": "Implement page-by-page classroom authoring.",
+                "understanding": {"goal": "Support page-by-page authoring."},
+            })
+            resumed = dispatch(tmp, {
+                "schema_version": "v1",
+                "action": "start",
+                "feature_slug": "v1-intake",
+                "start_mode": "resume_or_create",
+            })
+            self.assertEqual(resumed["result"], "resumed")
+            self.assertEqual(resumed["delivery_id"], created["delivery_id"])
     def test_inspect_on_empty_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = dispatch(tmp, {
@@ -112,10 +317,11 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
-            self.assertEqual(result["result"], "created")
+            self.assertEqual(result["result"], "input_enrichment_required")
             self.assertTrue(result["created_new_delivery"])
             self.assertEqual(result["feature_slug"], "v0-5-5")
             current = Path(tmp) / ".product-delivery" / "current.json"
@@ -130,6 +336,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -160,6 +367,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -179,6 +387,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "feature-a",
+                "user_request": "Create feature-a.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -198,6 +407,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -219,6 +429,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -241,6 +452,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -261,6 +473,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -279,6 +492,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -308,6 +522,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -317,7 +532,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "delivery_id": created["delivery_id"],
                 "reason": "state-bound token test",
             })
-            ProductDeliveryWorkflow(tmp).select_project_type("non_ui")
+            ProductDeliveryWorkflow(tmp).pause_delivery()
             with self.assertRaises(ControlError) as caught:
                 dispatch(tmp, {
                     "schema_version": "v1",
@@ -350,6 +565,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -363,6 +579,7 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
@@ -386,10 +603,11 @@ class ControlDispatchTests(unittest.TestCase):
                 "schema_version": "v1",
                 "action": "start",
                 "feature_slug": "v0-5-5",
+                "user_request": "Create the v0-5-5 delivery again.",
                 "start_mode": "create_only",
                 "review_mode_if_created": "spawned_subagents_authorized",
             })
-            self.assertEqual(result["result"], "created")
+            self.assertEqual(result["result"], "input_enrichment_required")
             self.assertNotEqual(result["delivery_id"], delivery_id)
 
 

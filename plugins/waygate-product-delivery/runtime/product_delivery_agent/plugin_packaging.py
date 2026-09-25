@@ -148,7 +148,7 @@ def _plugin_manifest() -> dict[str, Any]:
             "defaultPrompt": [
                 '$waygate-product-delivery {"schema_version":"v1","action":"inspect"}',
                 '$waygate-product-delivery {"schema_version":"v1","action":"status"}',
-                '$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"<feature-slug>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}',
+                '$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"<feature-slug>","user_request":"<original-request>","start_mode":"resume_or_create","review_mode_if_created":"pending_selection"}',
                 '$waygate-product-delivery {"schema_version":"v1","action":"pause"}',
                 '$waygate-product-delivery start <feature-slug> multi-agent',
                 '$waygate-product-delivery status',
@@ -672,11 +672,12 @@ def _skill_markdown() -> str:
         "默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 "
         "`$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 "
         "`scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。"
-        "支持 `inspect`、`status`、`start`、`pause`、`resume`、`prepare_abandon`、"
+        "支持 `inspect`、`status`、`start`、`confirm_input_enrichment`、`pause`、`resume`、`prepare_abandon`、"
         "`abandon` 和 `close`。`review_mode_if_created=pending_selection` 会进入 "
         "`multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。\n\n"
         "示例：`$waygate-product-delivery {\"schema_version\":\"v1\","
         "\"action\":\"start\",\"feature_slug\":\"v0-5-5-flow-preview\","
+        "\"user_request\":\"增加逐页建课能力\","
         "\"start_mode\":\"resume_or_create\","
         "\"review_mode_if_created\":\"spawned_subagents_authorized\"}`。\n\n"
         "## Shorthand Commands\n\n"
@@ -692,13 +693,10 @@ def _skill_markdown() -> str:
         "**Shorthand 命令表：**\n\n"
         "| Shorthand | 展开后 JSON |\n"
         "|---|---|\n"
-        "| `start <slug>` | `{\"schema_version\":\"v1\",\"action\":\"start\","
-        "\"feature_slug\":\"<slug>\",\"start_mode\":\"resume_or_create\","
-        "\"review_mode_if_created\":\"pending_selection\"}` |\n"
-        "| `start <slug> multi-agent` | 同上，`review_mode_if_created` "
-        "改为 `\"spawned_subagents_authorized\"` |\n"
-        "| `start <slug> role-play` | 同上，`review_mode_if_created` "
-        "改为 `\"role_simulation_allowed\"` |\n"
+        "| `start <slug>` | 恢复已有 delivery 时展开为原有 JSON；新建 delivery 时必须改用带 `user_request` 的严格 JSON。 |\n"
+        "| `start <slug> \"<request>\"` | 同上，并加入 `\"user_request\":\"<request>\"`。 |\n"
+        "| `start <slug> multi-agent \"<request>\"` | 同上，`review_mode_if_created` 为 `\"spawned_subagents_authorized\"`，并加入 `user_request`。 |\n"
+        "| `start <slug> role-play \"<request>\"` | 同上，`review_mode_if_created` 为 `\"role_simulation_allowed\"`，并加入 `user_request`。 |\n"
         "| `status` | `{\"schema_version\":\"v1\",\"action\":\"status\"}` |\n"
         "| `inspect` | `{\"schema_version\":\"v1\",\"action\":\"inspect\"}` |\n"
         "| `inspect <slug>` | `{\"schema_version\":\"v1\",\"action\":\"inspect\","
@@ -718,6 +716,14 @@ def _skill_markdown() -> str:
         "- 不支持的关键词（如 `help`、`list`、`config`）直接拒绝并提示可用命令。\n"
         "- `<slug>` 必须是合法的 feature slug"
         "（字母、数字、连字符、点、下划线）。\n\n"
+        "## Input Enrichment Gate\n\n"
+        "新建 delivery 必须先完成一次输入理解往返，恢复已有 delivery 不重复触发：\n\n"
+        "1. 将用户原始需求原样放入 `start.user_request` 并调用 `start`。\n"
+        "2. 如果返回 `result=input_enrichment_required`，只展示理解完善草案，至少包含目标、用户/场景、范围、约束、假设、开放问题和成功标准。\n"
+        "3. 在用户下一次回复前，不调用 Open Spec、评审、原型、测试或实现相关动作，也不修改代码。\n"
+        "4. 用户可以直接确认，也可以在同一条回复中提出修改；将修改合并为最终增强提示词后，只调用一次 `confirm_input_enrichment`。\n"
+        "5. `confirm_input_enrichment` 必须提交 `delivery_id`、`raw_request_sha256`、`enhanced_prompt` 和结构化 `understanding`。确认后才恢复原来的下一门。\n"
+        "6. 用户没有回复时停在 `input_enrichment_confirmation`，不得按默认理解继续执行。\n\n"
         "## Active Mode Hard Rules\n\n"
         "启动后必须创建或恢复 `.product-delivery/state.json`，并把它作为当前项目的权威状态。"
         "聊天总结、旧版本文档和 `progress.md` 都不能替代 gate evidence。\n\n"

@@ -1,12 +1,12 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.0.42-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.43-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
-Waygate Product Delivery is a Codex-native plugin for moving a product idea through product framing, Open Spec, scenario review, UI or non-UI gates, implementation handoff, and formal closure evidence. Shorthand commands: `start <slug> [multi-agent|role-play]`, `status`, `pause`, `resume`, `close`, `abandon`, `inspect`.
+Waygate Product Delivery is a Codex-native plugin for moving a product idea through product framing, Open Spec, scenario review, UI or non-UI gates, implementation handoff, and formal closure evidence. Shorthand commands: `start <slug> [multi-agent|role-play]`, `status`, `pause`, `resume`, `close`, `abandon`, `inspect`; new deliveries begin with one input-understanding confirmation round.
 
 It is designed for teams that want AI-assisted implementation to stay inside a visible delivery process: every major transition is backed by local artifacts, user confirmations, review gates, test obligations, and a canonical closure validator.
 
@@ -59,26 +59,29 @@ bash scripts/install_waygate_product_delivery.sh
 Start a new Codex thread after installation, then invoke the skill with shorthand commands:
 
 ```text
-$waygate-product-delivery start v0-5-5-flow-preview multi-agent
+$waygate-product-delivery start v0-5-5-flow-preview multi-agent "Add page-by-page classroom authoring"
 ```
 
 Or use the full JSON form:
 
 ```text
-$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}
+$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","user_request":"Add page-by-page classroom authoring","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}
 ```
 
 **Available shorthand commands:**
 
-- `start <slug>` — start with pending review mode selection
-- `start <slug> multi-agent` — start with spawned subagents (strong evidence)
-- `start <slug> role-play` — start with role simulation (weak evidence)
+- `start <slug>` — resume an existing delivery; new deliveries require the original request
+- `start <slug> "<request>"` — create a delivery and enter input understanding confirmation
+- `start <slug> multi-agent "<request>"` — create with spawned-subagent review mode
+- `start <slug> role-play "<request>"` — create with role-simulation review mode
 - `status` — check current delivery status
 - `pause` — pause current delivery
 - `resume` — resume paused delivery
 - `close` — close completed delivery
 - `abandon` — abandon current delivery (two-phase)
 - `inspect` — inspect startup request
+
+New deliveries first show an understanding draft covering the goal, users/scenarios, scope, constraints, assumptions, open questions, and success signals. The user can confirm or correct it in one reply; Open Spec, review, and implementation work wait until confirmation.
 
 
 Use `spawned_subagents_authorized` to authorize structured subagent reviews when a new delivery is created, or `role_simulation_allowed` only when degraded evidence is explicitly accepted. Repeating `resume_or_create` for the same unfinished feature resumes the existing `delivery_id`.
@@ -123,7 +126,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.0.42.tar.gz
+dist/waygate-product-delivery-1.0.43.tar.gz
 ```
 
 ## Use In Codex

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.43
+
+- Adds the mandatory pre-delivery input-enrichment confirmation gate for new deliveries, preserving the original request and requiring explicit confirmation before downstream planning or implementation actions.
+- Adds the strict `confirm_input_enrichment` control action with hash-checked raw input, enhanced prompt, structured understanding, and an auditable confirmation artifact.
+
 ## 1.0.42
 
 - Reverts the 1.0.39 capture-registry evidence platform. New UI deliveries compare prototype chrome during implementation instead of gating TASKs on prototype-versus-production pixel ratios.

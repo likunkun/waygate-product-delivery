@@ -282,6 +282,11 @@ def _new_state(project_type: str | None) -> dict[str, Any]:
         },
         "user_confirmations": {},
         "pending_confirmations": {},
+        "input_enrichment": {
+            "schema_version": "v1",
+            "status": "legacy_accepted",
+            "source": "new_delivery_default",
+        },
         "confirmation_readiness": {
             "product_baseline": "draft",
             "test_coverage_plan": "blocked_on_product_baseline",
@@ -497,6 +502,14 @@ def _merge_missing_protocol_fields(state: dict[str, Any]) -> dict[str, Any]:
     )
     merged.setdefault("user_confirmations", {})
     merged.setdefault("pending_confirmations", {})
+    merged.setdefault(
+        "input_enrichment",
+        {
+            "schema_version": "v1",
+            "status": "legacy_accepted",
+            "source": "legacy_delivery",
+        },
+    )
     merged.setdefault(
         "confirmation_readiness",
         {
