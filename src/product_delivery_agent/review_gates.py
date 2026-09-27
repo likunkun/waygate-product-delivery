@@ -6,6 +6,15 @@ import json
 from typing import Any
 
 from product_delivery_agent.prototype_design import PRODUCT_CONTEXT_DIMENSIONS
+from product_delivery_agent.review_profiles import (
+    ROLE_CATALOG_VERSION,
+    SEAT_PROFILE_VERSION,
+    RoleProfileError,
+    build_gate_tasks,
+    build_role_task,
+    get_gate_profile,
+    validate_role_results,
+)
 
 
 class ReviewGateError(RuntimeError):
@@ -70,6 +79,7 @@ def validate_multi_agent_review(
     prototype_contract: dict[str, Any] | None = None,
     prototype_design_bundle: dict[str, Any] | None = None,
     visual_adjudications: list[dict[str, Any]] | None = None,
+    coordinator_agent_id: str | None = None,
 ) -> None:
     """Validate visible multi-agent review output."""
     if review_type not in VALID_REVIEW_TYPES:
@@ -107,6 +117,8 @@ def validate_multi_agent_review(
         raise ReviewGateError("multi-agent review must pass")
     if review.get("blocking_findings"):
         raise ReviewGateError("blocking review findings remain unresolved")
+    if any(key in review for key in ("role_contract_version", "role_context", "role_tasks", "role_results")):
+        _validate_role_contract(review_type, review, coordinator_agent_id)
     if review_type == "scenario":
         _validate_scenario_review(
             review,
@@ -131,6 +143,79 @@ def validate_multi_agent_review(
             prototype_contract or {},
             visual_adjudications=visual_adjudications or [],
         )
+
+
+
+def _validate_role_contract(
+    review_type: str, review: dict[str, Any], coordinator_agent_id: str | None
+) -> None:
+    if review.get("role_contract_version") != ROLE_CATALOG_VERSION:
+        raise ReviewGateError("role_contract_version must match the installed review role catalog")
+    context = review.get("role_context")
+    tasks = review.get("role_tasks")
+    results = review.get("role_results")
+    if not isinstance(context, dict):
+        raise ReviewGateError("role contract review requires role_context")
+    if not isinstance(tasks, list) or not tasks:
+        raise ReviewGateError("role contract review requires role_tasks")
+    if not isinstance(results, list):
+        raise ReviewGateError("role contract review requires role results")
+    snapshot_hash = review.get("input_snapshot_hash")
+    if snapshot_hash != context.get("input_snapshot_hash"):
+        raise ReviewGateError("input_snapshot_hash must match role_context")
+    review_mode = review.get("review_mode", "spawned_subagents")
+    reviewer_ids = review.get("reviewer_agent_ids")
+    if review_mode == "spawned_subagents" and coordinator_agent_id and coordinator_agent_id in (reviewer_ids or []):
+        raise ReviewGateError("the coordinator cannot be a spawned role reviewer")
+    if review_mode == "role_simulation" and (reviewer_ids or review.get("reviewer_spawn_source")):
+        raise ReviewGateError("simulated review cannot claim spawned reviewer metadata")
+    seat_mode = "seat_contract_version" in review
+    try:
+        if seat_mode:
+            if review.get("seat_contract_version") != SEAT_PROFILE_VERSION:
+                raise ReviewGateError("seat_contract_version must match the installed seat catalog")
+            expected_bundle = build_gate_tasks(review_type, context)
+            if review.get("review_seats") != expected_bundle["review_seats"]:
+                raise ReviewGateError("review_seats must match the fixed seat profile")
+            expected_tasks = expected_bundle["role_tasks"]
+        else:
+            expected_tasks = [build_role_task(review_type, role_id, context)
+                              for role_id in get_gate_profile(review_type)]
+        if tasks != expected_tasks:
+            raise ReviewGateError("role_tasks must match current role tasks and task_hash values")
+        validate_role_results(review_type, results,
+                              expected_snapshot_hash=snapshot_hash,
+                              expected_tasks=expected_tasks)
+    except RoleProfileError as error:
+        raise ReviewGateError(str(error)) from error
+    if any(result.get("status") != "passed" or result.get("blocking_findings")
+           or result.get("unresolved_questions") for result in results):
+        raise ReviewGateError("all role results must pass without unresolved blockers or questions")
+    if review_mode == "spawned_subagents":
+        if any(result.get("identity_kind") != "spawned" for result in results):
+            raise ReviewGateError("spawned review requires spawned role identities")
+        result_ids = [result["agent_id"] for result in results]
+        identity_ids = (
+            sorted({result["agent_id"] for result in results})
+            if seat_mode else result_ids
+        )
+        expected_identity_count = 2 if seat_mode else len(result_ids)
+        if (not isinstance(reviewer_ids, list)
+                or not all(isinstance(item, str) for item in reviewer_ids)
+                or len(reviewer_ids) != len(set(reviewer_ids))
+                or len(reviewer_ids) != expected_identity_count
+                or set(identity_ids) != set(reviewer_ids)):
+            raise ReviewGateError("role agent identities must exactly match reviewer_agent_ids")
+        if coordinator_agent_id and coordinator_agent_id in identity_ids:
+            raise ReviewGateError("the coordinator cannot be a spawned role reviewer")
+        if any(result.get("spawn_source") != review.get("reviewer_spawn_source")
+               for result in results):
+            raise ReviewGateError("role spawn_source must match reviewer_spawn_source")
+    elif review_mode == "role_simulation":
+        if reviewer_ids or review.get("reviewer_spawn_source"):
+            raise ReviewGateError("simulated review cannot claim spawned reviewer metadata")
+        if any(result.get("identity_kind") != "simulated" for result in results):
+            raise ReviewGateError("role_simulation requires simulated role identities")
 
 
 def _validate_ui_conformance_review(
@@ -246,6 +331,15 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
         *_bullets(review["unresolved_questions"]),
         "",
     ]
+    if "role_contract_version" in review:
+        lines.extend([
+            "## Role Contract", "", "```json",
+            json.dumps({key: review.get(key) for key in (
+                "role_contract_version", "seat_contract_version", "input_snapshot_hash",
+                "role_context", "review_seats", "role_tasks", "role_results",
+            )}, indent=2, sort_keys=True, ensure_ascii=False),
+            "```", "",
+        ])
     if review["review_type"] == "scenario":
         lines.extend(
             [

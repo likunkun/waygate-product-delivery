@@ -1,5 +1,31 @@
 # Progress
 
+## 2026-09-26 CR-003 角色卡增强实施
+
+- 接续已有实现，补充角色可执行定义及文档，不重做CR-002产品设计。
+- 基线全量551项通过后，追加负向用例验证了实际缺口；修复命名参数错位、UI门禁分支、缺字段/源码、伪证据、任务hash、成员阻塞被外层passed掩盖。
+- 只读prepare role tasks与canonical record集成；QA定位并修复artifact路径缺前缀、去version绕过、legacy降级、hidden question、空身份字段和未选中输入导致stale。
+- 定向52项通过；首轮全量582项发现2个初始化回归，修复空state投影后31项针对回归通过；最终全量582项全部通过（145.366s）。编译、包一致性、插件结构、68链接、8角色/40例及历史保留检查通过。未安装/发布，manifest cachebuster恢复既有值。
+- 小样本历史摘录组件对照已完成：两组各1Agent/1轮/480秒上限；同四案例均2缺口、0漏检、0误报。耗时31/16秒仅作记录，返工/用量不可得；不声称收益提升。
+- 模型用量无宿主实测数据即unavailable；质量评估与功能回归分开记录。
+
+---
+
+## 前序记录（历史）
+
+## 2026-09-26 V1.1.0 评审专家团设计落盘
+
+- 接收用户批准的产品与架构设计；本轮仅执行文档修订，不进入 runtime、测试实施或发布。
+- 已完成仓库与文档基线检查：当前源码版本 1.0.42，工作区干净；复用已有 V1.1 Open Spec 包。
+- 使用 Open Spec 按需求 → 规范 → 方案阶段委派；主线程负责阶段验收、ROADMAP、交接和共享规划记录。
+- 00/01 已落盘并通过需求自检；主线程复核修正 scenario 对已确认基线的循环依赖、首轮 peer 输入和周期范围。
+- ROADMAP 已补 V1.1.0/V1.2.0 两阶段路线；05/06/07 历史正文保留并显式待同步。
+- 02/03/04 已由 Lead 合并阶段分析并落盘；补充强弱身份、状态与结果分离、精确失效、幂等、各中断点恢复和 12 个规范验收场景。
+- 08 交接与当日记忆已同步；05/06/07 保留历史正文、显式待同步。
+- 静态检查通过：16 个 Markdown、24 FR、13 NFR、8 角色、5 组合、四 API 签名、48 本地链接、FR/NFR 追溯、表格/围栏、历史正文保留及批准范围；git diff --check 通过。
+- 当前状态：设计文档交付完成。未改源码/测试/插件包/发布元数据，未执行 runtime 测试、安装或发布。
+
+
 ## 2026-08-15 V1.0.28 Prototype-Driven Implementation Closure
 
 - User approved the lightweight prototype-driven implementation closure design and fixed the release version at `1.0.28`.
@@ -2710,3 +2736,11 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Verification: focused new test 3/3 passed; existing recovery/packaging tests 26/26 passed; full unittest discovery 543/543 passed in 153.496s; script/test `py_compile` and `git diff --check` passed.
 - Source and installed 1.0.42 runtime provenance both resolve to package hash `fab11c4ac8bffbf95f76abdf6b5d2895c1429e1c37c032f65a9a7b6277c0e474`.
 - Classroom preflight froze `.product-delivery/state.json` at SHA-256 `89844e42ac16d78ed2974e51c1b489d39a4cee96f578b2facc80e39d973c5146`. The real repair was not executed because `get_goal()` still returned `blocked`; the Host Goal must first be resumed externally.
+
+## 2026-09-26 CR-004 复合席位专家团整合
+
+- 保留八个逻辑 role_id，新增五个 gate 的两个固定复合 reviewer 席位。
+- `review_profiles.py` 新增 SeatProfile、`get_gate_seat_profile()`、`build_gate_tasks()`；同席角色共享 Agent，跨席 Agent 唯一。
+- workflow/review_gates/gatekeeper/state/artifact 已绑定 seat_contract_version、席位映射、席位任务 hash 和两个 reviewer 身份；旧无席位契约保持兼容。
+- 文档同步 CR-004/REV-20260926-03、席位模板和测试矩阵；完整 PanelRun/四 API仍未实现。
+- 定向测试当前55项通过；全量回归待最终命令完成。

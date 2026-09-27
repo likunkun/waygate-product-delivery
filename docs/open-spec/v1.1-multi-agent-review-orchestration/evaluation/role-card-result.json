@@ -1,0 +1,32 @@
+{
+  "mode": "role_card",
+  "checked_cases": [
+    {
+      "case_id": "H1",
+      "status": "insufficient",
+      "finding": "九类入口的集合覆盖和业务结果均未建立；仅首入口动作、静态面板及函数名存在，其他入口失效或业务结果错误仍可通过。应提供逐入口真实动作、预期业务结果及能使错误结果失败的断言证据；负面与权限断言未提供，不能推定已有。",
+      "evidence_quote": "H1：测试动作只点开第一入口并检查静态说明面板和函数名存在。"
+    },
+    {
+      "case_id": "H2",
+      "status": "insufficient",
+      "finding": "总命令成功不能证明计划中的每个入口及其业务结果均已验证。缺少TC执行映射和实际动作、结果断言，无法判断错误行为是否触发失败，负面与权限覆盖亦未知。证据目标应为各计划项对应的实际TC结果、真实结果断言及运行证据。",
+      "evidence_quote": "H2：运行一个总命令退出码0，未提供逐项TC结果、实际测试源码、日志截图或trace与TC映射。"
+    },
+    {
+      "case_id": "H3",
+      "status": "supported",
+      "finding": "声称限于已提供的chrome结构检查通过，与给定检查结果一致。当前通过条件是结构与几何；行数和像素差属于诊断，6%不构成失败条件。业务交互、权限及负面行为不在本次声称范围，不能从这里推导其通过，也不应据此否定限定结论。",
+      "evidence_quote": "H3：报告只声称已提供的chrome结构检查通过，不声称所有交互已验证。"
+    },
+    {
+      "case_id": "H4",
+      "status": "supported",
+      "finding": "视觉门禁的证据目标是当前TASK绑定且通过的chrome loop，材料明确提供了该记录，满足本例required要求。仅有旧记录将不足以证明新交付，但本例未以旧记录替代新loop；旧fixture留存不是失败条件。该结论不扩展至业务、权限或负面行为验证。",
+      "evidence_quote": "H4：本次新交付提供当前绑定TASK的passed chrome loop记录。"
+    }
+  ],
+  "elapsed_seconds": 16,
+  "tokens": "unavailable",
+  "cost": "unavailable"
+}

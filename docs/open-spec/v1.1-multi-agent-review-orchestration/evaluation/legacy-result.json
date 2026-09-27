@@ -1,0 +1,32 @@
+{
+  "mode": "reviewer_string",
+  "checked_cases": [
+    {
+      "case_id": "H1",
+      "status": "insufficient",
+      "finding": "标题中的全部覆盖不能代替执行证据；仅检查第一入口的静态内容和函数名，无法证明九类入口功能可用。",
+      "evidence_quote": "测试动作只点开第一入口并检查静态说明面板和函数名存在。"
+    },
+    {
+      "case_id": "H2",
+      "status": "insufficient",
+      "finding": "总命令成功不能证明计划中的每项业务结果验证均被执行并通过；缺少可核对的逐项测试证据及映射。",
+      "evidence_quote": "运行一个总命令退出码0，未提供逐项TC结果、实际测试源码、日志截图或trace与TC映射。"
+    },
+    {
+      "case_id": "H3",
+      "status": "supported",
+      "finding": "材料支持报告限定的chrome结构检查通过；行数差异与像素差6%仅为诊断项，不构成当前规则下的失败，也不能据此扩大为交互已验证。",
+      "evidence_quote": "受审报告列明本次chrome结构检查通过、数据行数不同、像素差6%。报告只声称已提供的chrome结构检查通过，不声称所有交互已验证。"
+    },
+    {
+      "case_id": "H4",
+      "status": "supported",
+      "finding": "当前TASK有新策略对应的passed chrome loop记录，支持该TASK视觉门禁通过的有限主张；旧记录保留用于历史回归，未被用作本次通过依据。",
+      "evidence_quote": "本次新交付提供当前绑定TASK的passed chrome loop记录。报告用chrome loop证明该TASK的视觉门禁，保留旧记录但不以旧记录替代新loop。"
+    }
+  ],
+  "elapsed_seconds": 31,
+  "tokens": "unavailable",
+  "cost": "unavailable"
+}

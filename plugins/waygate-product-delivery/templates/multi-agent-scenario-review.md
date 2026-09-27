@@ -6,7 +6,9 @@
 - reviewer_spawn_source:
 - role_simulation_user_accepted: false
 - status: draft
-- reviewers: product intent, UI/UX scenario, negative boundary
+- seat_contract_version: 1.1.0-seat.1
+- review_seats: intent_boundary, journey_interaction
+- reviewers: product intent + negative boundary, journey + interaction
 - independent_positions: []
 - cross_challenges: []
 - revisions: []

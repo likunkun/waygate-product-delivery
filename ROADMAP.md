@@ -207,27 +207,62 @@ Scope:
 - Pass or fail chrome structure and geometry only; treat data cardinality and pixel gaps as diagnostics.
 - Keep 1.0.38 prototype conformance for deliveries that never enabled the visual-loop policy.
 
-### V1.1 - Multi-Agent Review Orchestration
+### V1.1 - Review Expert Panel Orchestration
 
-Goal: productize multi-agent review as a reusable orchestration layer instead of loose templates and prose rules.
+目标版本：**1.1.0**。状态：产品/架构设计已落盘，CR-003 角色卡、任务契约与复合席位整合已实现；完整 PanelRun 编排待实施，未发布。发布基线仍为 1.0.42。
 
-Scope:
+目标：把现有多 Agent 评审升级为职责明确、过程可恢复、结论有证据的评审专家团。
 
-- Keep fixed reviewer responsibilities for product intent, scenario and journey completeness, test coverage, test implementation, and negative boundaries.
-- Generate feature-specific prompts from current Open Spec, scenario matrix, prototype evidence, planned E2E obligations, and executed evidence.
-- Prefer real spawned subagents and record their evidence as the strong path.
-- Allow `role_simulation` only as an explicit user-accepted degradation.
-- Keep scenario review, test coverage review, and test implementation review as separate non-interchangeable gates.
-- Persist independent positions, cross-challenges, revisions, final adjudication, and blocking findings.
+范围（CR-002 / REV-20260926-01）：
 
-### V1.1.x - Multi-Agent Orchestration Patch Line
+- 固定八个角色：产品意图、用户旅程、负面边界、测试策略、追溯覆盖、测试断言、测试实现、UI 一致性。每个角色定义身份/版本、使命、方法、输入、输出、能力与权限、运行限制和证据要求。
+- 按 `scenario`、`test`、`test_coverage`、`test_implementation`、`ui_conformance` 五类门禁组织 2–3 个独立成员；当前主线程担任协调者，不计评审席位。
+- 从当前 feature 的 Open Spec、场景、原型或行为契约、计划测试义务及执行证据生成任务；固定输入快照与所用角色/模板哈希。
+- 独立评审 → 一次交叉质疑 → 一次修订 → 汇总裁决，阶段全员屏障；成员只回传结果，修复回到原工作流。
+- 记录成员身份、证据、裁决、运行事件、超时/替换、恢复及真实用量。每席位每阶段默认 600 秒、失败后重试或替换一次；一次自动周期最多初审加一次复验。
+- 复用既有有效评审授权；`role_simulation` 仍只在既有显式降级授权下使用，不能冒充真实子 Agent。必需门禁不可因低风险跳过，`test` 与 `test_coverage` 都保留。
+- 保持两次用户确认、runtime 自动实现授权、Host Goal owner、delivery 工件隔离和 canonical closure 权威。角色声明不等于文件系统沙箱，模型选择及具体模型记录继续由宿主管理。
+- 四个拟议 workflow 接口负责准备、只读检查、事件登记和收敛；详细运行记录与现有评审摘要分离。新交付启用契约，旧 active 交付保持原 runtime/策略，历史记录保持可读。
 
-Goal: harden V1.1 without creating artificial capability versions.
+不包含：生产专家、并行实现、动态角色市场、管理界面、外部编排平台和新的数据库/后台服务。
 
-Scope:
+完成标准：角色与输入可追溯、缺角色/证据/屏障不可通过、迟到与重复事件可判定、失效与中断恢复可靠，且未改变既有门禁权威。质量收益需与当前多 Agent 评审在相同材料和相近预算下比较，不预先声称提升。
 
-- Add runtime entrypoints, schema adjustments, or reporting only when they directly support multi-agent orchestration.
-- Treat migration and dashboard work as implementation support unless a later user need proves they deserve their own product version.
+角色任务书：[八角色设定、约束与40个例子](docs/open-spec/v1.1-multi-agent-review-orchestration/09-role-cards.md)。
+
+设计文档：[V1.1 产品需求](docs/open-spec/v1.1-multi-agent-review-orchestration/01-requirements.md)、[技术方案](docs/open-spec/v1.1-multi-agent-review-orchestration/03-technical-solution.md)。
+
+### V1.1.x - Review Expert Panel Patch Line
+
+目标：修复 V1.1 的稳定性、恢复、兼容性、成本记录及包装一致性问题。已有能力所需的 schema/API 修正随补丁交付；生产专家、管理界面或新的编排范式不作为补丁混入。
+
+### V1.2 - Stage-Based Expert Production Orchestration
+
+目标版本：**1.2.0**。状态：已确定版本方向，仅路线图；详细规范及实现尚未开始。依赖 V1.1 评审专家团。
+
+目标：把专家角色扩展到各阶段实际产出，让生产成果经过独立评审和既有门禁。
+
+| 阶段 | 生产职责 | 主要产出 |
+| --- | --- | --- |
+| 产品定义 | 产品、领域、用户研究专家 | 产品蓝图、用户故事、非目标与成功指标 |
+| 架构与版本规划 | 架构、集成、风险及规划专家 | 模块边界、数据流、技术风险、版本范围 |
+| Open Spec 与产品表面 | 需求、场景、交互或行为契约专家 | 需求、验收标准、旅程、原型或非 UI 行为契约 |
+| 测试设计 | 测试策略、E2E、边界专家 | 测试义务、覆盖矩阵、E2E 计划 |
+| 实现执行 | 按任务需要配置的前端、后端、测试、集成专家 | 代码、迁移、测试及实现证据 |
+| 交付准备 | 发布、证据、回归专家 | 验收包、执行证据与发布材料 |
+
+- 复用 V1.1 角色契约与运行记录，新增阶段输入/输出、生产任务交接、允许写入范围及冲突处理。
+- 按阶段改造，以里程碑推进，不给每个角色单独创建版本。只并行执行边界清晰、写入不冲突的任务；同文件或强依赖任务串行处理。
+- 生产角色不得自行修改冻结产品范围、删除测试义务、合并权威 TASK 或放行自己的成果；生产者与独立评审者职责分开。
+- 继续保留用户确认、原型/行为契约、实施授权、Host Goal 与最终闭包权威；架构阶段不因增加专家角色自动升级为新的硬门禁。
+
+完成标准：各阶段具备可追溯的生产职责和交接契约，独立任务可协作完成，成果接受 V1.1 评审及既有验证，并能度量返工、质量和资源消耗。
+
+### V1.2.x - Expert Production Patch Line
+
+目标：修复 V1.2 已有生产协作能力的恢复、写入冲突、兼容性及度量问题；不引入新的专家团范式。
+
+规划顺序：**V1.1 评审专家团 → V1.2 分阶段生产专家团 → V2.0–V2.3 OpenCode 能力**。以下 V2.x 版本边界保持原规划，不以平台接入代替本地生产与评审能力建设。
 
 ### V2.0.0 - OpenCode Native Plugin MVP
 
@@ -276,8 +311,8 @@ Scope:
 
 ## Assumptions
 
-- The current phase only produces roadmap and version planning.
-- Detailed implementation design, public interfaces, test plans, and file schemas are scoped only when a version explicitly requires them.
+- 当前 V1.1 工作止于已批准的产品、规范、技术架构和存储设计；文档完成不代表功能实施、测试或发布完成。
+- V1.2 当前仅规划版本方向；详细实施计划、测试用例与执行需在后续相应阶段同步，不沿用过期草案自动开工。
 - Codex Goal remains the current supported implementation handoff target.
 - OpenCode support is planned as a future `execution_target=opencode_run` capability.
 - Waygate/controller integration remains read-only unless a later version defines an official import route.

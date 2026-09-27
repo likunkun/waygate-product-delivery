@@ -15,6 +15,12 @@ This directory contains versioned Open Spec packages for the Product Delivery Ag
 | V0.9 | [Codex Goal Handoff](./v0.9-codex-goal-handoff/01-requirements.md) | Generate a frozen version package that can be handed to implementation Codex. |
 | V0.10 | [Feature Closure Gate](./v0.10-feature-closure-gate/01-requirements.md) | Require formal closure gate and a version-specific closure artifact after implementation. |
 | V1.0 | [Codex Plugin Packaging](./v1.0-codex-plugin-packaging/01-requirements.md) | Package the stable workflow as an installable Codex plugin. |
+| V1.1 / 1.1.0 | [Review Expert Panel Orchestration](./v1.1-multi-agent-review-orchestration/01-requirements.md) | CR-004：复合席位整合已实现，保留8个逻辑角色并固定每gate两个reviewer席位；[八角色任务书](./v1.1-multi-agent-review-orchestration/09-role-cards.md)。完整PanelRun仍待实施，未发布。 |
+| V1.2 / 1.2.0 | [Stage-Based Expert Production Orchestration（路线图）](../../ROADMAP.md#v12---stage-based-expert-production-orchestration) | 后续按阶段引入生产专家；尚无独立 Open Spec 包。 |
+
+## V1.1 当前修订边界
+
+`CR-002 / REV-20260926-01` 基于当前 1.0.42 源码更新 00–04 与 08。CR-003 / REV-20260926-02 已补角色卡/任务契约增量的 TASK、TC 和实现证据；05/06/07仍保留CR-001历史，旧TASK/TC/PASS不作为新范围证明。完整PanelRun和四个编排API仍是目标架构；源码和打包版本保持1.0.42。
 
 ## Rules
 
@@ -24,4 +30,4 @@ This directory contains versioned Open Spec packages for the Product Delivery Ag
 - All projects pass product blueprint, version scope, test coverage audit, and Codex Goal handoff.
 - Codex Goal handoff does not replace formal closure after implementation.
 - Chat summaries and `progress.md` are summaries only; they do not replace the version-specific closure artifact.
-- Plugin behavior is dormant until explicit project-level `start` and exits intervention after `stop`.
+- Plugin behavior is dormant until explicit project-level `start`; `pause`/`resume` preserve the delivery, `close` follows validated closure, and `abandon` ends it through the existing two-step protocol. `stop` is retired.

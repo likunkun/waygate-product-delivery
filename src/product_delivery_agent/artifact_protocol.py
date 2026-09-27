@@ -18,6 +18,7 @@ from product_delivery_agent.gatekeeper import (
     TERMINAL_STATUSES,
     normalize_state_protocol,
     review_input_hash,
+    refresh_role_contract_reviews,
 )
 
 ARTIFACT_ROOT = ".product-delivery"
@@ -134,8 +135,10 @@ def load_state(
     state_path = Path(project_root) / ARTIFACT_ROOT / "state.json"
     if state_path.exists():
         with state_path.open("r", encoding="utf-8") as state_file:
-            return _merge_missing_protocol_fields(json.load(state_file))
-    return dict(fallback_state or {})
+            return refresh_role_contract_reviews(
+                _merge_missing_protocol_fields(json.load(state_file)), project_root
+            )
+    return refresh_role_contract_reviews(dict(fallback_state or {}), project_root)
 
 
 @contextmanager

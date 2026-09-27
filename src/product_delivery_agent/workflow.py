@@ -81,6 +81,8 @@ from product_delivery_agent.gatekeeper import (
     requirements_e2e_confirmation_hash,
     render_closure_validator_result,
     review_input_hash,
+    role_review_binding_hash,
+    validate_role_input_files,
     normalize_state_protocol,
     stable_state_hash,
     surface_input_hash,
@@ -153,6 +155,14 @@ from product_delivery_agent.review_gates import (
     ReviewGateError,
     render_multi_agent_review,
     validate_multi_agent_review,
+)
+from product_delivery_agent.review_profiles import (
+    ROLE_CATALOG_VERSION,
+    SEAT_PROFILE_VERSION,
+    RoleProfileError,
+    build_gate_tasks,
+    build_role_task,
+    get_gate_profile,
 )
 from product_delivery_agent.scenario_matrix import (
     render_scenario_matrix,
@@ -1244,6 +1254,47 @@ class ProductDeliveryWorkflow:
         state["next_gate"] = "multi_agent_scenario_review"
         return write_state(self.project_root, state)
 
+    def prepare_review_role_tasks(
+        self, review_type: str, input_refs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Prepare current, file-bound role tasks without consuming a checkpoint."""
+        state = self._require_started(allow_pending_authorization=True)
+        return self._prepare_review_role_tasks(state, review_type, input_refs)
+
+    def _prepare_review_role_tasks(
+        self, state: dict[str, Any], review_type: str, input_refs: dict[str, Any]
+    ) -> dict[str, Any]:
+        try:
+            assert_host_goal_owner(state)
+        except HostGoalError as error:
+            raise ReviewGateError(str(error)) from error
+        if state.get("project_type") not in {"ui", "non_ui"}:
+            raise ReviewGateError("current project_type is required for role tasks")
+        context = {
+            "feature_slug": state.get("feature_slug"),
+            "delivery_id": state.get("delivery_id"),
+            "project_type": state.get("project_type"),
+            "input_snapshot_hash": review_input_hash(state, review_type),
+            "input_refs": deepcopy(input_refs),
+        }
+        try:
+            bundle = build_gate_tasks(review_type, context)
+            tasks = bundle["role_tasks"]
+            context["input_refs"] = {
+                name: ref for task in tasks for name, ref in task["input_refs"].items()
+            }
+            validate_role_input_files(self.project_root, context["input_refs"], context["project_type"])
+        except (GatekeeperError, RoleProfileError) as error:
+            raise ReviewGateError(str(error)) from error
+        return {
+            "role_contract_version": ROLE_CATALOG_VERSION,
+            "seat_contract_version": SEAT_PROFILE_VERSION,
+            "role_context": context,
+            "review_seats": bundle["review_seats"],
+            "role_tasks": tasks,
+            "input_snapshot_hash": context["input_snapshot_hash"],
+        }
+
     def record_multi_agent_review(
         self,
         review_type: str,
@@ -1253,6 +1304,17 @@ class ProductDeliveryWorkflow:
             allow_pending_authorization=True,
             host_goal_transition=True,
         )
+        previous = (state.get("multi_agent_reviews") or {}).get(review_type) or {}
+        if previous.get("role_contract_version") and "role_contract_version" not in review:
+            raise ReviewGateError("a bound role contract review cannot downgrade to legacy review")
+        if "role_contract_version" in review:
+            context = review.get("role_context")
+            if not isinstance(context, dict):
+                raise ReviewGateError("role contract review requires role_context")
+            expected = self._prepare_review_role_tasks(state, review_type, context.get("input_refs"))
+            if (context != expected["role_context"]
+                    or review.get("input_snapshot_hash") != expected["input_snapshot_hash"]):
+                raise ReviewGateError("role_context must match the current delivery and input snapshot")
         if review_type != "scenario":
             self._require_current_prototype_progression(state)
         current_prototype_design = None
@@ -1304,6 +1366,7 @@ class ProductDeliveryWorkflow:
         validate_multi_agent_review(
             review_type,
             review,
+            coordinator_agent_id=(state.get("host_goal_owner") or {}).get("coordinator_thread_id"),
             ui_change_type=ui_change_type,
             planned_obligations=list(
                 (state.get("planned_e2e_obligations") or {}).get("obligations", [])
@@ -1374,6 +1437,56 @@ class ProductDeliveryWorkflow:
             "reviewer_spawn_source": review.get("reviewer_spawn_source"),
             "input_snapshot_hash": review_input_hash(state, review_type),
         }
+        if "role_contract_version" in review:
+            role_results = [
+                row for row in (review.get("role_results") or [])
+                if isinstance(row, dict)
+            ]
+            role_order = {role_id: index for index, role_id in enumerate(get_gate_profile(review_type))}
+            role_results.sort(key=lambda row: role_order.get(row.get("role_id"), len(role_order)))
+            state["multi_agent_reviews"][review_type].update(
+                {
+                    "role_contract_version": review.get("role_contract_version"),
+                    "role_ids": [row.get("role_id") for row in role_results],
+                    "role_definition_hashes": {
+                        str(row.get("role_id")): row.get("role_definition_hash")
+                        for row in role_results
+                    },
+                    "role_task_template_hashes": {
+                        str(row.get("role_id")): row.get("task_template_hash")
+                        for row in role_results
+                    },
+                    "role_input_snapshot_hash": review.get("input_snapshot_hash"),
+                    "role_result_count": len(role_results),
+                    "role_context": deepcopy(review["role_context"]),
+                    "role_task_hashes": {
+                        task["role_id"]: task["task_hash"] for task in review["role_tasks"]
+                    },
+                    "seat_contract_version": review.get("seat_contract_version"),
+                    "review_seats": deepcopy(review.get("review_seats") or []),
+                    "seat_ids": [seat.get("seat_id") for seat in review.get("review_seats") or []],
+                    "seat_agent_ids": sorted({
+                        row.get("agent_id") for row in role_results if row.get("agent_id")
+                    }),
+                    "seat_task_hashes": {
+                        seat.get("seat_id"): seat.get("seat_task_hash")
+                        for seat in review.get("review_seats") or []
+                    },
+                    "role_seat_ids": {
+                        task.get("role_id"): task.get("seat_id")
+                        for task in review.get("role_tasks") or []
+                    },
+                    "role_coordinator_id": (state.get("host_goal_owner") or {}).get("coordinator_thread_id"),
+                    "role_artifact_ref": {
+                        "ref": str(Path(ARTIFACT_ROOT) / state["artifact_refs"][f"multi_agent_{review_type}_review"]["canonical_path"]),
+                        "sha256": state["artifact_refs"][f"multi_agent_{review_type}_review"]["sha256"],
+                        "project_type": "shared",
+                    },
+                }
+            )
+        if "role_contract_version" in review:
+            projection = state["multi_agent_reviews"][review_type]
+            projection["role_binding_sha256"] = role_review_binding_hash(projection)
         if review_type == "scenario" and current_prototype_design is not None:
             state["multi_agent_reviews"][review_type].update(
                 {

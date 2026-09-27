@@ -1,5 +1,51 @@
 # Task Plan
 
+## 当前任务：V1.1.0 角色卡与专家任务契约增强
+
+- CR-003 / REV-20260926-02；用户已批准实现，不重复询问开工。
+- [x] 补齐八角色定义、五profile、任务/结果契约与40例文档。
+- [x] 修复角色字段错位、最小输入、必需源码、逐项证据、身份和拒绝边界。
+- [x] 接入现有workflow/gatekeeper/artifact读取，相关hash/file漂移失效，旧记录兼容。
+- [x] 定向测试52项通过；独立QA发现已修复。
+- [x] 最终全量582项通过；编译、包/链接/历史保留检查与交接完成。
+- [x] 同四个历史摘录、相同席位/预算的组件试验完成；两组判断相同，未证明质量改善。
+- **Status:** complete（CR-003角色增强范围）
+- 发布基线保持1.0.42；完整PanelRun/四API/V1.2不计本次完成。
+
+---
+
+## 前序记录（历史）
+
+## 当前任务：V1.1.0 评审专家团产品与架构设计（2026-09-26）
+
+- 用户已批准设计，授权本轮将其落到文档；范围止于 Open Spec 需求、规范、技术方案和存储设计。
+- Feature：`v1.1-multi-agent-review-orchestration`；变更：`CR-002`；修订：`REV-20260926-01`。
+- 版本路线：V1.1 评审专家团 → V1.2 分阶段生产专家团 → 原 V2.x OpenCode 路线。
+- 本轮不开发 runtime、不修改测试/插件生成物、不升级发布版本、不安装或发布。
+- 当前代码事实基线：`1.0.42`；V1.1.0 是设计目标，不是当前已发布版本。
+
+### 文档执行进度
+
+- [x] 核对仓库状态、现有 V1.1 草案和已批准设计。
+- [x] 按阶段修订 00/01 需求、02 规范、03/04 技术与存储设计。
+- [x] 更新 08 交接；保留 05/06/07 历史草案并标记待按 CR-002 同步。
+- [x] 同步 ROADMAP、文档索引、发现、进度和当日记忆。
+- [x] 核验需求/架构追溯、角色组合、链接及仅文档变更边界。
+- **Status:** complete
+
+## Next Step
+
+本轮文档交付已完成。后续进入实施前需按 CR-002 同步 05/06/07 并满足当前交付前提；本轮不继续编码。
+
+## Errors Encountered（本轮）
+
+- 一次等待调用误用了 exec-cell wait 参数，工具在执行前拒绝；改用 collaboration.wait_agent，无文件或运行状态影响。
+- 一次按整行匹配的文档补丁因目标行包含后续文字被拒绝；改为精确上下文后应用成功，无部分写入。
+
+---
+
+## 既有规划记录（历史，非当前任务）
+
 ## Goal
 
 Ship Waygate Product Delivery `1.0.42` from the reverted 1.0.38 tree: chrome visual loops for new UI deliveries, no prototype-versus-production pixel gate, then package, install, commit, and push `main`.
@@ -728,3 +774,11 @@ Waygate Product Delivery `1.0.28` lightweight prototype-driven implementation cl
 - [x] Preserve and reference the prior 1.0.37 emergency recovery instead of rejecting a binding that has already recovered once.
 - [x] Run focused, recovery/packaging, full-suite, syntax, diff, and source-installed runtime provenance checks.
 - [ ] Execute dry-run and one-shot real recovery only after a fresh `get_goal()` returns `active` for the frozen classroom binding.
+
+## CR-004 复合席位整合（2026-09-26）
+
+- [x] 保留八个逻辑角色，定义五个 gate 的两个固定复合席位。
+- [x] 实现席位任务、席位 hash、同席共享身份和跨席唯一身份校验。
+- [x] 接入 workflow、review gate、state projection、artifact rendering 和 gatekeeper stale。
+- [x] 同步 CR-004 文档、模板和测试矩阵。
+- [ ] 完成最终全量回归、源码/包一致性、插件结构和文档链接检查。
