@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+
+- Promotes the V1.1 review expert panel implementation: versioned role cards, structured task/result contracts, evidence-bound validation, and composite reviewer seats.
+- Keeps eight logical review responsibilities while dispatching two reviewer seats per gate; same-seat roles share an Agent identity and cross-seat identities remain unique.
+- Includes the 1.0.43 input-enrichment confirmation gate and the audited blocked-Goal recovery hotfix in the main release line.
+- Preserves legacy review compatibility, fail-closed stale detection, recovery evidence, closure authority, and the existing V1.1 scope boundary; full PanelRun orchestration remains a follow-up.
+
 ## 1.0.43
 
 - Adds the mandatory pre-delivery input-enrichment confirmation gate for new deliveries, preserving the original request and requiring explicit confirmation before downstream planning or implementation actions.

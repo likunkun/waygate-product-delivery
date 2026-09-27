@@ -54,7 +54,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.0.43")
+            self.assertEqual(manifest["version"], "1.1.0")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -481,7 +481,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.0.43")
+            self.assertEqual(closure_template["plugin_version"], "1.1.0")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -554,7 +554,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.0.43.tar.gz",
+                "waygate-product-delivery-1.1.0.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 
