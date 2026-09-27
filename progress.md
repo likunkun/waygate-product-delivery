@@ -2701,3 +2701,12 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - Helper `record_passing_task_prototype_conformance` now records visual loop AND conformance plus slice evidence.
 - `_invalidate_implementation_baseline` marks `ui_visual_loop` records stale even when conformance is missing.
 - Completion tests updated: fake conformance override expects visual-loop error; pixel adjudication records a passing visual loop before TASK complete.
+
+## 2026-09-16 Waygate 1.0.42 blocked-binding recovery hotfix
+
+- Added the RED test `tests/test_blocked_host_goal_current_task_recovery_v1042.py`; first run failed because `recover-blocked-host-goal-current-task-v1042.py` did not exist.
+- Implemented the 1.0.42 current-task recovery script. It requires the exact authorization phrase `授权执行可审计的 Waygate 1.0.42 blocked-binding 状态机修复`, a frozen state hash, a fresh active Goal observation matching delivery/feature/binding/objective/owner thread, a valid current TASK, no `human_wait`, no pending checkpoint, and no authorized transition.
+- The script allows and records a prior `emergency_recovery.recovery_id`, archives the old binding, appends `host_goal_blocked_binding_recovered`, restores `next_gate` and `resume_gate` to the current TASK, and validates runtime provenance and journal integrity before and after the atomic write.
+- Verification: focused new test 3/3 passed; existing recovery/packaging tests 26/26 passed; full unittest discovery 543/543 passed in 153.496s; script/test `py_compile` and `git diff --check` passed.
+- Source and installed 1.0.42 runtime provenance both resolve to package hash `fab11c4ac8bffbf95f76abdf6b5d2895c1429e1c37c032f65a9a7b6277c0e474`.
+- Classroom preflight froze `.product-delivery/state.json` at SHA-256 `89844e42ac16d78ed2974e51c1b489d39a4cee96f578b2facc80e39d973c5146`. The real repair was not executed because `get_goal()` still returned `blocked`; the Host Goal must first be resumed externally.

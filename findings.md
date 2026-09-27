@@ -998,3 +998,10 @@
 - New UI deliveries (`ui_visual_loop_policy.status=required`) complete via passed chrome loops, not `record_task_prototype_conformance()`.
 - Shared test helper still writes both artifacts so 1.0.28 staleness fixtures keep conformance records to mark stale.
 - Pixel ratio remains diagnostic; 2%/5% is not a TASK/closure gate for prototype-versus-production.
+
+## 1.0.42 blocked-binding recovery hotfix
+
+- The 1.0.37 current-task recovery cannot be replayed because its runtime is version-pinned and it rejects an existing `emergency_recovery` marker.
+- A second blocked-binding recovery must be a distinct 1.0.42 entry, not a mutation of the frozen 1.0.34/1.0.37 scripts or the runtime package.
+- The new recovery must treat the prior recovery as input identity (`previous_recovery_id`) so the hash-linked audit chain can show two distinct blocked episodes without erasing history.
+- The repair may only run with the source and installed 1.0.42 runtime provenance matching the frozen delivery receipt. This run verified both resolve to `fab11c4ac8bffbf95f76abdf6b5d2895c1429e1c37c032f65a9a7b6277c0e474`.

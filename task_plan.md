@@ -718,3 +718,13 @@ Waygate Product Delivery `1.0.28` lightweight prototype-driven implementation cl
 - No direct mutation of existing Waygate sessions or approval artifacts.
 - No detailed implementation design, public interface specification, runtime schema, or test plan beyond roadmap and version planning.
 - Open Spec packages are documentation packages; they do not claim runtime implementation is complete.
+
+## 2026-09-16 Waygate 1.0.42 blocked-binding recovery hotfix
+
+**Status:** implementation and local verification complete; real classroom state repair is waiting for the externally blocked Codex Host Goal to become active.
+
+- [x] Add RED coverage for a 1.0.42 current-task recovery script with exact user authorization, prior-recovery continuation, dry-run byte immutability, active Goal identity, runtime provenance, and atomic transition evidence.
+- [x] Implement `plugins/waygate-product-delivery/scripts/recover-blocked-host-goal-current-task-v1042.py` without changing the 1.0.42 runtime package.
+- [x] Preserve and reference the prior 1.0.37 emergency recovery instead of rejecting a binding that has already recovered once.
+- [x] Run focused, recovery/packaging, full-suite, syntax, diff, and source-installed runtime provenance checks.
+- [ ] Execute dry-run and one-shot real recovery only after a fresh `get_goal()` returns `active` for the frozen classroom binding.
