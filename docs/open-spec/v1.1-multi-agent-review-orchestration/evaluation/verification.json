@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-09-25T19:30:33.763889+00:00",
+  "scope": "CR-004 composite-seat increment",
+  "full_regression": {
+    "command": "PYTHONPATH=src python3 -m unittest discover -s tests",
+    "exit_code": 0,
+    "tests": 585,
+    "elapsed_seconds": 141.509,
+    "result": "OK"
+  },
+  "targeted_regression": {
+    "command": "PYTHONPATH=src python3 -m unittest tests.test_review_profiles tests.test_review_role_contract_integration tests.test_plugin_packaging",
+    "tests": 55,
+    "exit_code": 0
+  },
+  "checks": {
+    "source_packaged_parity": "passed",
+    "python_compilation": "passed",
+    "plugin_structure": "passed",
+    "markdown_local_links": 68,
+    "roles": 8,
+    "quality_examples": 40,
+    "historical_bodies_retained": "passed",
+    "seat_profiles": 5,
+    "seats_per_gate": 2,
+    "logical_roles": 8,
+    "seat_identity_binding": "passed",
+    "seat_task_hash_binding": "passed"
+  },
+  "initial_full_regression": {
+    "tests": 582,
+    "failures": 2,
+    "cause": "refresh_role_contract_reviews populated an empty state; initialize_workspace incorrectly skipped initial project_type",
+    "fixed_by": "keep absent review state unchanged",
+    "targeted_fix_regression_tests": 31
+  },
+  "release": "not_published",
+  "runtime_version": "1.0.42",
+  "role_contract_version": "1.1.0",
+  "seat_contract_version": "1.1.0-seat.1",
+  "seat_dispatch_counts": {
+    "ui": 10,
+    "non_ui": 8
+  }
+}

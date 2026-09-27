@@ -1,0 +1,36 @@
+{
+  "evaluation_kind": "historical_excerpt_component_pilot",
+  "date": "2026-09-26",
+  "expected_cases": {
+    "H1": "insufficient",
+    "H2": "insufficient",
+    "H3": "supported",
+    "H4": "supported"
+  },
+  "budget": {
+    "seats_per_arm": 1,
+    "rounds": 1,
+    "maximum_seconds_per_arm": 480
+  },
+  "results": [
+    {
+      "mode": "reviewer_string",
+      "valid_findings": 2,
+      "misses": 0,
+      "false_alarms": 0,
+      "member_elapsed_seconds": 31,
+      "receipt": "legacy-result.json"
+    },
+    {
+      "mode": "role_card",
+      "valid_findings": 2,
+      "misses": 0,
+      "false_alarms": 0,
+      "member_elapsed_seconds": 16,
+      "receipt": "role-card-result.json"
+    }
+  ],
+  "rework": "unavailable",
+  "tokens": "unavailable",
+  "cost": "unavailable"
+}

@@ -4,6 +4,8 @@
 - review_mode: spawned_subagents | role_simulation | blocked_with_reason
 - reviewer_agent_ids: []
 - reviewer_spawn_source:
+- seat_contract_version: 1.1.0-seat.1
+- review_seats: coverage_boundary, assertion_quality
 - status: draft
 - traceability_reviewed: [US, J, SC, AC, TASK, TC]
 - coverage_gaps: []

@@ -2,16 +2,60 @@
 
 | Field | Value |
 | --- | --- |
-| Version | V1.1 |
+| Version | 1.1.0（设计目标；历史正文为 CR-001） |
 | Author | Codex |
-| Date | 2026-07-01 |
-| Status | Draft / Not Released |
+| Date | 2026-09-26 |
+| Status | CR-004 复合席位已实现；未发布；CR-001 正文仅历史 |
 
 ## Revision History
 
 | Revision | Date | Author | Summary | Related CR |
 | --- | --- | --- | --- | --- |
 | REV-20260701-01 | 2026-07-01 | Codex | Release planning and retrospective draft only. Implementation has not started, tests have not run, and release has not occurred. | CR-001 |
+| REV-20260926-01 | 2026-09-26 | Codex | 保留发布复盘历史正文，标记待按 CR-002 同步 | CR-002 |
+| REV-20260926-02 | 2026-09-26 | Codex | 同步角色契约实现、存储/交接和验证边界，保留历史。 | CR-003 |
+| REV-20260926-03 | 2026-09-26 | Codex | 记录复合席位实现、两个 reviewer 身份、兼容与验证边界。 | CR-004 |
+
+## CR-003 当前交付与回滚（REV-20260926-02）
+
+交付：RoleCard、最小任务单、结构化成员校验、可选现有review接纳与相关stale检查。验证见06/08；尚未发布1.1.0、未安装到宿主缓存，不把本次实现宣称为完整PanelRun上线。
+
+- 发布版本保持1.0.42，角色契约为1.1.0；已有manifest cachebuster未改变。
+- 源码与生成runtime一致，角色卡/任务单模板随包生成。正式升级前仍需实现并验证CR-002剩余编排范围。
+- 回滚触发：角色增强使原门禁误放行/误阻塞、包runtime不一致或输入漂移未检出。负责人：维护者；时限：正式发布前处理。
+- 回滚动作：停止该增量任务派发，恢复变更前源码与对应生成包，保留所有已生成review与绑定证据。不删除契约标记使失败变成passed，不覆盖历史state或混写active delivery。
+- 观察：缺角色/证据拒绝、UI/nonUI分支、任务hash漂移、误阻塞、检出率/误报与耗时；有实测用量才记录。质量试验报告不代替canonical评审或closure。
+
+后续事项：维护者在1.1.0正式发布前完成剩余PanelRun测试与更大样本质量评估；生产专家保持V1.2范围。
+
+## CR-004 当前交付与回滚（REV-20260926-03）
+
+本次增量把八个逻辑角色整合为五个 gate 的两个复合 reviewer 席位。源码、生成 runtime、席位模板和定向/全量测试已完成；发布版本仍为1.0.42，未安装或发布1.1.0。
+
+- 回滚触发：同席身份被错误拆分、跨席复用 Agent、席位映射漂移未检出、旧 review 被错误失效或新 review 被错误降级。
+- 回滚动作：停止新席位契约派发，恢复对应源码和生成包，保留已有 seat artifact/state 证据；不能删掉席位标记把失败转换成 passed。
+- 观察指标：每个 gate 的席位数量、同席角色身份一致性、跨席身份唯一性、任务 hash 漂移、误阻塞/漏阻塞、测试耗时和实际用量（无数据记 `unavailable`）。
+- 仍未发布完整 PanelRun、阶段事件恢复、自动调度或 V1.2 生产专家。
+
+## CR-002 设计阶段历史边界
+
+本文件保留 `CR-001 的 TASK/TC/发布追溯` 的历史设计，不是 CR-002 的可执行计划、测试通过或发布证据。用户批准的本轮工作止于产品、规范、技术方案与存储设计，05/06/07 只作状态标记，不触发 Open Spec 后续实施阶段。
+
+本轮没有 1.1.0 发布或实际回滚执行。历史回滚到 1.0.11、还原整份 state 的描述不是当前操作方案；以 03/04 的当前 runtime、证据保留和禁止混写 active delivery 的设计为准。
+
+后续需要根据 [01 产品需求](01-requirements.md)、[02 规范](02-specification.md)、[03 技术方案](03-technical-solution.md)、[04 存储设计](04-storage-design.md) 和 [08 当前交接](08-stage-handoff.md) 同步本文件，再进入相应阶段。下文的 PASS/FAIL、信息缺口、角色 owner、路径和状态都是 CR-001 当时的记录，不代表当前 delivery 的实际状态。
+
+### 本轮信息缺口
+
+| 等级 | 项目 | 处理 |
+| --- | --- | --- |
+| Blocker | 无本轮文档落盘阻塞 | 本轮不执行本文件对应阶段 |
+| Assumption | 发布复盘需后续按 CR-002 重建追溯 | 历史 TASK/TC 不自动复用为新范围完成证据 |
+| Nice-to-know | 后续实施、测试和发布时间 | 不在本轮承诺 |
+
+---
+
+## CR-001 历史草案（仅供追溯，不作为执行指令）
 
 ## Change Linkage
 

@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Version | V1.1 |
-| Author | Codex |
-| Date | 2026-07-01 |
-| Status | Draft / Not Run |
+| Version | 1.1.0（CR-004 复合席位增量；完整 panel 仍为目标架构） |
+| Author | Codex / Open Spec QA |
+| Date | 2026-09-26 |
+| Status | CR-003 定向 QA PASS；未发布；历史 CR-001 用例仍 Not Run |
 
 ## Revision History
 
@@ -13,6 +13,113 @@
 | --- | --- | --- | --- | --- |
 | REV-20260701-01 | 2026-07-01 | Codex | Initial testing-stage test case design. Implementation has not started. | CR-001 |
 | REV-20260702-01 | 2026-07-02 | Codex | Added per-TC trace/evidence matrix and aligned non-UI planned evidence layers before test coverage re-review. | CR-001 |
+| REV-20260926-01 | 2026-09-26 | Codex | 保留测试用例历史正文，标记待按 CR-002 同步 | CR-002 |
+| REV-20260926-02 | 2026-09-26 | Codex / Open Spec QA | 新增角色契约 FR/TASK/TC 矩阵、41 项运行验证、已修复缺陷和未执行边界；保留 CR-001 历史正文。 | CR-003 |
+| REV-20260926-03 | 2026-09-26 | Codex / Open Spec Implementation | 复合席位、席位身份、兼容和测试交接。 | CR-004 |
+
+## 当前状态与续接边界（CR-003 / REV-20260926-02）
+
+本轮仅验收已授权的八张角色卡、最小任务输入、结果契约以及 opt-in review 投影。依据 [02 规范 AC-ROLE-001～006](02-specification.md)、[03 实施路线](03-technical-solution.md)、[05 TASK-ROLE-101～106](05-development-plan.md) 和 [09 角色任务书](09-role-cards.md) 建立新测试矩阵，历史 `TASK-001～007` / `TC-001～026` 不被复用为本轮完成证据。
+
+**QA PASS（CR-004 当前增量）**：2026-09-26 03:21（Asia/Shanghai），QA Agent 独立执行角色单元与 workflow 集成测试，共 **55 targeted tests，0 failures，exit 0**。测试数据是临时目录中的受控文件和结构化结果 fixture，模拟宿主身份仅用于验证契约；不构成现场真实 reviewer 已执行的证据。
+
+完整 PanelRun、四 API（prepare/inspect/events/finalize）、阶段屏障、自动派发/恢复、receipt 和 canonical snapshot 提交仍为 CR-002 目标架构；本轮不验证或宣称已完成。角色契约按输入 opt-in；从未启用角色契约的旧 review 保持兼容，已接纳角色契约的 gate 不可降级回 legacy payload。本轮未运行真实 review 现场或上线；QA后追加 [四案例历史摘录对照](evaluation/README.md)，两组判断相同，没有证明质量提高。
+
+## CR-004 测试策略与数据（继承 CR-003 角色契约测试）
+
+- **unit**：直接调用 catalog/task/result 函数，遍历八角色、五 profile、适用 UI/non-UI 项目类型；断言结构、绑定和拒绝行为，不做提示词或文档全文匹配。
+- **runtime integration**：在 `TemporaryDirectory` 激活 delivery，创建带当前 SHA-256 的实际输入文件，经过公开 prepare/record API、canonical artifact、load_state 和 gatekeeper；验证 owner、审计投影、真实字节漂移及兼容。
+- **document review**：检查 09 的每角色五类例子有具体对象、证据、检查和结果，业界来源仅作设计借鉴；catalog 结构检查验证 22 必需字段及 completion/escalation/peer 类型分离。
+- **恢复原则**：拒绝非法任务/结果后不登记 passed；必需材料漂移时显示 stale，修复材料后须重新准备与评审。无关输入变化、无关角色变更及 closed 历史不误失效。
+
+执行入口：
+
+```sh
+PYTHONPATH=src python -m unittest tests.test_review_profiles tests.test_review_role_contract_integration -v
+```
+
+下表 `U` 指 `tests/test_review_profiles.py`，`I` 指 `tests/test_review_role_contract_integration.py`。每条 TC 聚焦一个核心断言；测试方法中的子场景覆盖对应边界。文件路径均相对仓库根目录。
+
+## CR-003 FR → TASK → TC 矩阵
+
+| TC | FR / AC / TASK | 层级 | 前置与步骤 | 期望结果 / 恢复 | 可执行或审阅证据 |
+| --- | --- | --- | --- | --- | --- |
+| TC-RC-001 | FR-018、FR-020 / AC-ROLE-001 / TASK-ROLE-101～102 | unit + document | 读取八卡；逐卡检查 22 字段、方法及五类例子；核对 09 的对象/证据/检查/结果。 | 8 卡、40 例完整，完成标准、升级条件、peer 契约类型分离。 | U:`test_every_role_can_return_evidenced_no_findings`；本轮 catalog 结构检查；09 八角色表人工审阅。 |
+| TC-RC-002 | FR-018～019 / AC-ROLE-001 / TASK-ROLE-102 | unit | 删除 task_steps/must_check/must_not_do/completion_criteria/output_schema 后构建任务。 | 缺必需字段时抛 `RoleProfileError`，不派发任务；补全卡后重建。 | U:`test_card_missing_mandatory_method_cannot_be_dispatched`。 |
+| TC-RC-003 | FR-018～019、FR-021 / AC-ROLE-001 / TASK-ROLE-102 | unit | 将卡改为不支持版本并重算定义/模板 hash。 | 仍拒派，重算 hash 不能使错误版本有效。 | U:`test_unsupported_role_version_is_rejected_before_dispatch`。 |
+| TC-RC-004 | FR-019 / AC-ROLE-001 / TASK-ROLE-103～104 | unit | 遍历五固定组合；构造缺失、重复或错 gate 角色集合。 | 只接受对应完整 profile，未知/重复/缺席被拒绝。 | U:`test_fixed_profiles_cannot_pass_missing_duplicate_or_wrong_seats`、`test_wrong_gate_and_unknown_role_cannot_be_dispatched`。 |
+| TC-RC-005 | FR-019～020 / AC-ROLE-002 / TASK-ROLE-103 | unit | 遍历 UI/non-UI；删必需输入；向 non-UI 提交 UI 引用；实现评审缺源码/执行证据。 | 适用组合可构建；ui_conformance 限 UI，缺/错来源拒派。 | U:`test_all_profiles_support_ui_and_applicable_non_ui_branches`、`test_missing_input_wrong_branch_or_implementation_source_blocks_dispatch`。 |
+| TC-RC-006 | FR-020、FR-022 / AC-ROLE-003 / TASK-ROLE-103 | unit | 在输入加入 unrelated、coordinator_conclusion、peer_results 后构建任务。 | task 仅包含角色允许输入和方法，无预设答案或其他席位结论。 | U:`test_task_filters_unrelated_inputs_and_coordinator_or_peer_conclusions`。 |
+| TC-RC-007 | FR-020～022 / AC-ROLE-002 / TASK-ROLE-103～104 | unit + integration | 修改 delivery、feature、project_type、snapshot、文件 digest 或任务步骤；尝试复用旧结果或重算被改任务 hash。 | 旧/串任务不能通过，当前任务绑定变化可检测。 | U:`test_task_hash_binds_input_content_delivery_and_instructions`、`test_missing_bound_task_or_rehashed_modified_instructions_cannot_validate`；I:`test_records_reject_old_snapshot_delivery_or_project_branch`、`test_task_tampering_is_rejected_even_with_original_task_hash`。 |
+| TC-RC-008 | FR-020 / AC-ROLE-004 / TASK-ROLE-104 | unit | 各角色返回无发现结果，再分别移除必查、逐项记录、总证据或完成标准证据。 | 完整无发现允许通过；空/缺失逐项证据不能以总声明代替。 | U:`test_each_role_insufficient_evidence_cannot_pass`、`test_every_role_can_return_evidenced_no_findings`。 |
+| TC-RC-009 | FR-020～022 / AC-ROLE-004 / TASK-ROLE-104 | unit | 将证据替为未绑定路径/伪 URI/空值；再使用任务内具体章节 anchor。 | 未绑定或无效证据拒绝；合法文件上的具体锚点可引用。 | U:`test_unknown_evidence_or_unstructured_finding_is_rejected`、`test_result_rejects_forged_evidence_and_conflicting_completion_claims`、`test_bound_evidence_allows_specific_anchors`。 |
+| TC-RC-010 | FR-020、FR-022 / AC-ROLE-005 / TASK-ROLE-104 | unit + integration | passed 带未解 blocker、悬空 blocker、失败 check 或 findings 中的 open question。 | 不得登记 passed；需回报 blocked/needs_remediation 或修复并复验。 | U:`test_each_role_blocking_findings_cannot_be_hidden_in_passed_result`、`test_open_unresolved_question_cannot_be_hidden_inside_findings`；I:`test_failed_role_cannot_be_hidden_by_passed_projection`。 |
+| TC-RC-011 | FR-020 / AC-ROLE-005 / TASK-ROLE-104 | unit | 把误报候选标 rejected 并提供当前证据与理由；随后删拒绝理由。 | 有证据/理由的拒绝可记录；无理由不能消除 finding。 | U:`test_each_role_false_positive_requires_evidence_and_reason_to_reject`。 |
+| TC-RC-012 | FR-020～022 / AC-ROLE-002 / TASK-ROLE-104～105 | unit + integration | 伪造 agent、coordinator、重复身份、模拟/真实混写或空真实身份字段。 | 身份须与 review 模式和 reviewer 集合一致，不能冒充 coordinator 或宿主 spawn。 | U:`test_simulation_cannot_claim_spawn_and_requires_explicit_identity`；I:`test_agent_identity_must_match_declared_reviewers_and_mode`、`test_simulation_cannot_claim_spawned_reviewer_metadata`。 |
+| TC-RC-013 | FR-022 / AC-ROLE-005 / TASK-ROLE-104 | unit | 八角色分别返回 change_scope/edit_TASK/write_code/edit_tests/update_Goal/close_delivery 写意图。 | 任一非空 write_intents 都拒绝接纳。 | U:`test_each_role_scope_task_code_test_goal_and_closure_writes_rejected`。 |
+| TC-RC-014 | FR-021～022 / AC-ROLE-006 / TASK-ROLE-105 | integration | 当前 owner 准备任务；再切换非 owner；分别使用错 hash、绝对路径、父目录或逃逸 symlink。 | 合法准备只读；非 owner、非当前文件或越仓库路径拒绝。 | I:`test_preparation_is_read_only_and_bound_to_current_delivery`、`test_preparation_rejects_non_owner_even_before_host_goal`、`test_preparation_rejects_wrong_hash_and_path_escape`。 |
+| TC-RC-015 | FR-021 / AC-ROLE-002 / TASK-ROLE-103、105 | integration | 准备后修改实际输入文件再 record；接纳后再修改输入文件/业务快照/所用角色定义。 | record 重新校验字节；load/gatekeeper 将已接纳但内容漂移的 review 标 stale。 | I:`test_record_rehashes_files_after_task_preparation`、`test_file_drift_invalidates_accepted_review_on_load_and_gatekeeping`、`test_business_snapshot_drift_invalidates_accepted_review`、`test_catalog_definition_change_invalidates_active_review`。 |
+| TC-RC-016 | FR-021 / AC-ROLE-006 / TASK-ROLE-105 | integration | 接纳 scenario review 后修改未被任何任务选中的输入、UI 专属角色，或读取 closed 历史。 | 无关变更和 closed 历史不产生新的 stale。 | I:`test_unbound_input_does_not_invalidate_a_completed_review`、`test_unrelated_catalog_change_does_not_invalidate_review`、`test_closed_delivery_retains_historical_review_after_catalog_update`。 |
+| TC-RC-017 | FR-019、FR-021～022 / AC-ROLE-006 / TASK-ROLE-105 | integration | 提交完整角色结果；删 context/tasks/results 或只去掉 role_contract_version。 | 完整契约先验后投影；Markdown 留全量审计，state 留摘要；部分字段不能绕过校验。 | I:`test_complete_role_results_are_validated_before_projection`、`test_role_contract_requires_tasks_context_and_complete_results`、`test_partial_role_payload_cannot_bypass_validation_by_removing_version`、`test_render_retains_full_role_contract_for_audit`。 |
+| TC-RC-018 | FR-021～022 / AC-ROLE-006 / TASK-ROLE-105～106 | integration | 未启用角色契约时提交旧 review；已启用角色契约后再提交旧 passed payload。 | 前者保持兼容；后者拒绝降级，不能抹除已绑定证据。 | I:`test_legacy_review_without_role_contract_remains_compatible`、`test_bound_review_cannot_be_replaced_by_legacy_pass_dictionary`。 |
+
+## 本轮执行与缺陷记录
+
+执行人：`open-spec-role-qa` 临时 QA Agent；日期：2026-09-26；环境：当前工作树 Python `unittest`、`PYTHONPATH=src`。代码和测试由主线程修改，QA 只读运行；本 Agent 只编辑本文件。
+
+| 批次 | 执行证据 | 结果 | 关联缺陷 |
+| --- | --- | --- | --- |
+| QA-RC-01 | 两个 discover 命令分别运行 U / I。 | U 18/18 PASS；I 20 中 3 FAIL。 | 缺陷 001～003 暴露后留在当前阶段修复。 |
+| QA-RC-02 | 手工调用公开 validator/workflow：未解 question 放 findings、错版本重算 hash、模拟身份空字段、无关输入漂移。 | 复现 004～007；不是现场评审或质量收益测试。 | 004～007 已提交主线程修复。 |
+| QA-RC-03 | `PYTHONPATH=src python -m unittest tests.test_review_profiles tests.test_review_role_contract_integration -v`；2026-09-26 03:21 +08:00。 | **41/41 PASS（20 unit + 21 integration）；0.429s，exit 0。** | 001～007 全部修复后独立复验；007 新增回归已在本批执行。 |
+| QA-RC-04 | catalog 结构断言：八 role 均含正式 22 字段；每卡五类例子；completion/escalation 为 list，peer 为 dict。 | **PASS：8 卡 / 40 例条目。** | 结合 09 的具体例子人工审阅；不以字符串全文匹配证明行为质量。 |
+
+| 缺陷 | 具体位置 / 原复现 | 修复与回归证据 | 当前状态 / 发布阻断 |
+| --- | --- | --- | --- |
+| DEF-RC-001 | `review_gates.validate_multi_agent_review` 只在 version 字段存在时校验；删除 version 并保留空结果可走旧分支。 | 任一角色标记触发校验；I:`test_partial_role_payload_cannot_bypass_validation_by_removing_version`。 | CLOSED / 已解除本轮阻断。 |
+| DEF-RC-002 | `workflow.record_multi_agent_review` 允许已绑定角色 review 被旧 passed 字典覆盖。 | 禁止 bound → legacy 降级；I:`test_bound_review_cannot_be_replaced_by_legacy_pass_dictionary`。 | CLOSED / 已解除本轮阻断。 |
+| DEF-RC-003 | canonical review artifact ref 缺 `.product-delivery/` 前缀，接纳后读取即 stale，使无关 catalog 测试误失败。 | 记录正确仓库相对 artifact 路径；I:`test_unrelated_catalog_change_does_not_invalidate_review`。 | CLOSED / 已解除本轮阻断。 |
+| DEF-RC-004 | `review_profiles.validate_role_result` 对 findings 中 open unresolved_question 未拒绝，顶层空问题数组可隐藏必查证据缺口。 | passed 拒绝未解决 question；U:`test_open_unresolved_question_cannot_be_hidden_inside_findings`。 | CLOSED / 已解除本轮阻断。 |
+| DEF-RC-005 | `review_profiles.validate_role_card` 只要求 version 非空；改为 9.9.9 并重算 hash 仍可派发。 | 明确要求受支持 role_version；U:`test_unsupported_role_version_is_rejected_before_dispatch`。 | CLOSED / 已解除本轮阻断。 |
+| DEF-RC-006 | `review_profiles.validate_role_result` 用 truthiness 判断不适用身份字段，模拟身份可携带空 agent_id/spawn_source。 | 不适用身份字段必须为 null/缺省；U:`test_simulation_cannot_claim_spawn_and_requires_explicit_identity`。 | CLOSED / 已解除本轮阻断。 |
+| DEF-RC-007 | workflow 在 role_context 留下未被任一 task 选中的 unrelated input；修改该文件使 review 错误 stale。 | 只保留实际 task 引用并复核；I:`test_unbound_input_does_not_invalidate_a_completed_review`。 | CLOSED / 已解除本轮阻断。 |
+
+## 主线程最终回归补充
+
+`PYTHONPATH=src python3 -m unittest discover -s tests`：**582 tests / 145.366s / OK / exit 0**。定向角色/集成/打包52项通过；源码与packaged runtime逐文件一致、编译和插件结构校验通过。原始执行摘要见 [verification.json](evaluation/verification.json)。输出中的 `invalid JSON` 来自既有负向CLI测试，最终退出码为0。
+
+全量首轮发现两项历史初始化回归：失效投影为缺失state添加空review字典，导致 `initialize_workspace(project_type="ui")` 跳过初始化。已修复为空state不增加字段；现有 `ArtifactProtocolTests.test_state_records_required_responsibility_categories` 与 `test_initialize_workspace_preserves_existing_state_and_artifacts` 及集成共31项通过，再跑全量582项通过。记录为 **DEF-RC-008 CLOSED**。
+
+## 未执行事项、信息缺口与阶段交接
+
+| 等级 | 事项 | 结论与处理 |
+| --- | --- | --- |
+| Blocker | 本轮已发现缺陷均已修复并完成定向复验。 | 无 CR-003 定向 QA 未关闭 blocker；更广回归/打包和发布判断由主线程记录，不能用本文件 41 项替代。 |
+| Assumption | 结构化 fixture 证明规则执行，不证明 Agent 真的读取/理解材料；hash 与身份字段不是密码学身份认证。 | host 运行记录、隔离与完整 panel 仍按后续架构实现，不能虚构 receipt。 |
+| Pilot / Not Run | QA后已运行四案例摘录组件对照；完整历史工件A/B、现场真实评审、模型相关性仍未验证。 | [原始记录和比较](evaluation/README.md)：两组均2有效缺口/0漏检/0误报；小样本不构成收益证明。 |
+| Not Run | 完整 panel 四 API、全员屏障、幂等/并发、超时/重试/替换、崩溃恢复、receipt。 | CR-002 后续范围；当前 opt-in 角色投影不等价于完整 panel 完成。 |
+| Not Run | CR-001 `TC-001～TC-026` 历史执行记录。 | 下文原样保留 Not Run；本轮 PASS 不向历史或完整 V1.1 发布扩展。 |
+
+供 08 使用的交接摘要：**CR-003 QA PASS**，TC-RC-001～018 对应 FR-018～022、TASK-ROLE-101～106；两目标模块共 41/41 PASS，七项边界缺陷已修复并复验。八卡与 40 类例条目已审阅。当前角色契约和复合席位 opt-in 投影通过定向验证；现场评审、完整历史工件 A/B、完整 PanelRun/四 API 与发布均未执行；QA后完成的四摘录试验独立记录。可交给主线程汇总回归和发布边界，不能声称整体 V1.1 编排或评审质量提升。
+
+---
+
+## CR-004 复合席位测试矩阵（REV-20260926-03）
+
+| TC | 场景 | 预期 |
+| --- | --- | --- |
+| TC-SEAT-001 | 遍历五个 gate 的 SeatProfile | 每个 gate 正好两个席位，角色并集完整且无重复。 |
+| TC-SEAT-002 | 同一席位的多个逻辑角色使用同一 Agent | 结果通过；逻辑角色仍逐项保存。 |
+| TC-SEAT-003 | 不同席位复用 Agent 或同席角色使用不同 Agent | 拒绝结果或 review。 |
+| TC-SEAT-004 | 篡改 seat_id、seat_role_ids、seat_task_hash 或 review_seats | 任务重建失败，不能投影 passed。 |
+| TC-SEAT-005 | 复合席位 review 记录 reviewer_agent_ids | 只允许两个席位身份，coordinator 不能占用。 |
+| TC-SEAT-006 | 旧的无 seat_contract_version review | 继续兼容读取；新席位 review 不得降级 legacy。 |
+| TC-SEAT-007 | 席位/输入/角色定义漂移 | active review stale；无关输入和 terminal 历史不受影响。 |
+| TC-SEAT-008 | artifact/state/render/package | 完整席位和角色结果在 artifact，state 为摘要，源码与包一致。 |
+
+定向测试覆盖 `tests/test_review_profiles.py`、`tests/test_review_role_contract_integration.py` 和 `tests/test_plugin_packaging.py`；最终执行记录在本文件和 08 交接中回填。
+
+## CR-001 历史草案（仅供追溯，不作为执行指令）
 
 ## Change Linkage
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,135 @@ def stable_state_hash(value: Any) -> str:
             "utf-8"
         )
     ).hexdigest()
+
+
+
+ROLE_REVIEW_BINDING_FIELDS = (
+    "role_contract_version", "role_context", "role_ids", "role_definition_hashes",
+    "role_task_template_hashes", "role_task_hashes", "role_coordinator_id",
+    "role_input_snapshot_hash", "role_result_count", "role_artifact_ref",
+    "review_mode", "reviewer_agent_ids", "reviewer_spawn_source",
+    "seat_contract_version", "review_seats", "seat_ids", "seat_agent_ids",
+    "seat_task_hashes", "role_seat_ids",
+)
+
+
+def role_review_binding_hash(review: dict[str, Any]) -> str:
+    """Hash the accepted compact role binding, without mutable gate status."""
+    return stable_state_hash({key: review.get(key) for key in ROLE_REVIEW_BINDING_FIELDS})
+
+
+def validate_role_input_files(
+    project_root: str | Path, input_refs: Any, project_type: str
+) -> None:
+    """Require current bytes in regular repository files for every role input."""
+    if not isinstance(input_refs, dict) or not input_refs:
+        raise GatekeeperError("role input_refs must be a nonempty object")
+    root = Path(project_root).resolve()
+    for name, row in input_refs.items():
+        if not isinstance(name, str) or not name.strip() or not isinstance(row, dict):
+            raise GatekeeperError("role input_refs must map names to file bindings")
+        ref = row.get("ref")
+        expected = row.get("sha256")
+        if not isinstance(ref, str) or not ref.strip():
+            raise GatekeeperError("role input file path is required")
+        relative = Path(ref)
+        if relative.is_absolute() or ".." in relative.parts or "\\" in ref:
+            raise GatekeeperError("role input path must be repository relative")
+        if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise GatekeeperError("role input sha256 must be a 64-character hash")
+        if row.get("project_type") not in {"shared", project_type}:
+            raise GatekeeperError("role input project_type must match the current project branch")
+        try:
+            path = (root / relative).resolve(strict=True)
+            if not path.is_relative_to(root) or not stat.S_ISREG(path.stat().st_mode):
+                raise GatekeeperError("role input path must be a regular repository file")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise GatekeeperError(f"role input sha256 mismatch: {name}")
+        except (OSError, RuntimeError) as error:
+            if isinstance(error, GatekeeperError):
+                raise
+            raise GatekeeperError(f"role input path is unavailable: {name}") from error
+
+
+def role_review_stale_reason(
+    state: dict[str, Any], review_type: str, project_root: str | Path | None = None
+) -> str | None:
+    """Check frozen identity, methods and file bindings of a role review."""
+    review = (state.get("multi_agent_reviews") or {}).get(review_type) or {}
+    if "role_contract_version" not in review:
+        return None
+    context = review.get("role_context")
+    if not isinstance(context, dict):
+        return "role_context_missing"
+    if review.get("role_binding_sha256") != role_review_binding_hash(review):
+        return "role_binding_changed"
+    if any(context.get(key) != state.get(key)
+           for key in ("feature_slug", "delivery_id", "project_type")):
+        return "role_delivery_identity_changed"
+    snapshot = review_input_hash(state, review_type)
+    if (review.get("input_snapshot_hash") != snapshot
+            or context.get("input_snapshot_hash") != snapshot
+            or review.get("role_input_snapshot_hash") != snapshot):
+        return "role_input_snapshot_changed"
+    if state.get("status") not in TERMINAL_STATUSES:
+        if review.get("role_coordinator_id") != (state.get("host_goal_owner") or {}).get("coordinator_thread_id"):
+            return "role_coordinator_changed"
+        from product_delivery_agent.review_profiles import (
+            ROLE_CATALOG_VERSION, SEAT_PROFILE_VERSION, RoleProfileError,
+            build_gate_tasks, build_role_task, get_gate_profile,
+        )
+        try:
+            if review.get("seat_contract_version"):
+                if review.get("seat_contract_version") != SEAT_PROFILE_VERSION:
+                    return "seat_profile_changed"
+                expected = build_gate_tasks(review_type, context)
+                tasks = expected["role_tasks"]
+                if review.get("review_seats") != expected["review_seats"]:
+                    return "seat_profile_changed"
+            else:
+                tasks = [build_role_task(review_type, role_id, context)
+                         for role_id in get_gate_profile(review_type)]
+        except (RoleProfileError, KeyError, TypeError, ValueError):
+            return "role_task_definition_changed"
+        if (review.get("role_contract_version") != ROLE_CATALOG_VERSION
+                or review.get("role_task_hashes") != {task["role_id"]: task["task_hash"] for task in tasks}
+                or review.get("role_definition_hashes") != {task["role_id"]: task["role_definition_hash"] for task in tasks}
+                or review.get("role_task_template_hashes") != {task["role_id"]: task["task_template_hash"] for task in tasks}):
+            return "role_task_definition_changed"
+        if review.get("seat_contract_version"):
+            if review.get("seat_ids") != [seat["seat_id"] for seat in review.get("review_seats") or []]:
+                return "seat_profile_changed"
+            if review.get("seat_task_hashes") != {
+                seat["seat_id"]: seat["seat_task_hash"]
+                for seat in review.get("review_seats") or []
+            }:
+                return "seat_profile_changed"
+    if project_root is not None:
+        try:
+            validate_role_input_files(project_root, context.get("input_refs"), context.get("project_type"))
+            validate_role_input_files(project_root, {"review_artifact": review.get("role_artifact_ref")}, "shared")
+        except GatekeeperError:
+            return "role_input_files_changed"
+    return None
+
+
+def refresh_role_contract_reviews(
+    state: dict[str, Any], project_root: str | Path | None = None
+) -> dict[str, Any]:
+    """Return a read-only stale projection; retain terminal historical decisions."""
+    if not state.get("multi_agent_reviews") or state.get("status") in TERMINAL_STATUSES | {"abandoned"}:
+        return state
+    refreshed = dict(state)
+    reviews = dict(state.get("multi_agent_reviews") or {})
+    refreshed["multi_agent_reviews"] = reviews
+    for review_type, review in reviews.items():
+        if not isinstance(review, dict) or review.get("status") != "passed":
+            continue
+        reason = role_review_stale_reason(state, review_type, project_root)
+        if reason:
+            reviews[review_type] = {**review, "status": "stale", "stale_reason": reason}
+    return refreshed
 
 
 def scenario_input_hash(state: dict[str, Any]) -> str:
@@ -348,7 +478,7 @@ def normalize_project_type(raw: Any) -> tuple[str | None, str | None]:
 
 def normalize_state_protocol(state: dict[str, Any]) -> dict[str, Any]:
     """Return a state copy with recoverable legacy protocol drift normalized."""
-    normalized = dict(state)
+    normalized = refresh_role_contract_reviews(state)
     project_type, project_subtype = normalize_project_type(normalized.get("project_type"))
     normalized["project_type"] = project_type
     if project_subtype:
@@ -749,7 +879,7 @@ def derive_blockers(
     launch_package_hash: str | None = None,
 ) -> list[str]:
     """Derive current blockers from structured state, ignoring hand-edited lists."""
-    normalized = normalize_state_protocol(state)
+    normalized = refresh_role_contract_reviews(normalize_state_protocol(state), project_root)
     blockers: list[str] = []
     if project_root is not None:
         try:
@@ -943,12 +1073,15 @@ def _append_review_blocker(
         _append_if(blockers, True, stale)
 
 
-def _review_is_current(state: dict[str, Any], review_type: str) -> bool:
+def _review_is_current(
+    state: dict[str, Any], review_type: str, project_root: str | Path | None = None
+) -> bool:
     review = (state.get("multi_agent_reviews") or {}).get(review_type) or {}
     if review.get("status") != "passed":
         return False
     snapshot_hash = review.get("input_snapshot_hash")
-    return bool(snapshot_hash) and snapshot_hash == review_input_hash(state, review_type)
+    return (bool(snapshot_hash) and snapshot_hash == review_input_hash(state, review_type)
+            and role_review_stale_reason(state, review_type, project_root) is None)
 
 
 def docs_ahead_of_state_errors(
@@ -1102,7 +1235,7 @@ def assert_pre_closure_ready(
     if executed.get("status") != "passed":
         raise GatekeeperError(f"{evidence_key} must pass before closure")
     _assert_executed_covers_planned(planned, executed.get("records", []))
-    if not _review_is_current(state, "test_implementation"):
+    if not _review_is_current(state, "test_implementation", project_root):
         raise GatekeeperError(
             "multi_agent_test_implementation_review is required before closure"
         )
@@ -1199,7 +1332,7 @@ def _assert_ui_prototype_conformance_current(
         "evidence_sha256"
     ):
         raise GatekeeperError("prototype production conformance evidence hash changed")
-    if not _review_is_current(state, "ui_conformance"):
+    if not _review_is_current(state, "ui_conformance", project_root):
         raise GatekeeperError(
             "multi_agent_ui_conformance_review is required before closure"
         )

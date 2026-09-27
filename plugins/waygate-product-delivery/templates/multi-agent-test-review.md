@@ -6,7 +6,9 @@
 - reviewer_spawn_source:
 - role_simulation_user_accepted: false
 - status: draft
-- reviewers: test strategy, UI E2E, negative boundary
+- seat_contract_version: 1.1.0-seat.1
+- review_seats: test_strategy, assertion_quality
+- reviewers: test strategy, assertion quality
 - independent_positions: []
 - cross_challenges: []
 - revisions: []

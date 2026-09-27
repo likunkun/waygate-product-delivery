@@ -1,5 +1,32 @@
 # Findings
 
+## 2026-09-26 CR-003 角色增强发现
+
+- 原型式角色目录虽然字段齐全，但位置参数把完成标准/升级/peer契约错位；命名参数与运行前类型/hash校验使此类错误可拒绝。
+- 只有checked_items和总证据列表会掩盖逐项未查；现要求check_records与completion_evidence。
+- 任务hash要包含角色方法、项目/交付身份和实际输入内容；内容漂移需重读文件验证，不能仅信调用方自报hash。
+- 角色声明不是OS沙箱，角色判断也不是确定性证明；宿主仍负责实际Agent身份、隔离、计时和用量。
+- 八角色逐项任务书与业界来源见docs/open-spec/v1.1-multi-agent-review-orchestration/09-role-cards.md。
+
+---
+
+## 前序记录（历史）
+
+## 2026-09-26 V1.1.0 评审专家团设计落盘
+
+- 用户已批准 `CR-002 / REV-20260926-01`：V1.1 先完成评审专家团；V1.2 再改造分阶段生产专家；本轮仅交付设计文档。
+- 当前代码为 1.0.42，旧 V1.1 文档仍大量引用 1.0.11；五类门禁实际包含 `ui_conformance`，`test` 与 `test_coverage` 均不能省略。
+- 评审角色当前仍为自由文本，批次纪律主要在技能和模板内；角色目录、运行状态机和四个 panel API 是待实现设计，不能写成已有能力。
+- 权威工件位于 `.product-delivery/deliveries/<feature_slug>/<delivery_id>/artifacts/`，根 artifacts 仅为兼容视图。
+- 模型选择及具体模型记录留在宿主；主线程独占 canonical 写入和 Host Goal 权威。角色 JSON 不是文件系统沙箱。
+- 已冻结八角色、五组合、600 秒/席位/阶段、一次重试或替换、初审加一次复验；过限返回主流程，不能据此完成或阻塞整个 Host Goal。
+- 架构采用两新增设计模块和现有 workflow facade；单层锁、revision 校验、可重放提交意图处理多文件中断，不宣称跨文件原子。
+- 工作区开始时干净，无 `.codegraph/` 或额外目录级 AGENTS.md；最近七天无 Open Spec 记忆，沿用 `docs/open-spec/memory/`。
+- 文档审阅发现并关闭角色缩写与 mode-specific 身份契约缺口；role_simulation 用逻辑席位和既有接受引用，不伪造宿主身份。
+- 来源快照还必须包含仓库 Open Spec/测试源码的内容哈希；不能把必要源码证据限制在 artifact 目录内。运行状态/用量/自身 hash 不参与业务输入 hash，避免自我失效。
+- 旧 active 评审保留原规则的 gate 效力；新 1.1 不接纳旧 schema 绕过。V1.1 status=passed 与 phase=completed 分离，needs_remediation 不等于 Goal blocked。
+
+
 ## 2026-08-30 V1.0.38 Generic Skill Retirement
 
 - `superpowers:using-superpowers` and `code-simplifier` are current Waygate hard dependencies because the dependency checker flattens every `STAGE_SKILLS` entry.
@@ -998,3 +1025,11 @@
 - New UI deliveries (`ui_visual_loop_policy.status=required`) complete via passed chrome loops, not `record_task_prototype_conformance()`.
 - Shared test helper still writes both artifacts so 1.0.28 staleness fixtures keep conformance records to mark stale.
 - Pixel ratio remains diagnostic; 2%/5% is not a TASK/closure gate for prototype-versus-production.
+
+## 2026-09-26 CR-004 复合席位整合发现
+
+- 八个逻辑角色不应直接等价为八个 Agent；席位才是实际 dispatch/identity 单位，逻辑角色结果仍逐项保留。
+- 五个 gate 固定为两个席位：scenario=意图+边界/旅程，test=策略/断言，test_coverage=追溯+边界/断言，test_implementation=实现证据/断言，ui_conformance=UI/旅程。
+- 同席角色必须共享 Agent 身份，不同席位必须唯一；reviewer_agent_ids 记录两个席位身份。
+- 复合席位 hash 需要排除自身后重新计算；否则 seat_task_hash 会形成自引用，已通过定向测试固定。
+- 旧无 seat_contract_version review 保持兼容；新席位契约不能降级 legacy。

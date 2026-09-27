@@ -11,6 +11,39 @@ from product_delivery_agent.plugin_packaging import (
 
 
 class PluginPackagingTests(unittest.TestCase):
+    def test_packaged_role_catalog_can_build_and_validate_tasks_without_source_tree(self):
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = package_codex_plugin(Path(tmp))["plugin_root"]
+            script = '''
+import json, sys
+sys.path.insert(0, "runtime")
+from product_delivery_agent.review_profiles import (ROLE_IDS, GATE_PROFILES,
+    validate_role_card, get_role_card, build_role_task)
+assert len(ROLE_IDS) == 8
+cards = [get_role_card(role) for role in ROLE_IDS]
+for card in cards:
+    validate_role_card(card)
+for gate, roles in GATE_PROFILES.items():
+    for role in roles:
+        card = get_role_card(role)
+        names = set(card["required_inputs"] + card["optional_inputs"]) - {"feature_slug"}
+        names.update(["test_source", "execution_evidence", "browser_evidence"])
+        context = {"delivery_id": "d", "feature_slug": "f", "project_type": "ui",
+                   "input_snapshot_hash": "a"*64,
+                   "input_refs": {name: {"ref": name+".md", "sha256": "b"*64,
+                                        "project_type": "shared"} for name in names}}
+        task = build_role_task(gate, role, context)
+        assert task["role_definition_hash"] == card["definition_hash"]
+        assert task["task_hash"]
+print("8 roles and 5 profiles usable from packaged runtime")
+'''
+            result = subprocess.run([sys.executable, "-I", "-c", script], cwd=root,
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_package_creates_valid_plugin_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -110,6 +143,8 @@ class PluginPackagingTests(unittest.TestCase):
                 "templates/multi-agent-test-coverage-review.md",
                 "templates/multi-agent-test-implementation-review.md",
                 "templates/multi-agent-ui-conformance-review.md",
+                "templates/review-role-card.md",
+                "templates/review-role-task.md",
                 "templates/user-confirmation.md",
                 "templates/planned-e2e-obligations.md",
                 "templates/executed-browser-evidence.md",
@@ -396,9 +431,40 @@ class PluginPackagingTests(unittest.TestCase):
                 ).read_text("utf-8")
                 self.assertIn("reviewer_agent_ids", review_template)
                 self.assertIn("reviewer_spawn_source", review_template)
+                self.assertIn("seat_contract_version", review_template)
+                self.assertIn("review_seats", review_template)
             self.assertIn("actor_role_findings", implementation_review_template)
             self.assertIn("annotation_only_findings", implementation_review_template)
             self.assertIn("verified_action_assertions", implementation_review_template)
+            role_card_template = (
+                root / "templates" / "review-role-card.md"
+            ).read_text("utf-8")
+            for field in (
+                "role_id",
+                "mission",
+                "task_steps",
+                "must_check",
+                "must_not_do",
+                "evidence_requirements",
+                "completion_criteria",
+                "quality_rubric",
+            ):
+                self.assertIn(field, role_card_template)
+            role_task_template = (
+                root / "templates" / "review-role-task.md"
+            ).read_text("utf-8")
+            for field in (
+                "Review Type",
+                "Role",
+                "Required Inputs",
+                "Required Checks",
+                "Forbidden Actions",
+                "Evidence Rules",
+                "Output Schema",
+                "Escalation Rules",
+                "Peer Challenge Target",
+            ):
+                self.assertIn(field, role_task_template)
             closure_template = json.loads(
                 (root / "templates" / "closure-artifact-template.json").read_text(
                     "utf-8"
