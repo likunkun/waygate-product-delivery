@@ -157,6 +157,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
                 "scripts/waygate-control.py",
                 "scripts/compare-ui-visual-loop.py",
                 "scripts/recover-runtime-receipt-v1036-to-v1037.py",
+                "scripts/recover-orphaned-blocked-host-goal-v110.py",
                 "scripts/formal-gate-validation-plan.md",
                 "agents/openai.yaml",
                 "runtime/product_delivery_agent/finalization.py",
@@ -318,6 +319,10 @@ print("8 roles and 5 profiles usable from packaged runtime")
                 skill_markdown,
             )
             self.assertIn("recover_runtime_receipt", skill_markdown)
+            self.assertIn(
+                "recover-orphaned-blocked-host-goal-v110.py",
+                skill_markdown,
+            )
             self.assertIn("1.0.36", skill_markdown)
             self.assertIn("1.0.37", skill_markdown)
             self.assertIn(

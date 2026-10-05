@@ -559,6 +559,16 @@ class ControlDispatchTests(unittest.TestCase):
             self.assertFalse(state["active"])
             self.assertEqual(state["delivery_lifecycle"]["status"], "closed")
 
+            state_path = root / ".product-delivery" / "state.json"
+            closed_bytes = state_path.read_bytes()
+            repeated = dispatch(root, {
+                "schema_version": "v1",
+                "action": "close",
+                "delivery_id": closed_ready["delivery_id"],
+            })
+            self.assertEqual(repeated["result"], "closed")
+            self.assertEqual(state_path.read_bytes(), closed_bytes)
+
     def test_close_fails_without_closure(self):
         with tempfile.TemporaryDirectory() as tmp:
             dispatch(tmp, {
