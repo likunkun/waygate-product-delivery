@@ -8,7 +8,12 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state, write_state
+from product_delivery_agent.artifact_protocol import (
+    ARTIFACT_ROOT,
+    _write_state_locked,
+    load_state,
+    state_write_lock,
+)
 from product_delivery_agent.gatekeeper import render_closure_validator_result
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
 
@@ -28,6 +33,10 @@ def finalize_feature_closure(
     except (OSError, json.JSONDecodeError) as error:
         _write_failure(root, [str(error)])
         raise
+
+    state = load_state(root)
+    if _terminal_closure_is_current(state, artifact_bytes):
+        return state
 
     return ProductDeliveryWorkflow(root).record_feature_closure(
         artifact,
@@ -66,26 +75,51 @@ def run_finalize_cli(argv: Sequence[str] | None = None) -> int:
 
 
 def _write_failure(project_root: Path, errors: list[str]) -> None:
-    artifacts_dir = project_root / ARTIFACT_ROOT / "artifacts"
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    (artifacts_dir / "closure-validator-result.md").write_text(
-        render_closure_validator_result("closure_failed", errors),
-        encoding="utf-8",
+    with state_write_lock(project_root):
+        state = load_state(project_root)
+        if _terminal_closure_is_protected(state):
+            return
+        artifacts_dir = project_root / ARTIFACT_ROOT / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        (artifacts_dir / "closure-validator-result.md").write_text(
+            render_closure_validator_result("closure_failed", errors),
+            encoding="utf-8",
+        )
+        if state:
+            state["closure_validation"] = {
+                "status": "closure_failed",
+                "errors": errors,
+            }
+            state["blocking_gates"] = {
+                **(state.get("blocking_gates") or {}),
+                "closure": False,
+            }
+            state["status"] = "closure_failed"
+            state["stage"] = "closure_failed"
+            state["next_gate"] = "feature_closure_after_implementation"
+            _write_state_locked(project_root, state)
+
+
+def _terminal_closure_is_protected(state: dict) -> bool:
+    return bool(
+        state
+        and state.get("active") is False
+        and state.get("status") == "closed"
+        and state.get("stage") == "delivery_closed"
+        and (state.get("delivery_lifecycle") or {}).get("status") == "closed"
+        and (state.get("closure_validation") or {}).get("status") == "passed"
+        and (state.get("feature_closure") or {}).get("status") == "passed"
+        and (state.get("delivery_goal") or {}).get("status") == "complete"
     )
-    state = load_state(project_root)
-    if state:
-        state["closure_validation"] = {
-            "status": "closure_failed",
-            "errors": errors,
-        }
-        state["blocking_gates"] = {
-            **(state.get("blocking_gates") or {}),
-            "closure": False,
-        }
-        state["status"] = "closure_failed"
-        state["stage"] = "closure_failed"
-        state["next_gate"] = "feature_closure_after_implementation"
-        write_state(project_root, state)
+
+
+def _terminal_closure_is_current(state: dict, artifact_bytes: bytes) -> bool:
+    if not _terminal_closure_is_protected(state):
+        return False
+    return (
+        (state.get("closure_validation") or {}).get("closure_artifact_sha256")
+        == hashlib.sha256(artifact_bytes).hexdigest()
+    )
 
 
 if __name__ == "__main__":

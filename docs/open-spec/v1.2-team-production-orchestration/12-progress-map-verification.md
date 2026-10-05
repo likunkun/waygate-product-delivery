@@ -2,6 +2,8 @@
 
 日期：2026-10-06。版本：1.2.0。结果：通过。
 
+本报告记录地图功能完成时的验证；整合后续 main 修复后的最终回归与包哈希见 [主分支整合验证](13-main-integration-verification.md)。
+
 ## 实现与行为
 
 - 新增 `progress_map.py`、`progress_map_model.py`、`progress_map_html.py`，通过 workflow facade 和 packaged `waygate-map.py` 使用。

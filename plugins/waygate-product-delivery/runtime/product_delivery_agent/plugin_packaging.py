@@ -73,6 +73,13 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
         _runtime_receipt_recovery_script(), encoding="utf-8"
     )
     receipt_recovery_path.chmod(0o755)
+    orphaned_recovery_path = (
+        scripts_dir / "recover-orphaned-blocked-host-goal-v110.py"
+    )
+    orphaned_recovery_path.write_text(
+        _orphaned_blocked_recovery_script(), encoding="utf-8"
+    )
+    orphaned_recovery_path.chmod(0o755)
     (agents_dir / "openai.yaml").write_text(
         _openai_agent_config(), encoding="utf-8"
     )
@@ -1014,6 +1021,15 @@ def _base_skill_markdown() -> str:
         "fail closed。此入口是严格的一次性兼容例外，不得作为通用升级器，也不得改用 "
         "`recover_legacy_active_delivery()`、v1034 blocked-Goal 恢复器、Waygate `resume` 或 Host Goal "
         "Resume 代替。\n\n"
+        "### V1.1.0 Orphaned Blocked-Binding Recovery\n\n"
+        "当 active implementation delivery 的 Host Goal binding 为 `blocked`，且 "
+        "`human_wait`、pending checkpoint 与 authorized transition 都为空时，使用 "
+        "`scripts/recover-orphaned-blocked-host-goal-v110.py --project-root <repo>`。"
+        "恢复请求通过 stdin 提供严格 JSON，必须包含冻结 state SHA-256、精确授权语、owner "
+        "host turn、fresh `get_goal=active` observation 与 `dry_run`。必须先 dry-run 并确认 state "
+        "字节不变，再用相同 observation 正式恢复。入口只恢复当前 TASK，校验 runtime provenance、"
+        "objective、threadId 与 journal，追加 `host_goal_orphaned_binding_recovered`，并签发一次性 "
+        "`user_resume` transition；不得用于 human decision、终态 delivery 或任意 gate 跳转。\n\n"
         "handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；"
         "确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 "
         "`record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、"
@@ -1389,6 +1405,44 @@ def _runtime_receipt_recovery_script() -> str:
         "    'runtime_provenance': state.get('runtime_provenance'),\n"
         "    'required_authorization': RUNTIME_RECEIPT_RECOVERY_MESSAGE,\n"
         "}, ensure_ascii=False, sort_keys=True))\n"
+    )
+
+
+def _orphaned_blocked_recovery_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""Audited Waygate 1.1.0 orphaned blocked-binding recovery."""\n\n'
+        "import argparse\n"
+        "import json\n"
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.workflow import (\n"
+        "    ProductDeliveryWorkflow,\n"
+        "    WorkflowError,\n"
+        ")\n\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--project-root', default='.')\n"
+        "args = parser.parse_args()\n"
+        "try:\n"
+        "    request = json.load(sys.stdin)\n"
+        "    if not isinstance(request, dict):\n"
+        "        raise WorkflowError('recovery request must be a JSON object')\n"
+        "    allowed = {\n"
+        "        'expected_state_file_sha256', 'authorization_message',\n"
+        "        'host_turn_id', 'goal_observation', 'dry_run',\n"
+        "    }\n"
+        "    extras = sorted(set(request) - allowed)\n"
+        "    if extras:\n"
+        "        raise WorkflowError(f'unknown recovery fields: {extras}')\n"
+        "    result = ProductDeliveryWorkflow(\n"
+        "        args.project_root\n"
+        "    ).recover_orphaned_blocked_host_goal_current_task(**request)\n"
+        "except (WorkflowError, json.JSONDecodeError, TypeError) as error:\n"
+        "    print(f'recovery rejected: {error}', file=sys.stderr)\n"
+        "    raise SystemExit(2)\n"
+        "print(json.dumps(result, ensure_ascii=False, sort_keys=True))\n"
     )
 
 

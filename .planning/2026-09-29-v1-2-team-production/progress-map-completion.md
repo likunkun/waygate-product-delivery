@@ -5,3 +5,5 @@ Implemented optional product map in the existing forlorn-wasp worktree; original
 Final validation: full unittest discovery 713 tests OK (204.282 s); browser 9 groups passed; 5 illustrative timepoints inspected; 35 runtime modules byte-equal; compileall, dependency check, diff-check passed; isolated packaged and tarball CLI smoke passed. Evidence and archive SHA in docs/open-spec/v1.2-team-production-orchestration/12-progress-map-verification.md.
 
 Independent review findings resolved with regressions: role review stale files, current and pre-TASK package freshness, failed publication and freezing published model, coordinator stage progress, obligation coverage mismatch, malformed plan rejection, historical source inspection. No new public service or live-delivery migration. Work remains on local branch; no commit/push/merge performed.
+
+Integration follow-up: feature committed as 7653e29. Combined with main a4c7b8e; 725 integration-tree tests and 9 browser checks passed. Final integrated artifact SHA and verification are recorded in report 13. Existing uncommitted work in the main checkout is preserved separately from this feature commit.

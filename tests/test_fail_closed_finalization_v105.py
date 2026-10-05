@@ -17,6 +17,7 @@ from product_delivery_agent.hooks import (
     check_stop_guardrail,
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+from tests.test_feature_closure import ready_workflow, valid_closure_artifact
 
 
 def write_raw_state(project_root, state):
@@ -42,6 +43,120 @@ def poisoned_v26_state():
 
 
 class FailClosedFinalizationV105Tests(unittest.TestCase):
+    def test_closed_delivery_revalidation_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = ready_workflow(root)
+            artifact = valid_closure_artifact(workflow.status())
+            artifact_path = root / "formal-closure.json"
+            artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+            workflow.record_feature_closure(
+                artifact,
+                source_artifact_path=str(artifact_path),
+                source_artifact_sha256=__import__("hashlib").sha256(
+                    artifact_path.read_bytes()
+                ).hexdigest(),
+            )
+            workflow.close_delivery()
+            state_path = root / ARTIFACT_ROOT / "state.json"
+            before = state_path.read_bytes()
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = run_finalize_cli(
+                    [
+                        "--project-root",
+                        str(root),
+                        "--closure-artifact",
+                        str(artifact_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(state_path.read_bytes(), before)
+
+    def test_closed_delivery_validation_failure_preserves_terminal_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = ready_workflow(root)
+            artifact = valid_closure_artifact(workflow.status())
+            valid_path = root / "valid-closure.json"
+            valid_path.write_text(json.dumps(artifact), encoding="utf-8")
+            workflow.record_feature_closure(
+                artifact,
+                source_artifact_path=str(valid_path),
+                source_artifact_sha256=__import__("hashlib").sha256(
+                    valid_path.read_bytes()
+                ).hexdigest(),
+            )
+            workflow.close_delivery()
+            state_path = root / ARTIFACT_ROOT / "state.json"
+            result_path = root / ARTIFACT_ROOT / "artifacts" / "closure-validator-result.md"
+            before_state = state_path.read_bytes()
+            before_result = result_path.read_bytes()
+            invalid_path = root / "invalid-closure.json"
+            invalid_path.write_text(json.dumps({"status": "failed"}), encoding="utf-8")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = run_finalize_cli(
+                    [
+                        "--project-root",
+                        str(root),
+                        "--closure-artifact",
+                        str(invalid_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(state_path.read_bytes(), before_state)
+            self.assertEqual(result_path.read_bytes(), before_result)
+
+    def test_failure_handler_rechecks_terminal_state_under_write_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = ready_workflow(root)
+            artifact = valid_closure_artifact(workflow.status())
+            artifact_path = root / "valid-closure.json"
+            artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+            workflow.record_feature_closure(
+                artifact,
+                source_artifact_path=str(artifact_path),
+                source_artifact_sha256=__import__("hashlib").sha256(
+                    artifact_path.read_bytes()
+                ).hexdigest(),
+            )
+            state_path = root / ARTIFACT_ROOT / "state.json"
+            invalid_path = root / "invalid-closure.json"
+            invalid_path.write_text(json.dumps({"status": "failed"}), encoding="utf-8")
+
+            original_load_state = load_state
+            switched = {"done": False}
+
+            def close_before_failure_check(project_root):
+                state = original_load_state(project_root)
+                if not switched["done"]:
+                    switched["done"] = True
+                    ProductDeliveryWorkflow(project_root).close_delivery()
+                    return original_load_state(project_root)
+                return state
+
+            with patch(
+                "product_delivery_agent.finalization.load_state",
+                side_effect=close_before_failure_check,
+            ), contextlib.redirect_stdout(io.StringIO()):
+                exit_code = run_finalize_cli(
+                    [
+                        "--project-root",
+                        str(root),
+                        "--closure-artifact",
+                        str(invalid_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            state = original_load_state(root)
+            self.assertEqual(state["status"], "closed")
+            self.assertEqual(state["stage"], "delivery_closed")
+
     def test_load_state_fail_closes_v26_poisoned_terminal_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)

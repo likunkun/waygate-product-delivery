@@ -2744,3 +2744,14 @@ Follow-up at `2026-06-25 00:31 +0800`:
 - workflow/review_gates/gatekeeper/state/artifact 已绑定 seat_contract_version、席位映射、席位任务 hash 和两个 reviewer 身份；旧无席位契约保持兼容。
 - 文档同步 CR-004/REV-20260926-03、席位模板和测试矩阵；完整 PanelRun/四 API仍未实现。
 - 定向测试当前55项通过；全量回归待最终命令完成。
+# 2026-10-04 Waygate 1.1.0 recovery/terminal guard implementation
+
+- 用户批准同时修复插件和当前 frosty-anaconda agent。
+- 已定位权威源码与 repo-local 安装来源；工作树起始干净，当前版本为 1.1.0。
+- 已确认根因：orphaned blocked binding 缺正式高层恢复入口；closed delivery 上 validator failure handler 会破坏终态。
+- 下一步：按 TDD 新增 RED 测试。
+- RED 已确认：恢复 API 缺失、closed validator 返回失败并污染 state、重复 close 被 inactive guard 拒绝。
+- GREEN 已实现：1.1.0 orphaned current-TASK 恢复、原子 rollback、closed validator 终态保护、close 幂等。
+- 定向 77 项通过；额外原子回滚测试通过。
+- 全量回归 605 项通过；插件结构校验、打包、cachebuster 与 repo-local 重装通过。
+- 当前 agent `da4baaba-d347-4ed3-b353-899eca479240` 已从 orphaned blocked binding 恢复，TASK-012 canonical 完成，cursor 推进 TASK-013；未重跑 V1.8.2 业务测试、未改业务实现。

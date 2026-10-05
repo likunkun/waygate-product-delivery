@@ -132,6 +132,10 @@ V1.0.24 起，内部 `delivery_goal` 只表示 TASK 计划，不得冒充 Codex 
 
 用户必须原样授权 `用户确认恢复 1.0.36 runtime receipt 到 1.0.37`。然后在原 owner thread 调用 `recover_runtime_receipt()`，或执行 `scripts/recover-runtime-receipt-v1036-to-v1037.py --project-root <project-root> --authorization '用户确认恢复 1.0.36 runtime receipt 到 1.0.37'`。恢复器在语义上只替换 runtime receipt 并追加一条 hash-linked `runtime_receipt_recovered` event；原子写入会正常刷新协议 `updated_at` 和 canonical delivery-layout mirrors，但 delivery、Host Goal、TASK、确认、评审和证据必须保持不变。未知 receipt、journal 篡改、缺少 1.0.34->1.0.36 链、外来线程、终态 delivery 或重复迁移必须 fail closed。此入口是严格的一次性兼容例外，不得作为通用升级器，也不得改用 `recover_legacy_active_delivery()`、v1034 blocked-Goal 恢复器、Waygate `resume` 或 Host Goal Resume 代替。
 
+### V1.1.0 Orphaned Blocked-Binding Recovery
+
+当 active implementation delivery 的 Host Goal binding 为 `blocked`，且 `human_wait`、pending checkpoint 与 authorized transition 都为空时，使用 `scripts/recover-orphaned-blocked-host-goal-v110.py --project-root <repo>`。恢复请求通过 stdin 提供严格 JSON，必须包含冻结 state SHA-256、精确授权语、owner host turn、fresh `get_goal=active` observation 与 `dry_run`。必须先 dry-run 并确认 state 字节不变，再用相同 observation 正式恢复。入口只恢复当前 TASK，校验 runtime provenance、objective、threadId 与 journal，追加 `host_goal_orphaned_binding_recovered`，并签发一次性 `user_resume` transition；不得用于 human decision、终态 delivery 或任意 gate 跳转。
+
 handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。
 
 每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 `get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。同一 stage 内低层文件写入不需要重复查询，但任何 canonical gate 写入都必须消费一条新鲜、目标 gate 匹配的一次性 observation。

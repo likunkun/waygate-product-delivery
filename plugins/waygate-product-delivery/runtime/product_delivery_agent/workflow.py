@@ -70,6 +70,7 @@ from product_delivery_agent.evidence_artifacts import (
 from product_delivery_agent.gatekeeper import (
     CANONICAL_SCHEMA_VERSION,
     CANONICAL_VALIDATOR,
+    IMPLEMENTATION_STATUSES,
     PLUGIN_VERSION,
     TERMINAL_STATUSES,
     GatekeeperError,
@@ -106,6 +107,7 @@ from product_delivery_agent.host_goal import (
     initialize_host_goal_owner,
     initialize_host_goal_binding,
     inspect_host_goal_owner,
+    normalize_tool_result,
     prepare_activation_checkpoint,
     prepare_owner_claim_checkpoint,
     prepare_reconciliation_checkpoint,
@@ -192,6 +194,18 @@ class WorkflowError(RuntimeError):
 
 RUNTIME_RECEIPT_RECOVERY_MESSAGE = (
     "用户确认恢复 1.0.36 runtime receipt 到 1.0.37"
+)
+ORPHANED_BLOCKED_RECOVERY_MESSAGE = (
+    f"授权执行可审计的 Waygate {PLUGIN_VERSION} orphaned blocked-binding 恢复"
+)
+ORPHANED_BLOCKED_RECOVERY_SOURCE_RECEIPTS = (
+    {
+        "plugin_name": "waygate-product-delivery",
+        "plugin_version": "1.1.0",
+        "package_root_sha256": (
+            "dde3c69c8dd26b0ada675e914f01d75cf062f3ff1c99a3b0e4882b4c9836f50f"
+        ),
+    },
 )
 WAYGATE_1034_RECEIPT = {
     "plugin_name": "waygate-product-delivery",
@@ -2368,6 +2382,17 @@ class ProductDeliveryWorkflow:
         Requires closure_validation.status=passed,
         feature_closure.status=passed, and delivery_goal.status=complete.
         """
+        existing = self._state()
+        if (
+            existing.get("active") is False
+            and existing.get("status") == "closed"
+            and existing.get("stage") == "delivery_closed"
+            and (existing.get("delivery_lifecycle") or {}).get("status") == "closed"
+            and (existing.get("closure_validation") or {}).get("status") == "passed"
+            and (existing.get("feature_closure") or {}).get("status") == "passed"
+            and (existing.get("delivery_goal") or {}).get("status") == "complete"
+        ):
+            return existing
         state = self._require_started(
             allow_pending_authorization=True,
             allow_input_enrichment=True,
@@ -4081,6 +4106,354 @@ class ProductDeliveryWorkflow:
             raise WorkflowError(str(error)) from error
         write_state(self.project_root, next_state)
         return response
+
+    def recover_orphaned_blocked_host_goal_current_task(
+        self,
+        *,
+        expected_state_file_sha256: str,
+        authorization_message: str,
+        host_turn_id: str,
+        goal_observation: dict[str, Any],
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        """Recover a blocked current-TASK binding that has no human decision."""
+        if authorization_message != ORPHANED_BLOCKED_RECOVERY_MESSAGE:
+            raise WorkflowError(
+                "exact orphaned blocked-binding recovery authorization is required"
+            )
+        if not isinstance(dry_run, bool):
+            raise WorkflowError("dry_run must be boolean")
+        if not isinstance(expected_state_file_sha256, str) or len(
+            expected_state_file_sha256
+        ) != 64:
+            raise WorkflowError("expected state file hash is required")
+
+        state_path = self.project_root / ARTIFACT_ROOT / "state.json"
+        with state_write_lock(self.project_root):
+            if not state_path.is_file():
+                raise WorkflowError("Waygate state file is missing")
+            state_file_sha256 = hashlib.sha256(state_path.read_bytes()).hexdigest()
+            if state_file_sha256 != expected_state_file_sha256:
+                raise WorkflowError("state file hash mismatch")
+            raw_state = self._load_raw_state()
+            state = self._state()
+            valid_implementation_statuses = IMPLEMENTATION_STATUSES - {
+                "implementation_blocked",
+                "implementation_tasks_complete",
+            }
+            valid_implementation_stages = valid_implementation_statuses | {
+                "codex_goal_handoff_ready",
+                "implementation_launch_authorized",
+                "implementation_visual_policy_ready",
+            }
+            if (
+                not raw_state.get("active")
+                or raw_state.get("status") not in valid_implementation_statuses
+                or raw_state.get("stage") not in valid_implementation_stages
+                or (raw_state.get("delivery_lifecycle") or {}).get("status")
+                not in {None, "active"}
+            ):
+                raise WorkflowError(
+                    "orphaned recovery requires an active implementation delivery"
+                )
+            current_receipt = current_runtime_provenance()
+            stored_receipt = raw_state.get("runtime_provenance")
+            receipt_migration_required = stored_receipt != current_receipt
+            if receipt_migration_required:
+                if stored_receipt not in ORPHANED_BLOCKED_RECOVERY_SOURCE_RECEIPTS:
+                    raise WorkflowError("unsupported runtime provenance for recovery")
+            elif runtime_status(state, raw_state) != "verified_waygate":
+                raise WorkflowError("runtime must remain verified_waygate")
+            if journal_integrity_errors(state):
+                raise WorkflowError("transition journal integrity failed")
+            try:
+                owner_thread_id = assert_host_goal_owner(state)
+            except HostGoalError as error:
+                raise WorkflowError(str(error)) from error
+            if host_turn_id != owner_thread_id:
+                raise WorkflowError("host_turn_id must match the Host Goal owner")
+
+            implementation = state.get("implementation") or {}
+            goal = state.get("delivery_goal") or {}
+            current_task = implementation.get("current_task")
+            if (
+                not isinstance(current_task, str)
+                or not current_task.startswith("TASK-")
+                or goal.get("current_task_cursor") != current_task
+                or goal.get("next_action") != current_task
+                or goal.get("status") not in {"active", "implementation_in_progress"}
+            ):
+                raise WorkflowError("a matching non-terminal current TASK is required")
+
+            binding = deepcopy(state.get("host_goal_binding") or {})
+            prior_recovery = binding.get("orphaned_blocked_recovery") or {}
+            if (
+                binding.get("status") == "active"
+                and prior_recovery.get("schema_version") == "v1"
+                and prior_recovery.get("restored_gate") == current_task
+            ):
+                return {
+                    "result": "already_recovered",
+                    "next_gate": current_task,
+                    "recovery_id": prior_recovery.get("recovery_id"),
+                    "state_file_sha256": state_file_sha256,
+                }
+            if binding.get("status") != "blocked":
+                raise WorkflowError("binding status must be blocked")
+            if binding.get("human_wait"):
+                raise WorkflowError("orphaned recovery requires human_wait to be absent")
+            if binding.get("pending_checkpoint"):
+                raise WorkflowError("orphaned recovery requires no pending checkpoint")
+            if binding.get("authorized_transition"):
+                raise WorkflowError("orphaned recovery requires no authorized transition")
+
+            if goal_observation.get("observation_source") != "codex_goal_tool":
+                raise WorkflowError("goal observation source must be codex_goal_tool")
+            if goal_observation.get("tool") != "get_goal":
+                raise WorkflowError("goal observation tool must be get_goal")
+            try:
+                normalized = normalize_tool_result(
+                    "get_goal", goal_observation.get("result")
+                )
+            except HostGoalError as error:
+                raise WorkflowError(str(error)) from error
+            if normalized.get("status") != "active":
+                raise WorkflowError("Host Goal must be active")
+            if normalized.get("objective") != binding.get("objective"):
+                raise WorkflowError("Host Goal objective mismatch")
+            observed_thread_id = (normalized.get("host_identifiers") or {}).get(
+                "threadId"
+            )
+            if observed_thread_id != owner_thread_id:
+                raise WorkflowError("Host Goal threadId mismatch")
+            bound_identifiers = binding.get("host_identifiers") or {}
+            observed_identifiers = normalized.get("host_identifiers") or {}
+            if any(
+                observed_identifiers.get(key) != value
+                for key, value in bound_identifiers.items()
+            ):
+                raise WorkflowError("Host Goal identifier mismatch")
+
+            observation_sha256 = host_goal_stable_hash(goal_observation["result"])
+            authorization_sha256 = host_goal_stable_hash(authorization_message)
+            state_hash_before = lifecycle_state_hash(state)
+            recovery_id = host_goal_stable_hash(
+                {
+                    "delivery_id": state.get("delivery_id"),
+                    "binding_nonce": binding.get("binding_nonce"),
+                    "plugin_version": PLUGIN_VERSION,
+                    "host_turn_id": host_turn_id,
+                    "observation_sha256": observation_sha256,
+                    "state_hash_before": state_hash_before,
+                    "current_task": current_task,
+                }
+            )
+            recovered_at = self._timestamp_from_state(state)
+            old_binding = deepcopy(binding)
+            binding.update(
+                {
+                    "status": "active",
+                    "last_observed_status": "active",
+                    "last_observed_at": recovered_at,
+                    "last_observation_sha256": observation_sha256,
+                    "pending_checkpoint": None,
+                    "human_wait": None,
+                    "resume_gate": current_task,
+                    "orphaned_blocked_recovery": {
+                        "schema_version": "v1",
+                        "recovery_id": recovery_id,
+                        "plugin_version": PLUGIN_VERSION,
+                        "recovered_at": recovered_at,
+                        "host_turn_id": host_turn_id,
+                        "authorization_sha256": authorization_sha256,
+                        "observation_sha256": observation_sha256,
+                        "restored_gate": current_task,
+                    },
+                    "authorized_transition": {
+                        "checkpoint_id": recovery_id,
+                        "operation": "user_resume",
+                        "target_gate": current_task,
+                        "observation_sha256": observation_sha256,
+                        "authorized_at": recovered_at,
+                    },
+                }
+            )
+            observations = list(binding.get("observations") or [])
+            observations.append(
+                {
+                    "recovery_id": recovery_id,
+                    "host_turn_id": host_turn_id,
+                    "observed_at": recovered_at,
+                    "operation": "orphaned_blocked_binding_recovery",
+                    "status": "active",
+                    "objective": normalized.get("objective"),
+                    "host_identifiers": normalized.get("host_identifiers") or {},
+                    "result_sha256": observation_sha256,
+                    "tool": "get_goal",
+                }
+            )
+            binding["observations"] = observations[-200:]
+            next_state = deepcopy(state)
+            history = list(next_state.get("host_goal_binding_history") or [])
+            history.append(
+                {
+                    "binding": old_binding,
+                    "archived_at": recovered_at,
+                    "reason": "orphaned_blocked_binding_recovery_v110",
+                    "recovery_id": recovery_id,
+                }
+            )
+            next_state["host_goal_binding_history"] = history
+            next_state["host_goal_binding"] = binding
+            next_state["next_gate"] = current_task
+            if receipt_migration_required:
+                next_state["runtime_provenance"] = current_receipt
+                next_state = append_transition(
+                    next_state,
+                    "runtime_receipt_recovered",
+                    feature_slug=next_state.get("feature_slug"),
+                    runtime_version=PLUGIN_VERSION,
+                    input_artifact_hashes={
+                        "runtime_receipt": host_goal_stable_hash(stored_receipt)
+                    },
+                    output_artifact_hashes={
+                        "runtime_receipt": host_goal_stable_hash(current_receipt)
+                    },
+                    metadata={
+                        "recovery_scope": "orphaned_blocked_binding_v110",
+                        "from_plugin_version": stored_receipt.get("plugin_version"),
+                        "to_plugin_version": current_receipt.get("plugin_version"),
+                    },
+                )
+            next_state = append_transition(
+                next_state,
+                "host_goal_orphaned_binding_recovered",
+                feature_slug=next_state.get("feature_slug"),
+                runtime_version=PLUGIN_VERSION,
+                metadata={
+                    "recovery_id": recovery_id,
+                    "authorization_sha256": authorization_sha256,
+                    "observation_sha256": observation_sha256,
+                    "owner_thread_id": owner_thread_id,
+                    "host_turn_id": host_turn_id,
+                    "previous_status": "blocked",
+                    "restored_status": "active",
+                    "restored_gate": current_task,
+                    "state_hash_before": state_hash_before,
+                },
+            )
+            response = {
+                "result": "dry_run" if dry_run else "recovered",
+                "next_gate": current_task,
+                "recovery_id": recovery_id,
+                "state_file_sha256": state_file_sha256,
+                "runtime_provenance": deepcopy(next_state["runtime_provenance"]),
+            }
+            if dry_run:
+                return response
+            self._commit_orphaned_blocked_recovery(
+                state_path,
+                next_state,
+                expected_state_file_sha256,
+            )
+            return response
+
+    def _commit_orphaned_blocked_recovery(
+        self,
+        state_path: Path,
+        next_state: dict[str, Any],
+        expected_state_file_sha256: str,
+    ) -> dict[str, Any]:
+        """Atomically persist orphaned recovery and roll back mirrored state."""
+        if hashlib.sha256(state_path.read_bytes()).hexdigest() != expected_state_file_sha256:
+            raise WorkflowError("state file hash changed before recovery commit")
+        snapshot = self._capture_runtime_recovery_snapshot(next_state)
+        candidate_path = state_path.with_name("state.json.orphaned-v110-candidate.tmp")
+        exchanged = False
+        concurrent_change_detected = False
+        candidate_sha256 = ""
+        mirror_sync_started = False
+        try:
+            persisted = normalize_state_protocol(dict(next_state))
+            persisted["updated_at"] = datetime.now(timezone.utc).replace(
+                microsecond=0
+            ).isoformat()
+            payload = (json.dumps(persisted, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            )
+            with candidate_path.open("xb") as candidate_file:
+                candidate_file.write(payload)
+                candidate_file.flush()
+                os.fsync(candidate_file.fileno())
+            candidate_sha256 = hashlib.sha256(payload).hexdigest()
+            self._atomic_exchange(candidate_path, state_path)
+            exchanged = True
+            if hashlib.sha256(candidate_path.read_bytes()).hexdigest() != expected_state_file_sha256:
+                concurrent_change_detected = True
+                self._atomic_exchange(candidate_path, state_path)
+                exchanged = False
+                raise WorkflowError("state file changed during recovery commit")
+            if hashlib.sha256(state_path.read_bytes()).hexdigest() != candidate_sha256:
+                raise WorkflowError("persisted recovery candidate hash mismatch")
+            from product_delivery_agent.artifact_store import ensure_delivery_layout
+
+            mirror_sync_started = True
+            ensure_delivery_layout(self.project_root, persisted)
+            if hashlib.sha256(state_path.read_bytes()).hexdigest() != candidate_sha256:
+                concurrent_change_detected = True
+                raise WorkflowError("concurrent state write detected after mirror sync")
+            if runtime_status(persisted, persisted) != "verified_waygate":
+                raise WorkflowError("persisted runtime identity is not verified_waygate")
+            if journal_integrity_errors(persisted):
+                raise WorkflowError("persisted transition journal failed integrity validation")
+            candidate_path.unlink()
+            exchanged = False
+            return persisted
+        except Exception as error:
+            try:
+                if (
+                    not concurrent_change_detected
+                    and mirror_sync_started
+                    and exchanged
+                    and hashlib.sha256(state_path.read_bytes()).hexdigest()
+                    != candidate_sha256
+                ):
+                    concurrent_change_detected = True
+                if concurrent_change_detected:
+                    # The root state was changed by another writer. Preserve
+                    # that external state, but roll back mirrors/candidates
+                    # that this recovery may have written before detecting it.
+                    self._restore_runtime_recovery_snapshot(
+                        snapshot, excluded_paths={state_path}
+                    )
+                    if candidate_path.exists():
+                        candidate_path.unlink()
+                    raise WorkflowError(
+                        "concurrent state write detected; refusing rollback"
+                    ) from error
+                if exchanged and candidate_path.exists():
+                    current_state_sha256 = hashlib.sha256(
+                        state_path.read_bytes()
+                    ).hexdigest()
+                    if current_state_sha256 == candidate_sha256:
+                        self._atomic_exchange(candidate_path, state_path)
+                        exchanged = False
+                    else:
+                        raise WorkflowError(
+                            "concurrent state write detected; refusing rollback"
+                        ) from error
+                self._restore_runtime_recovery_snapshot(
+                    snapshot, excluded_paths={state_path}
+                )
+                if candidate_path.exists():
+                    candidate_path.unlink()
+            except Exception as rollback_error:
+                raise WorkflowError(
+                    f"orphaned recovery failed and rollback failed: {rollback_error}"
+                ) from error
+            if isinstance(error, WorkflowError):
+                raise
+            raise WorkflowError(f"orphaned recovery persistence failed: {error}") from error
 
     def recover_host_goal_binding(self, user_message: str) -> dict[str, Any]:
         """Authorize and rebuild Host Goal binding for a legacy active delivery."""
