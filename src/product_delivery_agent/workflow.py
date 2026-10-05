@@ -69,6 +69,7 @@ from product_delivery_agent.evidence_artifacts import (
 from product_delivery_agent.gatekeeper import (
     CANONICAL_SCHEMA_VERSION,
     CANONICAL_VALIDATOR,
+    IMPLEMENTATION_STATUSES,
     PLUGIN_VERSION,
     TERMINAL_STATUSES,
     GatekeeperError,
@@ -3998,6 +3999,25 @@ class ProductDeliveryWorkflow:
                 raise WorkflowError("state file hash mismatch")
             raw_state = self._load_raw_state()
             state = self._state()
+            valid_implementation_statuses = IMPLEMENTATION_STATUSES - {
+                "implementation_blocked",
+                "implementation_tasks_complete",
+            }
+            valid_implementation_stages = valid_implementation_statuses | {
+                "codex_goal_handoff_ready",
+                "implementation_launch_authorized",
+                "implementation_visual_policy_ready",
+            }
+            if (
+                not raw_state.get("active")
+                or raw_state.get("status") not in valid_implementation_statuses
+                or raw_state.get("stage") not in valid_implementation_stages
+                or (raw_state.get("delivery_lifecycle") or {}).get("status")
+                not in {None, "active"}
+            ):
+                raise WorkflowError(
+                    "orphaned recovery requires an active implementation delivery"
+                )
             current_receipt = current_runtime_provenance()
             stored_receipt = raw_state.get("runtime_provenance")
             receipt_migration_required = stored_receipt != current_receipt
@@ -4023,6 +4043,7 @@ class ProductDeliveryWorkflow:
                 or not current_task.startswith("TASK-")
                 or goal.get("current_task_cursor") != current_task
                 or goal.get("next_action") != current_task
+                or goal.get("status") not in {"active", "implementation_in_progress"}
             ):
                 raise WorkflowError("a matching non-terminal current TASK is required")
 
@@ -4067,6 +4088,13 @@ class ProductDeliveryWorkflow:
             )
             if observed_thread_id != owner_thread_id:
                 raise WorkflowError("Host Goal threadId mismatch")
+            bound_identifiers = binding.get("host_identifiers") or {}
+            observed_identifiers = normalized.get("host_identifiers") or {}
+            if any(
+                observed_identifiers.get(key) != value
+                for key, value in bound_identifiers.items()
+            ):
+                raise WorkflowError("Host Goal identifier mismatch")
 
             observation_sha256 = host_goal_stable_hash(goal_observation["result"])
             authorization_sha256 = host_goal_stable_hash(authorization_message)
@@ -4204,6 +4232,9 @@ class ProductDeliveryWorkflow:
         snapshot = self._capture_runtime_recovery_snapshot(next_state)
         candidate_path = state_path.with_name("state.json.orphaned-v110-candidate.tmp")
         exchanged = False
+        concurrent_change_detected = False
+        candidate_sha256 = ""
+        mirror_sync_started = False
         try:
             persisted = normalize_state_protocol(dict(next_state))
             persisted["updated_at"] = datetime.now(timezone.utc).replace(
@@ -4220,12 +4251,19 @@ class ProductDeliveryWorkflow:
             self._atomic_exchange(candidate_path, state_path)
             exchanged = True
             if hashlib.sha256(candidate_path.read_bytes()).hexdigest() != expected_state_file_sha256:
+                concurrent_change_detected = True
+                self._atomic_exchange(candidate_path, state_path)
+                exchanged = False
                 raise WorkflowError("state file changed during recovery commit")
             if hashlib.sha256(state_path.read_bytes()).hexdigest() != candidate_sha256:
                 raise WorkflowError("persisted recovery candidate hash mismatch")
             from product_delivery_agent.artifact_store import ensure_delivery_layout
 
+            mirror_sync_started = True
             ensure_delivery_layout(self.project_root, persisted)
+            if hashlib.sha256(state_path.read_bytes()).hexdigest() != candidate_sha256:
+                concurrent_change_detected = True
+                raise WorkflowError("concurrent state write detected after mirror sync")
             if runtime_status(persisted, persisted) != "verified_waygate":
                 raise WorkflowError("persisted runtime identity is not verified_waygate")
             if journal_integrity_errors(persisted):
@@ -4235,9 +4273,37 @@ class ProductDeliveryWorkflow:
             return persisted
         except Exception as error:
             try:
+                if (
+                    not concurrent_change_detected
+                    and mirror_sync_started
+                    and exchanged
+                    and hashlib.sha256(state_path.read_bytes()).hexdigest()
+                    != candidate_sha256
+                ):
+                    concurrent_change_detected = True
+                if concurrent_change_detected:
+                    # The root state was changed by another writer. Preserve
+                    # that external state, but roll back mirrors/candidates
+                    # that this recovery may have written before detecting it.
+                    self._restore_runtime_recovery_snapshot(
+                        snapshot, excluded_paths={state_path}
+                    )
+                    if candidate_path.exists():
+                        candidate_path.unlink()
+                    raise WorkflowError(
+                        "concurrent state write detected; refusing rollback"
+                    ) from error
                 if exchanged and candidate_path.exists():
-                    self._atomic_exchange(candidate_path, state_path)
-                    exchanged = False
+                    current_state_sha256 = hashlib.sha256(
+                        state_path.read_bytes()
+                    ).hexdigest()
+                    if current_state_sha256 == candidate_sha256:
+                        self._atomic_exchange(candidate_path, state_path)
+                        exchanged = False
+                    else:
+                        raise WorkflowError(
+                            "concurrent state write detected; refusing rollback"
+                        ) from error
                 self._restore_runtime_recovery_snapshot(
                     snapshot, excluded_paths={state_path}
                 )
