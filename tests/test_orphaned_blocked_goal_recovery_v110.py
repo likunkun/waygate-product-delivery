@@ -132,6 +132,36 @@ class OrphanedBlockedGoalRecoveryV110Tests(unittest.TestCase):
                     **{**request, "goal_observation": wrong_observation}
                 )
 
+    def test_bound_goal_identifiers_must_match_observation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow, objective = self._blocked_workflow(root)
+            state = workflow.status()
+            state["host_goal_binding"]["host_identifiers"] = {
+                "threadId": OWNER_THREAD_ID,
+                "goalId": "goal-bound",
+            }
+            write_state(root, state)
+            request = self._request(root, objective, dry_run=True)
+            request["goal_observation"]["result"]["goal"]["goalId"] = "goal-other"
+
+            with self.assertRaisesRegex(WorkflowError, "identifier"):
+                workflow.recover_orphaned_blocked_host_goal_current_task(**request)
+
+    def test_non_implementation_lifecycle_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow, objective = self._blocked_workflow(root)
+            state = workflow.status()
+            state.update({"status": "closure_failed", "stage": "closure_failed"})
+            state["delivery_lifecycle"] = {"status": "paused"}
+            write_state(root, state)
+
+            with self.assertRaisesRegex(WorkflowError, "implementation"):
+                workflow.recover_orphaned_blocked_host_goal_current_task(
+                    **self._request(root, objective, dry_run=True)
+                )
+
     def test_persistence_failure_rolls_back_root_and_delivery_mirror(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -158,6 +188,63 @@ class OrphanedBlockedGoalRecoveryV110Tests(unittest.TestCase):
                 )
 
             self.assertEqual(root_state.read_bytes(), before_root)
+            self.assertEqual(delivery_state.read_bytes(), before_delivery)
+
+    def test_concurrent_state_change_is_not_overwritten_during_rollback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow, objective = self._blocked_workflow(root)
+            root_state = root / ".product-delivery" / "state.json"
+            external_bytes = b"external concurrent state\n"
+
+            def concurrent_failure(project_root, persisted):
+                root_state.write_bytes(external_bytes)
+                raise RuntimeError("simulated concurrent write")
+
+            with patch(
+                "product_delivery_agent.artifact_store.ensure_delivery_layout",
+                side_effect=concurrent_failure,
+            ), self.assertRaisesRegex(WorkflowError, "concurrent"):
+                workflow.recover_orphaned_blocked_host_goal_current_task(
+                    **self._request(root, objective, dry_run=False)
+                )
+
+            self.assertEqual(root_state.read_bytes(), external_bytes)
+
+    def test_concurrent_change_after_mirror_write_restores_mirror_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow, objective = self._blocked_workflow(root)
+            state = workflow.status()
+            root_state = root / ".product-delivery" / "state.json"
+            delivery_state = (
+                root
+                / ".product-delivery"
+                / "deliveries"
+                / state["feature_slug"]
+                / state["delivery_id"]
+                / "state.json"
+            )
+            before_delivery = delivery_state.read_bytes()
+            external_bytes = b"external concurrent state after mirror\n"
+            from product_delivery_agent.artifact_store import (
+                ensure_delivery_layout as real_ensure_delivery_layout,
+            )
+
+            def mirror_then_concurrent(project_root, persisted):
+                real_ensure_delivery_layout(project_root, persisted)
+                root_state.write_bytes(external_bytes)
+                raise RuntimeError("simulated concurrent write after mirror")
+
+            with patch(
+                "product_delivery_agent.artifact_store.ensure_delivery_layout",
+                side_effect=mirror_then_concurrent,
+            ), self.assertRaisesRegex(WorkflowError, "concurrent"):
+                workflow.recover_orphaned_blocked_host_goal_current_task(
+                    **self._request(root, objective, dry_run=False)
+                )
+
+            self.assertEqual(root_state.read_bytes(), external_bytes)
             self.assertEqual(delivery_state.read_bytes(), before_delivery)
 
     def test_recovery_migrates_exact_published_v110_runtime_receipt(self):
