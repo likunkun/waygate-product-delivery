@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
-from product_delivery_agent.coverage_audit import CoverageAuditError
+from product_delivery_agent.coverage_audit import (
+    CoverageAuditError,
+    build_executed_behavior_evidence,
+)
 from product_delivery_agent.workflow import ProductDeliveryWorkflow
 from tests.conformance_fixtures import (
     confirm_product_baseline,
@@ -72,6 +75,51 @@ def behavior_contract_payload():
         "behavior_paths": ["valid roster import completes"],
         "negative_boundary_records": ["cross-tenant import remains unsupported"],
         "limitations": ["no SIS sync"],
+    }
+
+
+def behavior_record(project_root):
+    evidence_path = (
+        project_root / ".product-delivery" / "artifacts" / "behavior" / "tc-v008-001.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(
+        '{"status":"passed","stdout":"valid roster import completes"}\n',
+        encoding="utf-8",
+    )
+    trace_path = (
+        project_root / ".product-delivery" / "artifacts" / "behavior" / "tc-v008-001.log"
+    )
+    trace_path.write_text(
+        "command=python3 scripts/roster_import.py fixtures/valid.csv\n"
+        "exit_code=0\n",
+        encoding="utf-8",
+    )
+    return {
+        "test_id": "TC-V008-001",
+        "obligation_id": "OBL-001",
+        "command": "python3 scripts/roster_import.py fixtures/valid.csv",
+        "exit_code": 0,
+        "semantic_assertions": ["valid roster import completes"],
+        "evidence_path": str(evidence_path.relative_to(project_root)),
+        "trace_path": str(trace_path.relative_to(project_root)),
+        "execution_segment_id": "roster-import-cli",
+        "test_title_or_step": "valid roster import completes",
+    }
+
+
+def behavior_planned_obligation():
+    return {
+        "obligation_id": "OBL-001",
+        "scenario_id": "SC-001",
+        "test_id": "TC-V008-001",
+        "user_story": "US-001",
+        "journey": "J-001",
+        "visible_exception": "invalid csv",
+        "test_layer": "api_e2e",
+        "semantic_assertions": ["valid roster import completes"],
+        "expected_artifact_pattern": ".product-delivery/artifacts/behavior/*.json",
+        "exemption_status": "none",
     }
 
 
@@ -354,6 +402,54 @@ class CoverageAuditTests(unittest.TestCase):
                 state["closure_inputs"]["coverage_matrix_range"],
                 "TC-V008-001..TC-V008-001",
             )
+
+    def test_executed_behavior_evidence_accepts_cli_artifacts_without_browser_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            evidence = build_executed_behavior_evidence(
+                project_root,
+                [behavior_record(project_root)],
+                planned_obligations=[behavior_planned_obligation()],
+            )
+
+            record = evidence["records"][0]
+            self.assertEqual(evidence["status"], "passed")
+            self.assertRegex(record["evidence_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(record["evidence_sha256"], record["evidence_path_sha256"])
+            self.assertRegex(record["trace_path_sha256"], r"^[0-9a-f]{64}$")
+            self.assertNotIn("evidence_strength", record)
+            self.assertNotIn("probe_artifact_path", record)
+            self.assertNotIn("acceptance_url", record)
+
+    def test_executed_behavior_evidence_rejects_missing_trace_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            record = behavior_record(project_root)
+            (project_root / record["trace_path"]).unlink()
+
+            with self.assertRaises(CoverageAuditError) as caught:
+                build_executed_behavior_evidence(
+                    project_root,
+                    [record],
+                    planned_obligations=[behavior_planned_obligation()],
+                )
+
+            self.assertIn("trace_path does not exist", str(caught.exception))
+
+    def test_executed_behavior_evidence_rejects_nonzero_exit_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            record = behavior_record(project_root)
+            record["exit_code"] = 1
+
+            with self.assertRaises(CoverageAuditError) as caught:
+                build_executed_behavior_evidence(
+                    project_root,
+                    [record],
+                    planned_obligations=[behavior_planned_obligation()],
+                )
+
+            self.assertIn("exit_code must be 0", str(caught.exception))
 
 
 if __name__ == "__main__":

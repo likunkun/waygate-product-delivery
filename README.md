@@ -1,12 +1,12 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.1.0-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.2.0-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
 
-Waygate Product Delivery is a Codex-native plugin for moving a product idea through product framing, Open Spec, scenario review, UI or non-UI gates, implementation handoff, and formal closure evidence. Shorthand commands: `start <slug> [multi-agent|role-play]`, `status`, `pause`, `resume`, `close`, `abandon`, `inspect`; new deliveries begin with one input-understanding confirmation round.
+Waygate Product Delivery is a Codex-native plugin for moving a product idea through product framing, Open Spec, scenario review, UI or non-UI gates, implementation handoff, and formal closure evidence. Shorthand commands: `start <slug> [team] [multi-agent|role-play]`, `status`, `pause`, `resume`, `close`, `abandon`, `inspect`; new deliveries begin with one input-understanding confirmation round.
 
 It is designed for teams that want AI-assisted implementation to stay inside a visible delivery process: every major transition is backed by local artifacts, user confirmations, review gates, test obligations, and a canonical closure validator.
 
@@ -74,6 +74,8 @@ $waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug"
 - `start <slug> "<request>"` — create a delivery and enter input understanding confirmation
 - `start <slug> multi-agent "<request>"` — create with spawned-subagent review mode
 - `start <slug> role-play "<request>"` — create with role-simulation review mode
+- `start <slug> team "<request>"` — create with team production and pending review-mode selection
+- `start <slug> team multi-agent "<request>"` — create with team production and spawned-subagent review mode
 - `status` — check current delivery status
 - `pause` — pause current delivery
 - `resume` — resume paused delivery
@@ -85,6 +87,40 @@ New deliveries first show an understanding draft covering the goal, users/scenar
 
 
 Use `spawned_subagents_authorized` to authorize structured subagent reviews when a new delivery is created, or `role_simulation_allowed` only when degraded evidence is explicitly accepted. Repeating `resume_or_create` for the same unfinished feature resumes the existing `delivery_id`.
+
+## Optional Product Progress Map
+
+The map is **off by default** and works with both team and coordinator deliveries. It connects product goals, architecture, versions, the current task, remaining gaps, and explained plan changes.
+
+```text
+$waygate-product-delivery map on
+$waygate-product-delivery map
+$waygate-product-delivery map export
+$waygate-product-delivery map off
+$waygate-product-delivery map default on
+```
+
+Delivery switches persist on resume. Project defaults affect only newly created deliveries. The live file is `.product-delivery/maps/index.html`; serve it with your existing static HTTP service. Its five-second refresh preserves the selected node, filters, and scroll position. No server or daemon is started. Exported single-file snapshots work offline and do not refresh; full evidence attachments remain external references.
+
+When enabled, the coordinator records source-bound goal/component/capability/TASK relationships with help from the product, architecture, and test roles. Missing context is shown as unknown. Production, integration, verification, review, and final delivery are separate milestones; map explanations cannot approve scope or advance workflow gates. `status/inspect` includes the effective setting, origin, generation time, freshness, and rendering errors.
+
+The packaged CLI is `scripts/waygate-map.py --project-root <project>`. Use `on/off --delivery-id <current-id>`, `default on/off`, `export`, or `inspect`. Its files and configuration are separate from canonical state. See the [map contract](docs/open-spec/v1.2-team-production-orchestration/11-progress-map.md).
+
+Open the [five-timepoint examples](docs/examples/progress-map/index.html) to see the initial plan, implementation, review gap, approved change, and repair validation. These are explicitly labelled illustrative data.
+
+## V1.2 Team Production Commands
+
+```text
+$waygate-product-delivery start reports-v1 team multi-agent "Export CSV from the existing administrator report page"
+```
+
+`team` authorizes production separately from `multi-agent` review. Add `"production_mode_if_created":"team"` to strict start JSON; the default is `coordinator`. Resume preserves the selected policy. `set_production_mode` switches only a same-version delivery at a safe stage boundary; older active deliveries are not migrated.
+
+The coordinator leads six production stages using ten core and five conditional responsibilities, with at most two concurrent work packages. Implementation stays within the current Journey TASK. Workers edit staging copies; the coordinator validates hashes and integrates changes. Independent reviewers use frozen input and phase barriers before batch remediation. Production completion never substitutes for confirmations, TASK evidence, Host Goal ownership or canonical closure.
+
+The five orchestration APIs are `prepare_team_run`, `inspect_team_run`, `record_team_events`, `integrate_team_run`, and `finalize_team_run`. Non-UI deliveries record their final CLI/API behavior through `record_executed_behavior_evidence()`; UI deliveries use `record_executed_browser_evidence()`. See packaged `templates/team-production-workflow.md` for event payloads and recovery. Isolation is a shared-filesystem contract, not an OS sandbox; the host owns actual agent execution. Missing usage is reported as unavailable.
+
+[Specification](docs/open-spec/v1.2-team-production-orchestration/02-specification.md) · [Production roles](docs/open-spec/v1.2-team-production-orchestration/09-production-role-cards.md) · [Release exercise](docs/open-spec/v1.2-team-production-orchestration/10-release-exercise-report.md)
 
 ## Install
 
@@ -126,7 +162,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.1.0.tar.gz
+dist/waygate-product-delivery-1.2.0.tar.gz
 ```
 
 ## Use In Codex

@@ -11,7 +11,11 @@ from pathlib import Path
 from product_delivery_agent.artifact_protocol import ARTIFACT_ROOT, load_state
 from product_delivery_agent.delivery_goal import DeliveryGoalError, record_task_completion
 from product_delivery_agent.finalization import run_finalize_cli
-from product_delivery_agent.gatekeeper import derive_blockers, render_closure_validator_result
+from product_delivery_agent.gatekeeper import (
+    closure_integrity_errors,
+    derive_blockers,
+    render_closure_validator_result,
+)
 from product_delivery_agent.plugin_packaging import package_codex_plugin
 from product_delivery_agent.transition_journal import transition_names
 
@@ -150,6 +154,46 @@ class TransitionAuthorityV108Tests(unittest.TestCase):
 
             self.assertIn("docs_ahead_of_executed_evidence", blockers)
             self.assertIn("docs_ahead_of_closure_validation", blockers)
+
+    def test_non_ui_docs_use_behavior_evidence_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            write_raw_state(
+                project_root,
+                {
+                    "active": True,
+                    "feature_slug": "v1.2-team-production-orchestration",
+                    "project_type": "non_ui",
+                    "test_coverage_audit": {"passed": True},
+                    "implementation_launch_authorization": {"status": "authorized"},
+                    "executed_browser_evidence": {"status": "not_started"},
+                    "executed_behavior_evidence": {"status": "passed", "records": []},
+                    "closure_validation": {"status": "not_run"},
+                },
+            )
+            (project_root / "progress.md").write_text(
+                "v1.2-team-production-orchestration status=Executed and closed\n",
+                encoding="utf-8",
+            )
+
+            blockers = derive_blockers(load_state(project_root), project_root)
+
+            self.assertNotIn("docs_ahead_of_executed_evidence", blockers)
+
+    def test_non_ui_closure_integrity_requires_behavior_evidence(self):
+        state = {
+            "status": "closed",
+            "project_type": "non_ui",
+            "delivery_goal": {"status": "complete"},
+            "feature_closure": {"status": "passed"},
+            "closure_validation": {"status": "passed"},
+            "executed_browser_evidence": {"status": "passed"},
+            "executed_behavior_evidence": {"status": "not_started"},
+        }
+
+        errors = closure_integrity_errors(state)
+
+        self.assertIn("executed_behavior_evidence.status=passed", errors)
 
     def test_historical_status_terms_outside_current_feature_section_are_ignored(self):
         with tempfile.TemporaryDirectory() as tmp:

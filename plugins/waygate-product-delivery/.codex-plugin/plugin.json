@@ -4,7 +4,7 @@
     "name": "Waygate Product Delivery Maintainers",
     "url": "https://example.com/waygate-product-delivery"
   },
-  "description": "Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
+  "description": "Codex-native product delivery workflow. Shorthand: start <slug> [team] [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
   "homepage": "https://example.com/waygate-product-delivery",
   "interface": {
     "brandColor": "#2563EB",
@@ -41,5 +41,5 @@
   "name": "waygate-product-delivery",
   "repository": "https://example.com/waygate-product-delivery.git",
   "skills": "./skills/",
-  "version": "1.1.0+codex.20260927135956"
+  "version": "1.2.0"
 }

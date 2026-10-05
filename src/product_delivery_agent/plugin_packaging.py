@@ -50,6 +50,7 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     (skills_dir / "SKILL.md").write_text(_skill_markdown(), encoding="utf-8")
     (hooks_dir / "README.md").write_text(_hooks_readme(), encoding="utf-8")
     _write_templates(templates_dir)
+    _write_production_templates(templates_dir)
     validator_path = scripts_dir / "validate-closure-artifact.py"
     validator_path.write_text(
         _validation_script(),
@@ -59,6 +60,9 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     control_path = scripts_dir / "waygate-control.py"
     control_path.write_text(_control_script(), encoding="utf-8")
     control_path.chmod(0o755)
+    map_path = scripts_dir / "waygate-map.py"
+    map_path.write_text(_map_script(), encoding="utf-8")
+    map_path.chmod(0o755)
     visual_loop_path = scripts_dir / "compare-ui-visual-loop.py"
     visual_loop_path.write_text(_visual_loop_script(), encoding="utf-8")
     visual_loop_path.chmod(0o755)
@@ -115,7 +119,7 @@ def _plugin_manifest() -> dict[str, Any]:
     return {
         "name": PLUGIN_NAME,
         "version": PLUGIN_VERSION,
-        "description": "Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
+        "description": "Codex-native product delivery workflow. Shorthand: start <slug> [team] [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
         "author": {
             "name": "Waygate Product Delivery Maintainers",
             "email": "maintainers@example.com",
@@ -684,6 +688,17 @@ def _write_templates(templates_dir: Path) -> None:
             "| test_id | obligation_id | evidence_strength | primary_actor_role | executed_actor_roles | ordinary_path_observed | execution_segment_id | test_title_or_step | acceptance_url | api_health_url | api_health_identity | business_api_requests | mocked_routes | evidence_path | evidence_sha256 | probe_artifact_path | probe_artifact_sha256 |\n"
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
         ),
+        "executed-behavior-evidence.md": (
+            "# Executed Behavior Evidence\n\n"
+            "- feature_slug:\n"
+            "- artifact_version:\n"
+            "- generated_at:\n\n"
+            "| test_id | obligation_id | command | exit_code | execution_segment_id | test_title_or_step | semantic_assertions | evidence_path | evidence_sha256 | trace_path | trace_path_sha256 | optional_output_paths |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n\n"
+            "Use this template for non-UI CLI/API/service execution evidence. "
+            "Do not add browser-only fields such as screenshots, acceptance_url, "
+            "browser evidence_strength, network probes, mocked_routes, or probe_artifact_path.\n"
+        ),
         "closure-validator-result.md": (
             "# Closure Validator Result\n\n"
             "- status: not_run\n"
@@ -737,7 +752,7 @@ def _write_templates(templates_dir: Path) -> None:
         (templates_dir / filename).write_text(content, encoding="utf-8")
 
 
-def _skill_markdown() -> str:
+def _base_skill_markdown() -> str:
     return (
         "---\n"
         f"name: {PLUGIN_NAME}\n"
@@ -1079,7 +1094,9 @@ def _skill_markdown() -> str:
         "Agent 只能细化标题、描述、验证说明和更窄绑定，不能合并、删除或转移 E2E。"
         "派生后回写 coverage `task` 列，并把 `task_queue_hash` 纳入 test_coverage 评审和确认。"
         "当前 TASK 必须先通过本切片 `record_task_executed_evidence()` 和原型一致性才能完成。"
-        "全部切片通过后，`record_executed_browser_evidence()` 只接受切片证据并集加回归。"
+        "全部切片通过后，UI 交付的 `record_executed_browser_evidence()` 和 non-UI 交付的 "
+        "`record_executed_behavior_evidence()` 只接受切片证据并集加回归；non-UI 行为证据绑定真实 "
+        "`evidence_path` 和 `trace_path` 文件 hash，不使用 browser-only probe 或 strength 字段。"
         "新 delivery 强制生效；已确认 `test_coverage_plan` 的活跃 delivery 保持 grandfathered，"
         "直到测试覆盖被重开。\n\n"
         "V1.0.30 起，执行期 `test_implementation` 和 `ui_conformance` multi-agent review "
@@ -1169,6 +1186,102 @@ def _skill_markdown() -> str:
         "检查 Open Spec 或原型时必须按当前 feature slug 匹配。旧版本 "
         "`docs/open-spec/`、旧 prototype、聊天总结、`progress.md` 都不能替代当前 feature gate evidence。\n"
     )
+
+
+def _write_production_templates(directory: Path) -> None:
+    from product_delivery_agent.production_profiles import ROLE_IDS, STAGES, get_production_role_card, get_stage_profile
+    (directory / "production-role-catalog.json").write_text(json.dumps([get_production_role_card(role) for role in ROLE_IDS], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (directory / "production-stage-profiles.json").write_text(json.dumps({branch: [get_stage_profile(stage, branch) for stage in STAGES] for branch in ("ui", "non_ui")}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (directory / "team-production-workflow.md").write_text(_team_workflow_markdown(), encoding="utf-8")
+
+
+def _skill_markdown() -> str:
+    text = _base_skill_markdown()
+    text = text.replace("`abandon` 和 `close`。", "`abandon`、`close` 和 `set_production_mode`。", 1)
+    text = text.replace("control.py 仍然只接受 v1 严格 JSON，不做任何改动。", "control.py 只接受 v1 严格 JSON，团队参数也必须通过其校验。", 1)
+    marker = "| `status` |"
+    rows = ('| `start <slug> team "<request>"` | start JSON 增加 `production_mode_if_created=team`；评审模式仍为 `pending_selection`。 |\n'
+            '| `start <slug> team multi-agent "<request>"` | 同时设置 `production_mode_if_created=team` 和 `review_mode_if_created=spawned_subagents_authorized`。 |\n'
+            '| `start <slug> team role-play "<request>"` | 生产仍使用真实成员；仅评审显式降级为 `role_simulation_allowed`。 |\n')
+    text = text.replace(marker, rows + marker, 1)
+    return text + "\n" + _team_workflow_markdown() + "\n" + _progress_map_markdown()
+
+
+def _progress_map_markdown() -> str:
+    return """## V1.2 可开关的产品交付地图
+
+地图默认关闭，适用 team/coordinator 和 UI/non-UI。地图只生成静态 HTML，使用用户已有 HTTP 服务；禁止为地图启动 HTTP 服务、端口或后台进程。
+
+以下简写交给 `scripts/waygate-map.py --project-root <repo>`（不是 lifecycle control JSON）：
+
+| 简写 | 脚本参数与行为 |
+| --- | --- |
+| `map` | 无子命令；显示状态，开启时重新生成 HTML。 |
+| `map on` / `map off` | 先只读 inspect 获取当前 delivery ID，再传 `on/off --delivery-id <id>`；竞态切换必须拒绝，不能猜测新 ID。 |
+| `map default on` / `map default off` | `default on/off`；只影响以后创建的交付，当前交付保持原值。 |
+| `map export` | `export`；开启时生成独立离线快照，关闭时提示先开启。 |
+
+开关存储独立于 canonical state。恢复沿用该交付选择，不能重新应用项目默认值；旧 delivery 无配置保持关闭。开启不改变 Goal、TASK、评审或确认。关闭冻结已有页面并停止刷新，历史快照保留。
+
+实时入口 `.product-delivery/maps/index.html` 每 5 秒刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
+
+### 地图开启时的角色交接
+
+主线程检查 `progress_map.enabled`。产品专家补充目标、成功标准、能力和版本边界；架构专家补充组件、接口与依赖；测试设计专家把已有 scenario/obligation 与 runtime TASK 关联；生产专家解释实现细化；评审问题和已批准变更必须引用真实依据。专家只交付关联建议，主线程通过 `record_progress_map_plan(plan, expected_revision=...)` 登记，不能由成员改写地图开关或权威进度。
+
+完整 v1 计划字段：`schema_version/delivery_id/title/objective/success_criteria/current_version/versions/goals/components/capabilities/edges/task_bindings/changes/sources`。节点有稳定 id/title；组件有 goal_ids；能力有 goal_ids/component_ids/version_ids，可绑定 scenario_ids/obligation_ids；接口有 from/to/kind(dependency|interface)/label。来源必须为 `{path,sha256}`，从真实字节计算。TASK 关联为 `{delivery_id,task_id,planned_task_hash,capability_ids}`，只接受当前交付和现有任务哈希。不得按文件名或关键词推断目标已实现。
+
+变更 kind 为 planned/implementation_detail/review_gap/approved_change/unexplained，包含 id/title/reason/impact/owner/next_action/sources，可用 affected_ids 精确关联差异。批准引用 `approval={target,artifact_hash}` 必须匹配现有当前确认，不能将成员自报 approved 当作批准。记录计划修订可使用 Python facade 或 `record - --expected-revision N` 从 stdin 读取 JSON。
+
+地图是解释层，不是审批入口。不关联或不确定时显示未知，不新增硬门禁；范围或测试覆盖语义变化沿用既有确认规则。展示生产完成、整合、验证、评审、交付分别来自各自的 canonical 证据。中途补建无法还原原始历史时保留 history_incomplete，不得伪造初始计划。关闭时不要求任何额外地图产物。
+"""
+
+
+def _map_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""Generate optional static progress maps using the packaged runtime."""\n'
+        "from pathlib import Path\nimport sys\n"
+        "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'runtime'))\n"
+        "from product_delivery_agent.progress_map import run_map_cli\n"
+        "if __name__ == '__main__':\n    raise SystemExit(run_map_cli())\n"
+    )
+
+
+def _team_workflow_markdown() -> str:
+    return """## V1.2 Team Production
+
+只有当前 delivery 的 `production_policy.mode=team` 才允许派发生产专家；`multi-agent` 本身只授权评审。新 start 可设 `production_mode_if_created=team`，默认 coordinator。恢复始终沿用原策略。显式切换使用严格 JSON `{"schema_version":"v1","action":"set_production_mode","delivery_id":"<current>","mode":"team"}`，仅同版安全阶段边界可用；旧 active delivery 不迁移。
+
+使用当前插件 runtime 的 ProductDeliveryWorkflow；主线程独占全部下述 API 和 Host Goal。成员不得调用这些 API。复用既有 input enrichment、product_baseline、test_coverage_plan 确认，不新增团队审批。
+
+### 生产步骤
+
+1. 从 `production_profiles.get_stage_profile(stage, project_type)` 和 `get_production_role_card(role_id)` 获取角色方法；完整目录在 `templates/production-role-catalog.json`。六阶段依次为 product_definition、architecture_version_planning、open_spec_product_surface、test_design、implementation_execution、delivery_preparation。产品基线确认在产品表面 scenario review 后；详细测试设计在该确认后。实现期只能绑定当前权威 TASK。
+2. 主线程准备输入引用 `{logical_input:{ref,sha256}}` 和工作包 `{work_package_id,role_ids,depends_on,allowed_write_paths}`。路径必须逐文件明确；需要的新文件也必须列出。调用 `prepare_team_run(stage, work_packages, input_refs=..., task_id=..., condition_flags=...)`，可用 implementation_roles 裁剪 frontend/backend/test_automation；integration 仍必需。条件角色不能突破当前阶段权限。
+3. 读取 run.work_packages 内任务，只把该任务、角色方法、输入及分配目录交给真实子 Agent。不得 fork 完整历史或注入评审预设结论。宿主创建 Agent 后，用实际返回身份记录 `dispatched` 事件：event_id/type/work_package_id/agent_id/spawn_source/attempt。以 API 返回的 staging_root 为唯一工作目录。一次至多两个 running 成员，依赖必须已整合，同文件任务串行。
+4. 成员编辑任务副本并返回 ProductionResult：task_hash/input_snapshot_hash/role_ids/status/artifacts/changes/check_records/completion_evidence/risks/blockers/unresolved_questions/handoff。artifacts 的 path 相对 staging_root；changes 包含 path、operation、base_sha256、result_sha256、staged_path。不得编造哈希，读取真实字节计算。结果为 ready_for_integration、needs_input、needs_rework 或 failed，绝不能把提交称作评审通过。
+5. 主线程使用 `record_team_events(run_id, events, expected_revision=...)` 登记 result，事件带真实 agent_id 和 attempt。调用 `integrate_team_run(run_id, expected_revision=...)` 合并已接受结果。下游 dispatch 绑定已整合的依赖字节及新 task_hash。结果工件被保存到 owner 管理的 accepted 目录，验证实际文件与当前版本。
+6. 主线程通过既有 API 登记场景、原型、测试计划、TASK 执行证据等；运行真实集成验证。`finalize_team_run` 只检查阶段出口，不替代产品确认、TASK completion、Host Goal 或 closure。
+
+non-UI 交付完成真实 CLI/API/service 旅程后，必须调用 `ProductDeliveryWorkflow.record_executed_behavior_evidence(records)` 写入 `executed_behavior_evidence`；该入口绑定 planned obligations、命令退出码、`evidence_path` 与 `trace_path` 的真实文件 hash，以及后续 `test_implementation` review。行为证据不得使用 browser-only 的 screenshot、acceptance_url、browser evidence_strength、network probe、mocked_routes 或 probe_artifact_path 字段。只写 TASK slice evidence 不能解除 non-UI closure blocker。
+
+### 独立评审步骤
+
+团队在既有五类 gate 使用 V1.1 评审契约。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，主线程登记 `review_started`（review_type、两个实际 reviewer_agent_ids）。只读准备角色任务，冻结期间禁止整合生产补丁或重写 canonical 生产工件。
+
+每位 reviewer 每阶段返回后，登记 `review_member`：review_type、agent_id、phase（independent/challenge/revision）以及 artifact `{ref,sha256}`。同阶段全员返回后才能进入下一阶段。原始意见须保存为真实工件；不得用无证据的完成标记补屏障。
+
+所有屏障完成后，将完整 V1.1 structured review 交给 `record_multi_agent_review`，通过后解除该 gate 的锁。需要修复时，用 `review_rejected` 记录 reason 和 work_package_ids，等待所有评审批次结清后再派发修复。修复使用新 attempt，新的输入或范围变化走既有变更流程。产品范围、测试义务及确定性门禁不能被多数意见豁免。
+
+### 失败与恢复
+
+每工作包默认1800秒。failed/timeout 必须有原因，timeout 由实际 deadline 判定；retry 最多一次，revise 最多一次；暂停后旧 attempt 结果拒绝。新输入需要重建快照，不能扩大当前任务权限。取消 run 前必须先由宿主停止成员并通过 failed 事件收束运行身份。不得无限重开相同失败输入。
+
+status/inspect 查看进度；inspect_team_run 为只读。合并回执丢失时使用原 run_id/revision 重试，不能手改 state、删除 intent 或还原整份状态。未完成 merge intent 必须先恢复，不能通过取消、暂停或换模式丢弃。外部修改造成冲突时保留现有字节并报告。暂停时宿主需终止或中断实际成员；runtime 使旧结果失效，但不声称可以瞬时终止宿主进程。
+
+角色与目录限制是契约及接纳检查，保护等级为 shared_fs，不是 OS 沙箱。用量由宿主实际提供；未提供时为 unavailable。新生产模式不改变既有模型选择、不复活已退役的模型编排接口，不宣称完整 PanelRun 已实现。
+"""
 
 
 def _required_skills_checklist() -> str:

@@ -942,6 +942,55 @@ def slice_browser_evidence(project_root: Path, obligation: dict, *, segment_id: 
     }
 
 
+def slice_behavior_evidence(project_root: Path, obligation: dict, *, segment_id: str) -> dict:
+    identity = segment_id.lower().replace(" ", "-")
+    evidence_path = (
+        project_root
+        / ".product-delivery"
+        / "artifacts"
+        / f"behavior-e2e-{identity}.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "semantic_assertions": list(
+                    obligation.get("semantic_assertions")
+                    or ["behavior completes successfully"]
+                ),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    trace_path = (
+        project_root
+        / ".product-delivery"
+        / "artifacts"
+        / f"behavior-e2e-{identity}.log"
+    )
+    trace_path.write_text(
+        f"segment={segment_id}\nexit_code=0\n",
+        encoding="utf-8",
+    )
+    return {
+        "test_id": obligation["test_id"],
+        "obligation_id": obligation["obligation_id"],
+        "command": "python3 -m unittest tests.behavior",
+        "exit_code": 0,
+        "semantic_assertions": list(
+            obligation.get("semantic_assertions")
+            or ["behavior completes successfully"]
+        ),
+        "evidence_path": str(evidence_path.relative_to(project_root)),
+        "trace_path": str(trace_path.relative_to(project_root)),
+        "execution_segment_id": segment_id,
+        "test_title_or_step": f"{obligation['obligation_id']} {obligation['test_id']}",
+    }
+
+
 def record_passing_task_slice_evidence(workflow, project_root: Path, task_id: str) -> dict:
     reconcile_host_goal(workflow)
     state = workflow.status()
@@ -954,14 +1003,24 @@ def record_passing_task_slice_evidence(workflow, project_root: Path, task_id: st
         item["obligation_id"]: item
         for item in (state.get("planned_e2e_obligations") or {}).get("obligations", [])
     }
-    records = [
-        slice_browser_evidence(
-            project_root,
-            obligations[obligation_id],
-            segment_id=f"{task_id}-{obligation_id}",
-        )
-        for obligation_id in task.get("obligation_ids") or []
-    ]
+    if state.get("project_type") == "ui":
+        records = [
+            slice_browser_evidence(
+                project_root,
+                obligations[obligation_id],
+                segment_id=f"{task_id}-{obligation_id}",
+            )
+            for obligation_id in task.get("obligation_ids") or []
+        ]
+    else:
+        records = [
+            slice_behavior_evidence(
+                project_root,
+                obligations[obligation_id],
+                segment_id=f"{task_id}-{obligation_id}",
+            )
+            for obligation_id in task.get("obligation_ids") or []
+        ]
     return workflow.record_task_executed_evidence(task_id, records)
 
 

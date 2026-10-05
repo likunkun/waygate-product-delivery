@@ -15,6 +15,7 @@ from product_delivery_agent.artifact_store import (
     validate_current_artifact_identity,
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
+from product_delivery_agent.team_orchestration import TeamError
 
 CONTROL_SCHEMA_VERSION = "v1"
 ABANDON_TOKEN_TTL_MINUTES = 30
@@ -37,6 +38,7 @@ ACTIONS = frozenset(
         "abandon",
         "close",
         "confirm_input_enrichment",
+        "set_production_mode",
     }
 )
 START_MODES = frozenset({"resume_or_create", "resume_only", "create_only"})
@@ -82,11 +84,14 @@ def validate_request(raw: dict[str, Any]) -> dict[str, Any]:
                 "feature_slug",
                 "start_mode",
                 "review_mode_if_created",
+                "production_mode_if_created",
                 "expected_delivery_id",
                 "idempotency_key",
                 "user_request",
             }
         )
+    elif action == "set_production_mode":
+        allowed.update({"delivery_id", "mode"})
     elif action in {"pause", "resume", "prepare_abandon", "abandon", "close"}:
         allowed.add("delivery_id")
     elif action == "confirm_input_enrichment":
@@ -130,11 +135,21 @@ def validate_request(raw: dict[str, Any]) -> dict[str, Any]:
                 f"{sorted(REVIEW_MODES_IF_CREATED)}"
             )
         result["review_mode_if_created"] = review_mode
+        production_mode = raw.get("production_mode_if_created", "coordinator")
+        if production_mode not in ("coordinator", "team"):
+            raise ControlError("production_mode_if_created must be coordinator or team")
+        result["production_mode_if_created"] = production_mode
         for field in ("expected_delivery_id", "idempotency_key"):
             if raw.get(field) is not None:
                 result[field] = _required_string(raw[field], field)
         if raw.get("user_request") is not None:
             result["user_request"] = _required_string(raw["user_request"], "user_request")
+
+    if action == "set_production_mode":
+        result["delivery_id"] = _required_string(raw.get("delivery_id"), "delivery_id")
+        if raw.get("mode") not in ("coordinator", "team"):
+            raise ControlError("mode must be coordinator or team")
+        result["mode"] = raw["mode"]
 
     if action == "resume":
         result["delivery_id"] = _required_string(raw.get("delivery_id"), "delivery_id")
@@ -201,6 +216,8 @@ def _response(
         "feature_slug": feature_slug,
         "delivery_id": delivery_id,
         "created_new_delivery": created_new_delivery,
+        "production_mode": (state.get("production_policy") or {}).get("mode", "coordinator"),
+        "team_runs": state.get("team_runs", {}),
         "current_stage": state.get("stage"),
         "next_gate": state.get("next_gate"),
         "current_root": current_root,
@@ -294,6 +311,7 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
     workflow = ProductDeliveryWorkflow(project_root)
 
     if action == "inspect":
+        from product_delivery_agent.progress_map import inspect_progress_map
         inspection = workflow.inspect_startup_request(
             feature_slug=validated.get("feature_slug")
         )
@@ -304,6 +322,8 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
             "action": "inspect",
             "result": "reported",
             "startup_action": inspection["action"],
+            "production_mode": (state.get("production_policy") or {}).get("mode", "coordinator"),
+            "team_runs": state.get("team_runs", {}),
             "current_feature_slug": inspection.get("current_feature_slug"),
             "current_delivery_id": inspection.get("current_delivery_id"),
             "review_authorization_reusable": inspection.get(
@@ -317,15 +337,18 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
             "current_stage": state.get("stage"),
             "next_gate": state.get("next_gate"),
             "warnings": [],
+            "progress_map": inspect_progress_map(project_root),
         }
 
     if action == "status":
+        from product_delivery_agent.progress_map import inspect_progress_map
         state = load_state(project_root)
         return _response(
             "status",
             "reported",
             state,
             warnings=validate_current_artifact_identity(project_root, state),
+            extra={"progress_map": inspect_progress_map(project_root)},
         )
 
     if action == "confirm_input_enrichment":
@@ -350,6 +373,13 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
         raise ControlError("no current delivery", exit_code=EXIT_IDENTITY_CONFLICT)
     if validated.get("delivery_id"):
         _assert_target_delivery(state, validated["delivery_id"])
+
+    if action == "set_production_mode":
+        workflow.inspect_production_mode_change(validated["mode"], delivery_id=validated["delivery_id"])
+        if dry_run:
+            return _response(action, "dry_run", state)
+        changed = workflow.set_production_mode(validated["mode"], delivery_id=validated["delivery_id"])
+        return _response(action, "production_mode_changed", changed)
 
     if action == "pause":
         if dry_run:
@@ -468,6 +498,7 @@ def _dispatch_start(
         feature_slug=feature_slug,
         user_request=request.get("user_request"),
         multi_agent_mode=runtime_mode,
+        production_mode_if_created=request["production_mode_if_created"],
     )
     result = (
         "input_enrichment_required"
@@ -520,7 +551,7 @@ def run_control_cli(argv: list[str] | None = None) -> int:
     except ControlError as exc:
         sys.stderr.write(f"{exc}\n")
         return exc.exit_code
-    except WorkflowError as exc:
+    except (WorkflowError, TeamError) as exc:
         sys.stderr.write(f"gate blocked: {exc}\n")
         return EXIT_GATE_BLOCKED
     except Exception as exc:  # pragma: no cover - final CLI safety net

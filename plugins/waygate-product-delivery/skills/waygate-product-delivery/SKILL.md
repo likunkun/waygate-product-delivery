@@ -5,13 +5,13 @@ description: "Codex-native product delivery workflow with shorthand commands for
 
 # Product Delivery Agent
 
-默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 `$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 `scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。支持 `inspect`、`status`、`start`、`confirm_input_enrichment`、`pause`、`resume`、`prepare_abandon`、`abandon` 和 `close`。`review_mode_if_created=pending_selection` 会进入 `multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。
+默认休眠，并且禁止自然语言隐式触发生命周期写操作。生命周期控制必须显式调用 `$waygate-product-delivery`，并提供一个严格 JSON 对象。Skill 必须将 JSON 原样交给 `scripts/waygate-control.py` 校验；非 JSON、未知字段、缺失字段或额外操作描述一律拒绝。支持 `inspect`、`status`、`start`、`confirm_input_enrichment`、`pause`、`resume`、`prepare_abandon`、`abandon`、`close` 和 `set_production_mode`。`review_mode_if_created=pending_selection` 会进入 `multi_agent_mode_selection`。旧 `stop()` 已退役，不得根据聊天中出现的关键词执行状态变更。
 
 示例：`$waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug":"v0-5-5-flow-preview","user_request":"增加逐页建课能力","start_mode":"resume_or_create","review_mode_if_created":"spawned_subagents_authorized"}`。
 
 ## Shorthand Commands
 
-V1.0.32 起，`$waygate-product-delivery` 支持简写命令。Codex 必须在内部将简写展开为严格 JSON 后再传给 `scripts/waygate-control.py`；control.py 仍然只接受 v1 严格 JSON，不做任何改动。
+V1.0.32 起，`$waygate-product-delivery` 支持简写命令。Codex 必须在内部将简写展开为严格 JSON 后再传给 `scripts/waygate-control.py`；control.py 只接受 v1 严格 JSON，团队参数也必须通过其校验。
 
 **识别规则：**
 - 如果 `$waygate-product-delivery` 后面跟 `{...}`（合法 JSON 对象），则原样传给 control.py（现有行为不变）。
@@ -26,6 +26,9 @@ V1.0.32 起，`$waygate-product-delivery` 支持简写命令。Codex 必须在�
 | `start <slug> "<request>"` | 同上，并加入 `"user_request":"<request>"`。 |
 | `start <slug> multi-agent "<request>"` | 同上，`review_mode_if_created` 为 `"spawned_subagents_authorized"`，并加入 `user_request`。 |
 | `start <slug> role-play "<request>"` | 同上，`review_mode_if_created` 为 `"role_simulation_allowed"`，并加入 `user_request`。 |
+| `start <slug> team "<request>"` | start JSON 增加 `production_mode_if_created=team`；评审模式仍为 `pending_selection`。 |
+| `start <slug> team multi-agent "<request>"` | 同时设置 `production_mode_if_created=team` 和 `review_mode_if_created=spawned_subagents_authorized`。 |
+| `start <slug> team role-play "<request>"` | 生产仍使用真实成员；仅评审显式降级为 `role_simulation_allowed`。 |
 | `status` | `{"schema_version":"v1","action":"status"}` |
 | `inspect` | `{"schema_version":"v1","action":"inspect"}` |
 | `inspect <slug>` | `{"schema_version":"v1","action":"inspect","feature_slug":"<slug>"}` |
@@ -155,7 +158,7 @@ V1.0.42 起，新 UI delivery 用 `prepare_ui_visual_loop()` / `record_ui_visual
 
 产品域、视觉阈值、mask 或 TASK binding 变化必须让相关 TASK、conformance evidence 和实现授权 stale；仅 `review_annotation_set` 变化不影响 implementation baseline。新 UI delivery 强制执行上述规则；已确认 product baseline 的 active UI delivery 保持 grandfathered，除非原型被重开，重开后必须升级到 V1.0.28 门禁。最终 closure 仍需 full-stack Browser E2E、全量 production conformance 和独立 `ui_conformance` review。
 
-V1.0.29 起，权威 TASK 队列由 runtime 从 planned E2E obligations 按 Journey 派生。默认一个 Journey 一个 TASK；超过 action/item/surface/happy-path 阈值必须再拆。不允许独立脚手架 TASK。第一个 Journey TASK 只吸收最小壳，后续 Journey 复用。UI obligation 必须声明 `surface_ids`；TASK bindings 只等于其 obligation 并集。Agent 只能细化标题、描述、验证说明和更窄绑定，不能合并、删除或转移 E2E。派生后回写 coverage `task` 列，并把 `task_queue_hash` 纳入 test_coverage 评审和确认。当前 TASK 必须先通过本切片 `record_task_executed_evidence()` 和原型一致性才能完成。全部切片通过后，`record_executed_browser_evidence()` 只接受切片证据并集加回归。新 delivery 强制生效；已确认 `test_coverage_plan` 的活跃 delivery 保持 grandfathered，直到测试覆盖被重开。
+V1.0.29 起，权威 TASK 队列由 runtime 从 planned E2E obligations 按 Journey 派生。默认一个 Journey 一个 TASK；超过 action/item/surface/happy-path 阈值必须再拆。不允许独立脚手架 TASK。第一个 Journey TASK 只吸收最小壳，后续 Journey 复用。UI obligation 必须声明 `surface_ids`；TASK bindings 只等于其 obligation 并集。Agent 只能细化标题、描述、验证说明和更窄绑定，不能合并、删除或转移 E2E。派生后回写 coverage `task` 列，并把 `task_queue_hash` 纳入 test_coverage 评审和确认。当前 TASK 必须先通过本切片 `record_task_executed_evidence()` 和原型一致性才能完成。全部切片通过后，UI 交付的 `record_executed_browser_evidence()` 和 non-UI 交付的 `record_executed_behavior_evidence()` 只接受切片证据并集加回归；non-UI 行为证据绑定真实 `evidence_path` 和 `trace_path` 文件 hash，不使用 browser-only probe 或 strength 字段。新 delivery 强制生效；已确认 `test_coverage_plan` 的活跃 delivery 保持 grandfathered，直到测试覆盖被重开。
 
 V1.0.30 起，执行期 `test_implementation` 和 `ui_conformance` multi-agent review 必须实行批次屏障：同轮 2–3 个评审者基于同一输入快照独立完成 positions、cross challenges 和 revisions，全部评审者返回前不得修改评审对象；汇总者先去重并冻结完整问题清单，再批量修复本轮全部已接受问题，完成后只做一次统一复验。评审者失败必须重试、替换或记录 `blocked_with_reason`，不得收到一个问题就修改并重启评审。UI TASK 像素比较仍以关键区域 2% 和完整页面 5% 为自动通过目标。首次纯像素失败后必须使用 `superpowers:systematic-debugging` 连续完成两轮真实修复复验；相同证据、inconclusive 环境或非像素失败不计数。两轮仍失败才创建稳定用户 decision 并主动询问；用户也可提前主动裁决。只有像素差异可调用 `record_task_visual_conformance_adjudication()`，结构、语义、geometry、交互和证据失败不得豁免。接受的差异必须在最终 `ui_conformance.accepted_visual_deviations` 中逐项引用。
 
@@ -169,7 +172,7 @@ V1.0.34 起，高保真产品原型只能包含真实产品内容。新建或重
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.1.0`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.2.0`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 
@@ -186,3 +189,63 @@ V1.0.18 起，如果当前 authorized launch package 与旧 `delivery_goal` 的 
 ## Current Feature Evidence
 
 检查 Open Spec 或原型时必须按当前 feature slug 匹配。旧版本 `docs/open-spec/`、旧 prototype、聊天总结、`progress.md` 都不能替代当前 feature gate evidence。
+
+## V1.2 Team Production
+
+只有当前 delivery 的 `production_policy.mode=team` 才允许派发生产专家；`multi-agent` 本身只授权评审。新 start 可设 `production_mode_if_created=team`，默认 coordinator。恢复始终沿用原策略。显式切换使用严格 JSON `{"schema_version":"v1","action":"set_production_mode","delivery_id":"<current>","mode":"team"}`，仅同版安全阶段边界可用；旧 active delivery 不迁移。
+
+使用当前插件 runtime 的 ProductDeliveryWorkflow；主线程独占全部下述 API 和 Host Goal。成员不得调用这些 API。复用既有 input enrichment、product_baseline、test_coverage_plan 确认，不新增团队审批。
+
+### 生产步骤
+
+1. 从 `production_profiles.get_stage_profile(stage, project_type)` 和 `get_production_role_card(role_id)` 获取角色方法；完整目录在 `templates/production-role-catalog.json`。六阶段依次为 product_definition、architecture_version_planning、open_spec_product_surface、test_design、implementation_execution、delivery_preparation。产品基线确认在产品表面 scenario review 后；详细测试设计在该确认后。实现期只能绑定当前权威 TASK。
+2. 主线程准备输入引用 `{logical_input:{ref,sha256}}` 和工作包 `{work_package_id,role_ids,depends_on,allowed_write_paths}`。路径必须逐文件明确；需要的新文件也必须列出。调用 `prepare_team_run(stage, work_packages, input_refs=..., task_id=..., condition_flags=...)`，可用 implementation_roles 裁剪 frontend/backend/test_automation；integration 仍必需。条件角色不能突破当前阶段权限。
+3. 读取 run.work_packages 内任务，只把该任务、角色方法、输入及分配目录交给真实子 Agent。不得 fork 完整历史或注入评审预设结论。宿主创建 Agent 后，用实际返回身份记录 `dispatched` 事件：event_id/type/work_package_id/agent_id/spawn_source/attempt。以 API 返回的 staging_root 为唯一工作目录。一次至多两个 running 成员，依赖必须已整合，同文件任务串行。
+4. 成员编辑任务副本并返回 ProductionResult：task_hash/input_snapshot_hash/role_ids/status/artifacts/changes/check_records/completion_evidence/risks/blockers/unresolved_questions/handoff。artifacts 的 path 相对 staging_root；changes 包含 path、operation、base_sha256、result_sha256、staged_path。不得编造哈希，读取真实字节计算。结果为 ready_for_integration、needs_input、needs_rework 或 failed，绝不能把提交称作评审通过。
+5. 主线程使用 `record_team_events(run_id, events, expected_revision=...)` 登记 result，事件带真实 agent_id 和 attempt。调用 `integrate_team_run(run_id, expected_revision=...)` 合并已接受结果。下游 dispatch 绑定已整合的依赖字节及新 task_hash。结果工件被保存到 owner 管理的 accepted 目录，验证实际文件与当前版本。
+6. 主线程通过既有 API 登记场景、原型、测试计划、TASK 执行证据等；运行真实集成验证。`finalize_team_run` 只检查阶段出口，不替代产品确认、TASK completion、Host Goal 或 closure。
+
+non-UI 交付完成真实 CLI/API/service 旅程后，必须调用 `ProductDeliveryWorkflow.record_executed_behavior_evidence(records)` 写入 `executed_behavior_evidence`；该入口绑定 planned obligations、命令退出码、`evidence_path` 与 `trace_path` 的真实文件 hash，以及后续 `test_implementation` review。行为证据不得使用 browser-only 的 screenshot、acceptance_url、browser evidence_strength、network probe、mocked_routes 或 probe_artifact_path 字段。只写 TASK slice evidence 不能解除 non-UI closure blocker。
+
+### 独立评审步骤
+
+团队在既有五类 gate 使用 V1.1 评审契约。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，主线程登记 `review_started`（review_type、两个实际 reviewer_agent_ids）。只读准备角色任务，冻结期间禁止整合生产补丁或重写 canonical 生产工件。
+
+每位 reviewer 每阶段返回后，登记 `review_member`：review_type、agent_id、phase（independent/challenge/revision）以及 artifact `{ref,sha256}`。同阶段全员返回后才能进入下一阶段。原始意见须保存为真实工件；不得用无证据的完成标记补屏障。
+
+所有屏障完成后，将完整 V1.1 structured review 交给 `record_multi_agent_review`，通过后解除该 gate 的锁。需要修复时，用 `review_rejected` 记录 reason 和 work_package_ids，等待所有评审批次结清后再派发修复。修复使用新 attempt，新的输入或范围变化走既有变更流程。产品范围、测试义务及确定性门禁不能被多数意见豁免。
+
+### 失败与恢复
+
+每工作包默认1800秒。failed/timeout 必须有原因，timeout 由实际 deadline 判定；retry 最多一次，revise 最多一次；暂停后旧 attempt 结果拒绝。新输入需要重建快照，不能扩大当前任务权限。取消 run 前必须先由宿主停止成员并通过 failed 事件收束运行身份。不得无限重开相同失败输入。
+
+status/inspect 查看进度；inspect_team_run 为只读。合并回执丢失时使用原 run_id/revision 重试，不能手改 state、删除 intent 或还原整份状态。未完成 merge intent 必须先恢复，不能通过取消、暂停或换模式丢弃。外部修改造成冲突时保留现有字节并报告。暂停时宿主需终止或中断实际成员；runtime 使旧结果失效，但不声称可以瞬时终止宿主进程。
+
+角色与目录限制是契约及接纳检查，保护等级为 shared_fs，不是 OS 沙箱。用量由宿主实际提供；未提供时为 unavailable。新生产模式不改变既有模型选择、不复活已退役的模型编排接口，不宣称完整 PanelRun 已实现。
+
+## V1.2 可开关的产品交付地图
+
+地图默认关闭，适用 team/coordinator 和 UI/non-UI。地图只生成静态 HTML，使用用户已有 HTTP 服务；禁止为地图启动 HTTP 服务、端口或后台进程。
+
+以下简写交给 `scripts/waygate-map.py --project-root <repo>`（不是 lifecycle control JSON）：
+
+| 简写 | 脚本参数与行为 |
+| --- | --- |
+| `map` | 无子命令；显示状态，开启时重新生成 HTML。 |
+| `map on` / `map off` | 先只读 inspect 获取当前 delivery ID，再传 `on/off --delivery-id <id>`；竞态切换必须拒绝，不能猜测新 ID。 |
+| `map default on` / `map default off` | `default on/off`；只影响以后创建的交付，当前交付保持原值。 |
+| `map export` | `export`；开启时生成独立离线快照，关闭时提示先开启。 |
+
+开关存储独立于 canonical state。恢复沿用该交付选择，不能重新应用项目默认值；旧 delivery 无配置保持关闭。开启不改变 Goal、TASK、评审或确认。关闭冻结已有页面并停止刷新，历史快照保留。
+
+实时入口 `.product-delivery/maps/index.html` 每 5 秒刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
+
+### 地图开启时的角色交接
+
+主线程检查 `progress_map.enabled`。产品专家补充目标、成功标准、能力和版本边界；架构专家补充组件、接口与依赖；测试设计专家把已有 scenario/obligation 与 runtime TASK 关联；生产专家解释实现细化；评审问题和已批准变更必须引用真实依据。专家只交付关联建议，主线程通过 `record_progress_map_plan(plan, expected_revision=...)` 登记，不能由成员改写地图开关或权威进度。
+
+完整 v1 计划字段：`schema_version/delivery_id/title/objective/success_criteria/current_version/versions/goals/components/capabilities/edges/task_bindings/changes/sources`。节点有稳定 id/title；组件有 goal_ids；能力有 goal_ids/component_ids/version_ids，可绑定 scenario_ids/obligation_ids；接口有 from/to/kind(dependency|interface)/label。来源必须为 `{path,sha256}`，从真实字节计算。TASK 关联为 `{delivery_id,task_id,planned_task_hash,capability_ids}`，只接受当前交付和现有任务哈希。不得按文件名或关键词推断目标已实现。
+
+变更 kind 为 planned/implementation_detail/review_gap/approved_change/unexplained，包含 id/title/reason/impact/owner/next_action/sources，可用 affected_ids 精确关联差异。批准引用 `approval={target,artifact_hash}` 必须匹配现有当前确认，不能将成员自报 approved 当作批准。记录计划修订可使用 Python facade 或 `record - --expected-revision N` 从 stdin 读取 JSON。
+
+地图是解释层，不是审批入口。不关联或不确定时显示未知，不新增硬门禁；范围或测试覆盖语义变化沿用既有确认规则。展示生产完成、整合、验证、评审、交付分别来自各自的 canonical 证据。中途补建无法还原原始历史时保留 history_incomplete，不得伪造初始计划。关闭时不要求任何额外地图产物。

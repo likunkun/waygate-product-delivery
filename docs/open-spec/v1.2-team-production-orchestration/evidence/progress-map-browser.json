@@ -1,0 +1,17 @@
+{
+  "result": "pass",
+  "transport": "file://",
+  "checks": [
+    "architecture, six stages, SVG interfaces and dependencies",
+    "version filter, current-task focus, evidence and independent milestones",
+    "scenario-to-test obligations, semantic assertions, missing/pending/verified distinction and stale source diagnostics",
+    "remaining gaps, change history, filter/selection/view/scroll persistence",
+    "keyboard navigation and focus",
+    "mobile and tablet layouts without horizontal page overflow",
+    "untrusted HTML remains text in title, objective and map nodes",
+    "disabled maps retain content, history, identity and data time; disabled/snapshot do not refresh",
+    "live file refresh loads new on-disk content every five seconds with cachebuster and retained state"
+  ],
+  "console_errors": [],
+  "network_requests": []
+}

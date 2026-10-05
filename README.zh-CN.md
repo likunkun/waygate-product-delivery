@@ -1,12 +1,12 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.1.0-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.2.0-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
 
-Waygate Product Delivery 是一个面向 Codex 的产品交付插件，用来把一个产品想法推进到产品定义、Open Spec、场景评审、UI 或非 UI 门禁、实现移交，以及正式闭包证据。简写命令：`start <slug> [multi-agent|role-play]`、`status`、`pause`、`resume`、`close`、`abandon`、`inspect`；新建 delivery 会先经过一次输入理解确认。
+Waygate Product Delivery 是一个面向 Codex 的产品交付插件，用来把一个产品想法推进到产品定义、Open Spec、场景评审、UI 或非 UI 门禁、实现移交，以及正式闭包证据。简写命令：`start <slug> [team] [multi-agent|role-play]`、`status`、`pause`、`resume`、`close`、`abandon`、`inspect`；新建 delivery 会先经过一次输入理解确认。
 
 它适合希望“AI 可以写代码，但不能绕过交付流程”的团队：每个关键阶段都要有本地 artifact、用户确认、评审记录、测试义务和 canonical closure validator。
 
@@ -72,6 +72,8 @@ $waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug"
 - `start <slug> "<request>"` — 新建并进入输入理解确认
 - `start <slug> multi-agent "<request>"` — 新建并使用多 Agent 模式
 - `start <slug> role-play "<request>"` — 新建并允许角色扮演模拟
+- `start <slug> team "<request>"` — 新建并启用团队生产，评审模式稍后选择
+- `start <slug> team multi-agent "<request>"` — 新建并启用团队生产和多 Agent 评审
 - `status` — 查看当前交付状态
 - `pause` — 暂停当前交付
 - `resume` — 恢复暂停的交付
@@ -83,6 +85,42 @@ $waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug"
 
 
 新建 delivery 时可使用 `spawned_subagents_authorized` 授权结构化 subagent 评审；只有明确接受降级证据时才使用 `role_simulation_allowed`。同一未完成 feature 再次使用 `resume_or_create` 会恢复原 `delivery_id`。
+
+## 可选的产品交付地图
+
+地图默认关闭，可用于团队模式和单主线程模式。开启后生成产品目标、架构模块、当前工作、剩余缺口和计划变化的交互 HTML，浏览器每 5 秒刷新；使用你已有的 HTTP 服务，不启动额外服务或后台进程。
+
+```text
+$waygate-product-delivery map on
+$waygate-product-delivery map
+$waygate-product-delivery map export
+$waygate-product-delivery map off
+$waygate-product-delivery map default on
+```
+
+`map on/off` 只修改当前交付；`map default on/off` 只影响以后新建的交付，恢复始终沿用原选择。实时入口是 `.product-delivery/maps/index.html`，将此路径交给现有静态 HTTP 服务。`map export` 返回单文件离线快照路径，断网仍可展开节点、筛选和查看变化；外部证据附件不自动嵌入。
+
+首次或中途开启时，主线程结合产品、架构和测试资料登记目标—能力—模块—版本—TASK 关联。资料不足会显示“待补充”，不会按代码量推断完成度。地图区分产出、整合、验证、评审和交付；范围变化继续使用既有确认流程。关闭冻结已有页面，历史快照保留；`status/inspect` 显示开关来源、生成时间和失效信息。
+
+独立命令行使用插件内的 `scripts/waygate-map.py --project-root <项目路径>`；`on/off` 还需 `--delivery-id <当前ID>`。查看状态可用 `inspect`；设置默认值使用 `default on/off`。该入口仅操作展示配置和文件，不修改 Goal、TASK 或确认状态。
+
+数据契约和验收要求见 [地图规范](docs/open-spec/v1.2-team-production-orchestration/11-progress-map.md)。
+
+可直接打开 [五个时点的地图示例](docs/examples/progress-map/index.html)，查看原计划、实现中、评审补漏、批准变更与修复验收的呈现；示例使用明确标注的演示数据。
+
+## V1.2 团队生产操作
+
+```text
+$waygate-product-delivery start reports-v1 team multi-agent "管理员从现有报表入口导出 CSV"
+```
+
+`team` 仅授权生产编排，`multi-agent` 单独授权真实评审。完整 JSON 在 `start` 中加入 `"production_mode_if_created":"team"`；默认 `coordinator`，恢复沿用原策略。仅同版安全边界可用 `set_production_mode` 切换；旧 active delivery 不迁移。
+
+主线程兼任阶段负责人，按六阶段调用十类基础及五类条件专家，同时最多两个工作包运行。实现只在当前 Journey TASK 内分工；成员修改任务副本，主线程核对哈希后合并。评审使用独立成员和固定快照，全部独立意见、质疑与修订返回后再批量派修。生产完成不替代原有确认、TASK、Host Goal 或闭包。
+
+使用 `prepare_team_run`、`inspect_team_run`、`record_team_events`、`integrate_team_run`、`finalize_team_run`；non-UI 的 CLI/API 行为通过 `record_executed_behavior_evidence()` 进入正式证据，UI 使用 `record_executed_browser_evidence()`。完整事件、参数与恢复操作见生成包 `templates/team-production-workflow.md`。目录隔离是 shared_fs 契约，不能宣称 OS 沙箱；宿主负责实际 Agent 创建和终止，未提供用量时记录 unavailable。
+
+角色与规范：[V1.2 Open Spec](docs/open-spec/v1.2-team-production-orchestration/02-specification.md)、[15 张生产角色卡](docs/open-spec/v1.2-team-production-orchestration/09-production-role-cards.md)、[发布演练证据](docs/open-spec/v1.2-team-production-orchestration/10-release-exercise-report.md)。
 
 ## 安装
 
@@ -124,7 +162,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.1.0.tar.gz
+dist/waygate-product-delivery-1.2.0.tar.gz
 ```
 
 ## Codex 使用方式

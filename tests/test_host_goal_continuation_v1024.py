@@ -696,6 +696,10 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                 "source_artifact_path": "inline:test-host-goal-completion",
                 "source_artifact_sha256": closure_hash,
             }
+            state["executed_behavior_evidence"] = {
+                "status": "passed",
+                "records": [],
+            }
             state["closure_validation"] = {
                 "status": "passed",
                 "errors": [],

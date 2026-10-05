@@ -209,7 +209,7 @@ Scope:
 
 ### V1.1 - Review Expert Panel Orchestration
 
-目标版本：**1.1.0**。状态：产品/架构设计已落盘，CR-003 角色卡、任务契约与复合席位整合已实现；完整 PanelRun 编排待实施，未发布。当前发布基线为 1.1.0。
+目标版本：**1.1.0**。状态：角色卡、任务契约与复合席位已发布；完整 PanelRun 自动编排仍待实施。V1.2 复用已发布的契约能力。
 
 目标：把现有多 Agent 评审升级为职责明确、过程可恢复、结论有证据的评审专家团。
 
@@ -238,7 +238,7 @@ Scope:
 
 ### V1.2 - Stage-Based Expert Production Orchestration
 
-目标版本：**1.2.0**。状态：已确定版本方向，仅路线图；详细规范及实现尚未开始。依赖 V1.1 评审专家团。
+目标版本：**1.2.0**。状态：规范、团队运行实现、自动化回归、真实 UI/non-UI 宿主演练、coordinator 对照和 formal closure 演练均已完成。依赖 V1.1 已实现的评审契约，不依赖完整 PanelRun。详见 [V1.2 规范](docs/open-spec/v1.2-team-production-orchestration/02-specification.md) 与 [发布演练证据](docs/open-spec/v1.2-team-production-orchestration/10-release-exercise-report.md)。
 
 目标：把专家角色扩展到各阶段实际产出，让生产成果经过独立评审和既有门禁。
 
@@ -259,6 +259,8 @@ Scope:
 完成标准：各阶段具备可追溯的生产职责和交接契约，独立任务可协作完成，成果接受 V1.1 评审及既有验证，并能度量返工、质量和资源消耗。
 
 ### V1.2.x - Expert Production Patch Line
+
+V1.2 增补：默认关闭的产品交付地图，覆盖产品目标、架构、版本、当前工作、剩余缺口与计划变化。项目默认可被交付设置覆盖；静态 HTML 使用已有 HTTP 服务并每 5 秒刷新，提供离线快照。只读解释权威进度，不新增门禁或管理服务。详见 [地图契约](docs/open-spec/v1.2-team-production-orchestration/11-progress-map.md)。
 
 目标：修复 V1.2 已有生产协作能力的恢复、写入冲突、兼容性及度量问题；不引入新的专家团范式。
 
@@ -311,8 +313,8 @@ Scope:
 
 ## Assumptions
 
-- 当前 V1.1 工作止于已批准的产品、规范、技术架构和存储设计；文档完成不代表功能实施、测试或发布完成。
-- V1.2 当前仅规划版本方向；详细实施计划、测试用例与执行需在后续相应阶段同步，不沿用过期草案自动开工。
+- V1.1 已发布角色契约与复合评审席位；完整 PanelRun 编排仍属后续工作。
+- V1.2 已完成团队模式及可选地图实现与验证；原生团队演练见报告 10，地图增补与最新分发包校验见报告 12。后续版本仍需按阶段更新规范和验收。
 - Codex Goal remains the current supported implementation handoff target.
 - OpenCode support is planned as a future `execution_target=opencode_run` capability.
 - Waygate/controller integration remains read-only unless a later version defines an official import route.

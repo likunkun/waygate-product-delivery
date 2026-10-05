@@ -43,6 +43,7 @@ from product_delivery_agent.confirmation_policy import (
 from product_delivery_agent.coverage_audit import (
     build_prototype_production_conformance,
     build_executed_browser_evidence,
+    build_executed_behavior_evidence,
     build_planned_e2e_obligations,
     build_coverage_audit,
     render_coverage_audit,
@@ -296,8 +297,11 @@ class ProductDeliveryWorkflow:
         user_request: str | None = None,
         allow_review_degradation: bool = False,
         multi_agent_mode: str | None = None,
+        production_mode_if_created: str = "coordinator",
         **deprecated_options: Any,
     ) -> dict[str, Any]:
+        if production_mode_if_created not in {"coordinator", "team"}:
+            raise WorkflowError("unsupported production mode")
         if deprecated_options:
             model_options = {
                 "execution_mode",
@@ -344,17 +348,7 @@ class ProductDeliveryWorkflow:
                 )
             existing_state = self._migrate_current_legacy_layout(existing_state)
             if existing_state.get("paused"):
-                existing_state["paused"] = False
-                existing_state["intervention_enabled"] = True
-                self._set_delivery_lifecycle(
-                    existing_state, "active", intervention_enabled=True
-                )
-                existing_state = append_transition(
-                    existing_state,
-                    "delivery_resumed",
-                    feature_slug=existing_state.get("feature_slug"),
-                    runtime_version=PLUGIN_VERSION,
-                )
+                return self.resume_delivery()
             return write_state(self.project_root, existing_state)
 
         return self._start_fresh_delivery(
@@ -362,7 +356,77 @@ class ProductDeliveryWorkflow:
             user_request=user_request,
             multi_agent_mode=multi_agent_mode,
             previous_state=raw_existing_state or existing_state,
+            production_mode=production_mode_if_created,
         )
+
+    def set_progress_map_mode(self, mode: str, *, scope: str = "delivery", delivery_id: str | None = None) -> dict[str, Any]:
+        from product_delivery_agent.progress_map import set_progress_map_mode
+        return set_progress_map_mode(self.project_root, mode, scope=scope, delivery_id=delivery_id)
+
+    def record_progress_map_plan(self, plan: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
+        from product_delivery_agent.progress_map import record_progress_map_plan
+        return record_progress_map_plan(self.project_root, plan, expected_revision=expected_revision)
+
+    def build_progress_map(self) -> dict[str, Any]:
+        from product_delivery_agent.progress_map import build_progress_map
+        return build_progress_map(self.project_root)
+
+    def export_progress_map(self) -> dict[str, Any]:
+        from product_delivery_agent.progress_map import export_progress_map
+        return export_progress_map(self.project_root)
+
+    def inspect_production_mode_change(self, mode: str, *, delivery_id: str) -> dict[str, Any]:
+        from product_delivery_agent.team_orchestration import mode_change_ready
+        state = self._require_started(allow_pending_authorization=True)
+        mode_change_ready(state, mode, delivery_id)
+        return {"delivery_id": delivery_id, "mode": mode, "status": "allowed"}
+
+    def set_production_mode(self, mode: str, *, delivery_id: str) -> dict[str, Any]:
+        from product_delivery_agent.team_orchestration import mode_change_ready, production_policy
+        from product_delivery_agent.artifact_protocol import _write_state_locked
+        with state_write_lock(self.project_root):
+            state = self._require_started(allow_pending_authorization=True)
+            mode_change_ready(state, mode, delivery_id)
+            if host_goal_required(state):
+                state = consume_authorized_transition(state)
+            state["production_policy"] = production_policy(state, mode)
+            state = append_transition(state, "production_mode_changed", feature_slug=state.get("feature_slug"), runtime_version=PLUGIN_VERSION, metadata={"mode": mode})
+            return _write_state_locked(self.project_root, state)
+
+    def _team_operation(self, operation: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        from product_delivery_agent import team_orchestration as team
+        with state_write_lock(self.project_root):
+            state = self._require_started(allow_pending_authorization=True)
+            team.require_team(state)
+            replay = team.exact_replay(self.project_root, state, operation, args)
+            if replay is not None:
+                return replay
+            if host_goal_required(state):
+                from product_delivery_agent.gatekeeper import implementation_integrity_errors
+                errors = implementation_integrity_errors(state)
+                if errors:
+                    raise team.TeamError("implementation integrity: " + ", ".join(errors))
+                try:
+                    state = consume_authorized_transition(state)
+                except HostGoalError as error:
+                    raise WorkflowError(str(error)) from error
+            return getattr(team, operation)(self.project_root, state, *args, **kwargs)
+
+    def prepare_team_run(self, stage: str, work_packages: list[dict[str, Any]], *, input_refs: dict[str, Any], task_id: str | None = None, condition_flags: list[str] | None = None, implementation_roles: list[str] | None = None) -> dict[str, Any]:
+        return self._team_operation("prepare", stage, work_packages, input_refs, task_id, condition_flags, implementation_roles)
+
+    def inspect_team_run(self, run_id: str) -> dict[str, Any]:
+        from product_delivery_agent.team_orchestration import read_run
+        return read_run(self.project_root, self._state(), run_id)
+
+    def record_team_events(self, run_id: str, events: list[dict[str, Any]], *, expected_revision: int) -> dict[str, Any]:
+        return self._team_operation("events", run_id, events, expected_revision)
+
+    def integrate_team_run(self, run_id: str, *, expected_revision: int) -> dict[str, Any]:
+        return self._team_operation("integrate", run_id, expected_revision)
+
+    def finalize_team_run(self, run_id: str, *, expected_revision: int) -> dict[str, Any]:
+        return self._team_operation("finalize", run_id, expected_revision)
 
     @staticmethod
     def _input_request_sha256(value: str) -> str:
@@ -945,6 +1009,7 @@ class ProductDeliveryWorkflow:
         user_request: str | None = None,
         multi_agent_mode: str | None,
         previous_state: dict[str, Any] | None,
+        production_mode: str = "coordinator",
     ) -> dict[str, Any]:
         if previous_state and previous_state.get("delivery_id"):
             previous_state = self._migrate_current_legacy_layout(previous_state)
@@ -958,6 +1023,11 @@ class ProductDeliveryWorkflow:
         state["activation_source"] = "waygate-product-delivery"
         state["feature_slug"] = feature_slug
         state["host_goal_owner"] = initialize_host_goal_owner(state)
+        from product_delivery_agent.team_orchestration import production_policy
+        state["production_policy"] = production_policy(state, production_mode)
+        state["team_runs"] = {}
+        state["team_review_locks"] = {}
+        state["production_contributors"] = []
         if previous_delivery:
             state["previous_delivery"] = previous_delivery
         state["open_spec_draft_ready"] = False
@@ -1302,8 +1372,9 @@ class ProductDeliveryWorkflow:
     ) -> dict[str, Any]:
         state = self._require_started(
             allow_pending_authorization=True,
-            host_goal_transition=True,
         )
+        from product_delivery_agent.team_orchestration import validate_review_submission
+        validate_review_submission(self.project_root, state, review_type, review)
         previous = (state.get("multi_agent_reviews") or {}).get(review_type) or {}
         if previous.get("role_contract_version") and "role_contract_version" not in review:
             raise ReviewGateError("a bound role contract review cannot downgrade to legacy review")
@@ -1418,6 +1489,11 @@ class ProductDeliveryWorkflow:
             raise ReviewGateError(
                 f"role_simulation review rejected by {policy_mode} policy"
             )
+        if host_goal_required(state):
+            try:
+                state = consume_authorized_transition(state)
+            except HostGoalError as error:
+                raise ReviewGateError(str(error)) from error
         artifact_name = f"multi-agent-{review_type}-review.md"
         review_path = self._write_delivery_artifact(
             state,
@@ -1504,6 +1580,13 @@ class ProductDeliveryWorkflow:
                     ],
                 }
             )
+        team_lock = state.get("team_review_locks", {}).pop(review_type, None)
+        if team_lock:
+            state.setdefault("team_review_history", []).append({"review_type": review_type, "status": "passed", **team_lock})
+            state["multi_agent_reviews"][review_type]["team_run_id"] = team_lock["run_id"]
+            from product_delivery_agent.team_orchestration import accept_review
+            with state_write_lock(self.project_root):
+                accept_review(self.project_root, state, review_type, team_lock)
         self._remove_blockers(
             state,
             f"multi_agent_{review_type}_review",
@@ -1561,6 +1644,10 @@ class ProductDeliveryWorkflow:
             if self._product_baseline_is_confirmed(state) and resume_gate:
                 next_gate = resume_gate
         state["next_gate"] = next_gate
+        if state.get("team_pending_task_repairs") and (state.get("delivery_goal") or {}).get("current_task_cursor"):
+            state["stage"] = "implementation_in_progress"
+            state["status"] = "implementation_in_progress"
+            state["next_gate"] = state["delivery_goal"]["current_task_cursor"]
         return write_state(self.project_root, state)
 
     def record_implementation_launch_authorization(
@@ -2089,7 +2176,13 @@ class ProductDeliveryWorkflow:
             and not host_goal_required(state)
             and current_runtime_status == "verified_waygate"
         ):
-            state = write_state(self.project_root, state)
+            # Status inspection may normalize an old active state, but a
+            # semantically unchanged state must remain byte-stable.  Avoid
+            # rewriting only `updated_at`; callers use status() while
+            # validating failed operations and need no-op reads to be
+            # observationally pure.
+            if lifecycle_state_hash(state) != lifecycle_state_hash(raw_state):
+                state = write_state(self.project_root, state)
         state = dict(state)
         state["runtime_status"] = current_runtime_status
         return state
@@ -2138,56 +2231,42 @@ class ProductDeliveryWorkflow:
         return state
 
     def pause_delivery(self) -> dict[str, Any]:
-        """Pause intervention after a fresh Host Goal reconciliation."""
-        state = self._require_started(
-            allow_pending_authorization=True,
-            host_goal_transition=True,
-            allow_input_enrichment=True,
-        )
-        if state.get("paused"):
-            return state
-        binding = state.get("host_goal_binding") or {}
-        if binding.get("status") == "active":
-            binding["delivery_pause_status"] = "paused_by_user"
-            binding["paused_at"] = self._timestamp_from_state(state)
-            state["host_goal_binding"] = binding
-        state["paused"] = True
-        state["intervention_enabled"] = False
-        self._set_delivery_lifecycle(state, "paused", intervention_enabled=False)
-        state = append_transition(
-            state,
-            "delivery_paused",
-            feature_slug=state.get("feature_slug"),
-            runtime_version=PLUGIN_VERSION,
-        )
-        return write_state(self.project_root, state)
+        """Pause the delivery and its work attempts in one locked transition."""
+        return self._change_delivery_pause(True)
 
     def resume_delivery(self) -> dict[str, Any]:
-        """Resume a paused delivery after a fresh Host Goal reconciliation."""
-        state = self._require_started(
-            allow_pending_authorization=True,
-            host_goal_transition=True,
-            allow_input_enrichment=True,
-        )
-        state = self._migrate_current_legacy_layout(state)
-        if not state.get("paused"):
-            return state
-        binding = state.get("host_goal_binding") or {}
-        binding.pop("delivery_pause_status", None)
-        binding.pop("paused_at", None)
-        if binding:
-            binding["resumed_at"] = self._timestamp_from_state(state)
-            state["host_goal_binding"] = binding
-        state["paused"] = False
-        state["intervention_enabled"] = True
-        self._set_delivery_lifecycle(state, "active", intervention_enabled=True)
-        state = append_transition(
-            state,
-            "delivery_resumed",
-            feature_slug=state.get("feature_slug"),
-            runtime_version=PLUGIN_VERSION,
-        )
-        return write_state(self.project_root, state)
+        """Resume valid accepted work without reviving interrupted attempts."""
+        return self._change_delivery_pause(False)
+
+    def _change_delivery_pause(self, paused: bool) -> dict[str, Any]:
+        from product_delivery_agent.artifact_protocol import _write_state_locked
+        from product_delivery_agent.team_orchestration import pause_runs, resume_runs
+        with state_write_lock(self.project_root):
+            state = self._require_started(allow_pending_authorization=True, allow_input_enrichment=True)
+            if bool(state.get("paused")) == paused:
+                return state
+            if host_goal_required(state):
+                try:
+                    state = consume_authorized_transition(state)
+                except HostGoalError as error:
+                    raise WorkflowError(str(error)) from error
+            if state.get("team_runs"):
+                state = (pause_runs if paused else resume_runs)(self.project_root, state)
+            binding = state.get("host_goal_binding") or {}
+            if paused and binding.get("status") == "active":
+                binding.update(delivery_pause_status="paused_by_user", paused_at=self._timestamp_from_state(state))
+            elif not paused:
+                binding.pop("delivery_pause_status", None)
+                binding.pop("paused_at", None)
+                if binding:
+                    binding["resumed_at"] = self._timestamp_from_state(state)
+            if binding:
+                state["host_goal_binding"] = binding
+            state["paused"] = paused
+            state["intervention_enabled"] = not paused
+            self._set_delivery_lifecycle(state, "paused" if paused else "active", intervention_enabled=not paused)
+            state = append_transition(state, "delivery_paused" if paused else "delivery_resumed", feature_slug=state.get("feature_slug"), runtime_version=PLUGIN_VERSION)
+            return _write_state_locked(self.project_root, state)
 
     def record_pending_abandon_token(self, token_info: dict[str, Any]) -> dict[str, Any]:
         """Store a pending abandon token in state for two-phase confirmation."""
@@ -3377,6 +3456,65 @@ class ProductDeliveryWorkflow:
         )
         self._remove_blockers(state, "executed_browser_evidence")
         state["stage"] = "executed_browser_evidence_passed"
+        state["next_gate"] = "multi_agent_test_implementation_review"
+        return write_state(self.project_root, state)
+
+    def record_executed_behavior_evidence(
+        self,
+        records: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        state = self._require_started(host_goal_transition=True)
+        if state.get("project_type") != "non_ui":
+            raise WorkflowError("executed behavior evidence is only available for non-UI projects")
+        planned = state.get("planned_e2e_obligations", {})
+        if journey_slice_tasks_required(state) and (
+            (state.get("delivery_goal") or {}).get("planned_tasks")
+        ):
+            self._assert_slice_evidence_union(state, records)
+        evidence = build_executed_behavior_evidence(
+            self.project_root,
+            records,
+            planned_obligations=list(planned.get("obligations", [])),
+            exemptions=list(planned.get("exemptions", [])),
+            allow_extra_records=journey_slice_tasks_required(state),
+        )
+
+        evidence_path = self._write_delivery_artifact(
+            state,
+            "executed_behavior_evidence",
+            "executed-behavior-evidence.md",
+            self._render_executed_behavior_evidence(evidence),
+        )
+
+        state["executed_behavior_evidence"] = {
+            **evidence,
+            "artifact_path": "artifacts/executed-behavior-evidence.md",
+        }
+        state = append_transition(
+            state,
+            "executed_behavior_evidence_recorded",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                record["evidence_path"]: record["evidence_sha256"]
+                for record in evidence.get("records", [])
+            },
+            output_artifact_hashes={
+                "artifacts/executed-behavior-evidence.md": self._artifact_hash(
+                    str(evidence_path)
+                )
+            },
+            metadata={
+                "record_count": len(evidence.get("records", [])),
+            },
+        )
+        self._mark_reviews_stale(
+            state,
+            ("test_implementation",),
+            reason="executed_behavior_evidence_changed",
+        )
+        self._remove_blockers(state, "executed_behavior_evidence")
+        state["stage"] = "executed_behavior_evidence_passed"
         state["next_gate"] = "multi_agent_test_implementation_review"
         return write_state(self.project_root, state)
 
@@ -4699,7 +4837,7 @@ class ProductDeliveryWorkflow:
                 )
                 evidence_kind = "browser"
             else:
-                evidence = build_executed_browser_evidence(
+                evidence = build_executed_behavior_evidence(
                     self.project_root,
                     records,
                     planned_obligations=owned,
@@ -4725,7 +4863,11 @@ class ProductDeliveryWorkflow:
             state,
             f"task_slice_evidence_{task_id.lower()}",
             f"task-slice-evidence-{task_id.lower()}.md",
-            self._render_executed_browser_evidence(evidence),
+            (
+                self._render_executed_browser_evidence(evidence)
+                if evidence_kind == "browser"
+                else self._render_executed_behavior_evidence(evidence)
+            ),
         )
         return write_state(self.project_root, state)
 
@@ -4736,6 +4878,11 @@ class ProductDeliveryWorkflow:
         artifact: dict[str, Any],
     ) -> dict[str, Any]:
         state = self._require_started(host_goal_transition=True)
+        if (state.get("production_policy") or {}).get("mode") == "team":
+            from product_delivery_agent.team_orchestration import TeamError, read_run, scope_hash
+            candidates = [read_run(self.project_root, state, run_id) for run_id, r in state.get("team_runs", {}).items() if r.get("task_id") == task_id and r.get("status") == "completed"]
+            if not any(r["scope_hash"] == scope_hash(state) for r in candidates):
+                raise TeamError("completed production run required for current TASK generation")
         self._require_current_prototype_progression(state)
         implementation_baseline, task_conformance = (
             self._assert_current_task_prototype_conformance(state, task_id)
@@ -5682,6 +5829,9 @@ class ProductDeliveryWorkflow:
     ) -> Path:
         """Write canonical delivery evidence and refresh the compatibility view."""
         from product_delivery_agent.artifact_store import write_artifact
+        if state.get("team_review_locks") and not artifact_type.startswith("multi_agent_"):
+            from product_delivery_agent.team_orchestration import TeamError
+            raise TeamError("canonical production artifacts are frozen during team review")
 
         feature_slug = str(state.get("feature_slug") or "_unscoped")
         delivery_id = str(state.get("delivery_id") or "")
@@ -6837,7 +6987,39 @@ class ProductDeliveryWorkflow:
 
     @staticmethod
     def _render_executed_browser_evidence(evidence: dict[str, Any]) -> str:
-        lines = ["# Executed Browser Evidence", "", "Status: Passed", ""]
+        return ProductDeliveryWorkflow._render_executed_evidence(
+            evidence,
+            title="Executed Browser Evidence",
+        )
+
+    @staticmethod
+    def _render_executed_behavior_evidence(evidence: dict[str, Any]) -> str:
+        lines = ["# Executed Behavior Evidence", "", "Status: Passed", ""]
+        for record in evidence["records"]:
+            assertions = "; ".join(record.get("semantic_assertions", []))
+            optional_artifacts = []
+            for path_field in ("stdout_path", "stderr_path", "log_path"):
+                if record.get(path_field):
+                    optional_artifacts.append(
+                        f"{path_field}={record[path_field]} "
+                        f"({record.get(path_field + '_sha256', 'unhashed')})"
+                    )
+            extra = f"; {'; '.join(optional_artifacts)}" if optional_artifacts else ""
+            lines.append(
+                f"- {record['test_id']}: command={record['command']} "
+                f"(exit_code={record['exit_code']}); "
+                f"evidence={record['evidence_path']} "
+                f"({record['evidence_path_sha256']}); "
+                f"trace={record['trace_path']} "
+                f"({record['trace_path_sha256']}); "
+                f"assertions={assertions}{extra}"
+            )
+        lines.append("")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _render_executed_evidence(evidence: dict[str, Any], *, title: str) -> str:
+        lines = [f"# {title}", "", "Status: Passed", ""]
         for record in evidence["records"]:
             lines.append(
                 (

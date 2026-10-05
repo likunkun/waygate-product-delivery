@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+- Adds an optional, default-off product progress map: project defaults, delivery overrides, source-bound architecture/task relationships, advisory plan changes, and separate production/integration/verification/review/delivery milestones.
+- Generates self-contained HTML that refreshes every five seconds on an existing static host, plus offline milestone snapshots. No HTTP service or daemon is added; map failures never roll back canonical workflow transitions.
+- Adds `map on/off`, `map default on/off`, `map export` and map freshness in `status/inspect`, without changing Goal, task, baseline or review authority.
+- Adds explicitly authorized six-stage team production with 15 versioned producer roles, bounded work packages and owner-controlled integration.
+- Separates production authorization from review authorization; same-version safe-boundary switching preserves confirmations and Host Goal ownership.
+- Adds immutable TeamRun revisions, event idempotency, staged output validation, recoverable hash-bound merge intents and pause/resume handling.
+- Freezes review inputs through independent/challenge/revision barriers and excludes producers from independent review.
+- Adds canonical `record_executed_behavior_evidence()` for non-UI CLI/API closure evidence, keeping it separate from UI browser evidence while preserving the same TASK/review/closure authority.
+- Preserves existing TASK evidence and formal closure authority. Full PanelRun orchestration remains outside this release.
+
 ## 1.1.0
 
 - Promotes the V1.1 review expert panel implementation: versioned role cards, structured task/result contracts, evidence-bound validation, and composite reviewer seats.

@@ -168,6 +168,11 @@ def _write_state_locked(
 ) -> dict[str, Any]:
     workspace = Path(project_root) / ARTIFACT_ROOT
 
+    prior_path = workspace / "state.json"
+    prior_delivery_id = None
+    if prior_path.is_file():
+        with prior_path.open(encoding="utf-8") as prior_file:
+            prior_delivery_id = json.load(prior_file).get("delivery_id")
     next_state = normalize_state_protocol(dict(state))
     next_state["updated_at"] = _timestamp()
 
@@ -183,6 +188,16 @@ def _write_state_locked(
         from product_delivery_agent.artifact_store import ensure_delivery_layout
 
         ensure_delivery_layout(project_root, next_state)
+    # A map is a best-effort projection, outside canonical state and manifests.
+    # Import inside the exception boundary: even presentation deployment errors
+    # must not turn a successful authority write into an apparent failure.
+    try:
+        from product_delivery_agent.progress_map import on_state_committed
+
+        on_state_committed(project_root, next_state,
+                           new_delivery=prior_delivery_id != next_state.get("delivery_id"))
+    except Exception:
+        pass
     return next_state
 
 

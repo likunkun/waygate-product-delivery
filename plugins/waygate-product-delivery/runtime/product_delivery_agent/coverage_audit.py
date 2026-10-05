@@ -169,6 +169,18 @@ REQUIRED_BROWSER_EVIDENCE_FIELDS = (
     "test_title_or_step",
 )
 
+REQUIRED_BEHAVIOR_EVIDENCE_FIELDS = (
+    "test_id",
+    "obligation_id",
+    "command",
+    "exit_code",
+    "semantic_assertions",
+    "evidence_path",
+    "trace_path",
+    "execution_segment_id",
+    "test_title_or_step",
+)
+
 FULL_STACK_BROWSER_E2E = "full_stack_browser_e2e"
 MOCKED_API_BROWSER_E2E = "mocked_api_browser_e2e"
 STATIC_OR_PROTOTYPE_BROWSER_CHECK = "static_or_prototype_browser_check"
@@ -662,6 +674,8 @@ def build_executed_browser_evidence(
             records,
             planned_by_key,
             allow_extra_records=allow_extra_records,
+            validate_ui_paths=True,
+            evidence_label="browser",
         )
     root = Path(project_root)
     hydrated = []
@@ -682,6 +696,80 @@ def build_executed_browser_evidence(
             "api_health_identity": probe.get("api_health_identity"),
             "business_api_request_count": len(probe.get("business_api_requests") or []),
         }
+        planned = planned_by_key.get(
+            (record.get("obligation_id"), record.get("test_id"))
+        )
+        if planned:
+            next_record["scenario_id"] = planned["scenario_id"]
+            next_record["user_story"] = planned["user_story"]
+            next_record["journey"] = planned["journey"]
+        hydrated.append(next_record)
+    return {
+        "status": "passed",
+        "records": hydrated,
+    }
+
+
+def build_executed_behavior_evidence(
+    project_root: str | Path,
+    records: list[dict[str, Any]],
+    *,
+    planned_obligations: list[dict[str, Any]] | None = None,
+    exemptions: list[dict[str, Any]] | None = None,
+    allow_extra_records: bool = False,
+) -> dict[str, Any]:
+    """Validate executed non-UI behavior evidence and bind real artifacts.
+
+    Behavior evidence intentionally has its own contract.  CLI/API/service
+    executions do not need browser URLs, screenshots, browser probes, or
+    browser evidence-strength labels.  They do need a successful command and
+    two independently addressable artifacts: the captured result/output and a
+    trace or log of the execution.  Both artifacts are hashed into the
+    canonical record so closure can verify the evidence chain.
+    """
+    if not records:
+        raise CoverageAuditError("executed behavior evidence requires records")
+    planned_by_key = _planned_obligations_by_key(
+        planned_obligations or [],
+        exemptions or [],
+    )
+    if planned_by_key:
+        _validate_executed_records_cover_planned(
+            records,
+            planned_by_key,
+            allow_extra_records=allow_extra_records,
+            validate_ui_paths=False,
+            evidence_label="behavior",
+        )
+    root = Path(project_root)
+    hydrated = []
+    for index, record in enumerate(records, start=1):
+        _validate_behavior_evidence_record(index, record)
+        next_record = dict(record)
+        for path_field in ("evidence_path", "trace_path"):
+            path = root / record[path_field]
+            if not path.is_file():
+                raise CoverageAuditError(
+                    f"behavior evidence row {index} {path_field} does not exist: "
+                    + record[path_field]
+                )
+            next_record[f"{path_field}_sha256"] = _sha256(path)
+        next_record["evidence_sha256"] = next_record["evidence_path_sha256"]
+        for path_field in ("stdout_path", "stderr_path", "log_path"):
+            value = record.get(path_field)
+            if value is None:
+                continue
+            if not _has_value(value):
+                raise CoverageAuditError(
+                    f"behavior evidence row {index} {path_field} must be a path"
+                )
+            path = root / value
+            if not path.is_file():
+                raise CoverageAuditError(
+                    f"behavior evidence row {index} {path_field} does not exist: "
+                    + value
+                )
+            next_record[f"{path_field}_sha256"] = _sha256(path)
         planned = planned_by_key.get(
             (record.get("obligation_id"), record.get("test_id"))
         )
@@ -1050,6 +1138,27 @@ def _validate_browser_evidence_record(
     return probe
 
 
+def _validate_behavior_evidence_record(
+    index: int,
+    record: dict[str, Any],
+) -> None:
+    missing = []
+    for field_name in REQUIRED_BEHAVIOR_EVIDENCE_FIELDS:
+        value = record.get(field_name)
+        if field_name == "semantic_assertions":
+            if not _has_list_values(value):
+                missing.append(field_name)
+        elif field_name == "exit_code":
+            if value != 0:
+                raise CoverageAuditError("behavior evidence exit_code must be 0")
+        elif not _has_value(value):
+            missing.append(field_name)
+    if missing:
+        raise CoverageAuditError(
+            f"behavior evidence row {index} missing fields: " + ", ".join(missing)
+        )
+
+
 def _load_probe_artifact(root: Path, index: int, probe_artifact_path: str) -> dict[str, Any]:
     path = root / probe_artifact_path
     if not path.is_file():
@@ -1183,6 +1292,8 @@ def _validate_executed_records_cover_planned(
     planned_by_key: dict[tuple[str, str], dict[str, Any]],
     *,
     allow_extra_records: bool = False,
+    validate_ui_paths: bool = True,
+    evidence_label: str = "browser",
 ) -> None:
     record_keys = {
         (record.get("obligation_id"), record.get("test_id"))
@@ -1205,10 +1316,11 @@ def _validate_executed_records_cover_planned(
     ]
     if extra and not allow_extra_records:
         raise CoverageAuditError(
-            "executed browser evidence is not linked to planned E2E obligation: "
+            f"executed {evidence_label} evidence is not linked to planned E2E obligation: "
             + ", ".join(extra)
         )
-    _validate_executed_actor_path_segments(records, planned_by_key)
+    if validate_ui_paths:
+        _validate_executed_actor_path_segments(records, planned_by_key)
 
 
 def _validate_executed_actor_path_segments(

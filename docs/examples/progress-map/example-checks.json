@@ -1,0 +1,12 @@
+{
+  "result": "passed",
+  "kind": "illustrative UX examples, not delivery acceptance evidence",
+  "checks": [
+    "01: architecture + timeline + change explanations",
+    "02: architecture + timeline + change explanations",
+    "03: architecture + timeline + change explanations",
+    "04: architecture + timeline + change explanations",
+    "05: architecture + timeline + change explanations"
+  ],
+  "browser_errors": []
+}

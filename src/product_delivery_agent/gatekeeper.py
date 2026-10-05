@@ -39,7 +39,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.1.0"
+PLUGIN_VERSION = "1.2.0"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -638,6 +638,10 @@ def closure_integrity_errors(state: dict[str, Any]) -> list[str]:
                 "prototype_conformance"
             ) != prototype_conformance_closure_binding(state):
                 errors.append("canonical_prototype_conformance_binding")
+    elif project_type == "non_ui":
+        executed = _as_dict(state.get("executed_behavior_evidence"))
+        if executed.get("status") != "passed":
+            errors.append("executed_behavior_evidence.status=passed")
     errors.extend(canonical_closure_integrity_errors(state))
     return errors
 
@@ -1125,7 +1129,15 @@ def docs_ahead_of_state_errors(
         return []
     lowered = claim_text.lower()
     errors: list[str] = []
-    executed = _as_dict(state.get("executed_browser_evidence"))
+    project_type = normalize_project_type(state.get("project_type"))[0]
+    evidence_key = (
+        "executed_browser_evidence"
+        if project_type == "ui"
+        else "executed_behavior_evidence"
+        if project_type == "non_ui"
+        else "executed_browser_evidence"
+    )
+    executed = _as_dict(state.get(evidence_key))
     if executed.get("status") != "passed" and _contains_executed_claim(lowered):
         errors.append("docs_ahead_of_executed_evidence")
     closure_validation = _as_dict(state.get("closure_validation"))
@@ -1212,6 +1224,12 @@ def assert_pre_closure_ready(
     project_root: str | Path | None = None,
 ) -> None:
     """Require executed evidence and closure fields to match planned coverage."""
+    if (state.get("production_policy") or {}).get("mode") == "team":
+        from product_delivery_agent.team_orchestration import assert_team_closure_ready, TeamError
+        try:
+            assert_team_closure_ready(state, Path(project_root) if project_root is not None else None)
+        except TeamError as error:
+            raise GatekeeperError(str(error)) from error
     validate_state_invariants(state)
     assert_current_prototype_design_integrity(state, project_root)
     assert_prototype_annotation_review_current(state)

@@ -1,0 +1,237 @@
+{
+  "ui": [
+    {
+      "stage": "product_definition",
+      "profile_version": "1.2.0",
+      "project_type": "ui",
+      "required_role_ids": [
+        "production.product_requirements"
+      ],
+      "conditional_roles": {
+        "domain_research": "production.domain_research"
+      },
+      "depends_on": [],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "architecture_version_planning",
+      "profile_version": "1.2.0",
+      "project_type": "ui",
+      "required_role_ids": [
+        "production.architecture_contract"
+      ],
+      "conditional_roles": {
+        "domain_research": "production.domain_research",
+        "data_migration": "production.data_migration",
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability",
+        "build_deployment": "production.build_deployment"
+      },
+      "depends_on": [
+        "product_definition"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "open_spec_product_surface",
+      "profile_version": "1.2.0",
+      "project_type": "ui",
+      "required_role_ids": [
+        "production.scenario_interaction",
+        "production.ui_prototype"
+      ],
+      "conditional_roles": {
+        "domain_research": "production.domain_research",
+        "security_engineering": "production.security_engineering"
+      },
+      "depends_on": [
+        "architecture_version_planning"
+      ],
+      "role_dependencies": {
+        "production.ui_prototype": [
+          "production.scenario_interaction"
+        ]
+      },
+      "max_parallel": 2
+    },
+    {
+      "stage": "test_design",
+      "profile_version": "1.2.0",
+      "project_type": "ui",
+      "required_role_ids": [
+        "production.test_design"
+      ],
+      "conditional_roles": {
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability"
+      },
+      "depends_on": [
+        "open_spec_product_surface"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "implementation_execution",
+      "profile_version": "1.2.0",
+      "project_type": "ui",
+      "required_role_ids": [
+        "production.frontend",
+        "production.backend",
+        "production.test_automation",
+        "production.integration"
+      ],
+      "conditional_roles": {
+        "data_migration": "production.data_migration",
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability",
+        "build_deployment": "production.build_deployment"
+      },
+      "depends_on": [
+        "test_design"
+      ],
+      "role_dependencies": {
+        "production.integration": [
+          "production.frontend",
+          "production.backend",
+          "production.test_automation"
+        ]
+      },
+      "max_parallel": 2
+    },
+    {
+      "stage": "delivery_preparation",
+      "profile_version": "1.2.0",
+      "project_type": "ui",
+      "required_role_ids": [
+        "production.delivery_evidence"
+      ],
+      "conditional_roles": {
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability",
+        "build_deployment": "production.build_deployment"
+      },
+      "depends_on": [
+        "implementation_execution"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    }
+  ],
+  "non_ui": [
+    {
+      "stage": "product_definition",
+      "profile_version": "1.2.0",
+      "project_type": "non_ui",
+      "required_role_ids": [
+        "production.product_requirements"
+      ],
+      "conditional_roles": {
+        "domain_research": "production.domain_research"
+      },
+      "depends_on": [],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "architecture_version_planning",
+      "profile_version": "1.2.0",
+      "project_type": "non_ui",
+      "required_role_ids": [
+        "production.architecture_contract"
+      ],
+      "conditional_roles": {
+        "domain_research": "production.domain_research",
+        "data_migration": "production.data_migration",
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability",
+        "build_deployment": "production.build_deployment"
+      },
+      "depends_on": [
+        "product_definition"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "open_spec_product_surface",
+      "profile_version": "1.2.0",
+      "project_type": "non_ui",
+      "required_role_ids": [
+        "production.scenario_interaction"
+      ],
+      "conditional_roles": {
+        "domain_research": "production.domain_research",
+        "security_engineering": "production.security_engineering"
+      },
+      "depends_on": [
+        "architecture_version_planning"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "test_design",
+      "profile_version": "1.2.0",
+      "project_type": "non_ui",
+      "required_role_ids": [
+        "production.test_design"
+      ],
+      "conditional_roles": {
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability"
+      },
+      "depends_on": [
+        "open_spec_product_surface"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    },
+    {
+      "stage": "implementation_execution",
+      "profile_version": "1.2.0",
+      "project_type": "non_ui",
+      "required_role_ids": [
+        "production.backend",
+        "production.test_automation",
+        "production.integration"
+      ],
+      "conditional_roles": {
+        "data_migration": "production.data_migration",
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability",
+        "build_deployment": "production.build_deployment"
+      },
+      "depends_on": [
+        "test_design"
+      ],
+      "role_dependencies": {
+        "production.integration": [
+          "production.backend",
+          "production.test_automation"
+        ]
+      },
+      "max_parallel": 2
+    },
+    {
+      "stage": "delivery_preparation",
+      "profile_version": "1.2.0",
+      "project_type": "non_ui",
+      "required_role_ids": [
+        "production.delivery_evidence"
+      ],
+      "conditional_roles": {
+        "security_engineering": "production.security_engineering",
+        "performance_reliability": "production.performance_reliability",
+        "build_deployment": "production.build_deployment"
+      },
+      "depends_on": [
+        "implementation_execution"
+      ],
+      "role_dependencies": {},
+      "max_parallel": 2
+    }
+  ]
+}
