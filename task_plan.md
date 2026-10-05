@@ -1,5 +1,25 @@
 # Task Plan
 
+## 当前任务：Waygate 1.1.0 blocked-binding 与终态保护修复（2026-10-04）
+
+- 用户已批准“插件通用修复 + 恢复当前 agent”。
+- [x] RED：覆盖 orphaned blocked binding、关闭态 validator 幂等与 close 幂等。
+- [x] GREEN：实现 1.1.0 正式恢复入口、user_resume 兼容分支与终态保护。
+- [x] 生成并校验插件包，更新 cachebuster，重新安装 repo-local 插件。
+- [x] 恢复 `da4baaba-d347-4ed3-b353-899eca479240` 的 TASK-012 canonical 写入并推进 TASK-013。
+- [x] 执行定向/全量测试、journal/closure integrity 与最终验收。
+- **Status:** in_progress
+
+## Next Step
+
+记录修复结果与当前 agent 的 TASK-013 后续状态。
+
+## Errors Encountered（本轮）
+
+- 尚无。
+- 首次 finalization fixture 误用了未具备 closure handoff 的 helper，导致 matrix_range setup error；改用 `tests.test_feature_closure.ready_workflow` 后 RED 正确落在目标行为。
+- 首次定向 unittest 使用了错误的测试类名；改为 `ControlDispatchTests` 后执行正确。
+
 ## 当前任务：V1.1.0 角色卡与专家任务契约增强
 
 - CR-003 / REV-20260926-02；用户已批准实现，不重复询问开工。

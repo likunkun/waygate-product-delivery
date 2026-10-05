@@ -1040,3 +1040,12 @@
 - 同席角色必须共享 Agent 身份，不同席位必须唯一；reviewer_agent_ids 记录两个席位身份。
 - 复合席位 hash 需要排除自身后重新计算；否则 seat_task_hash 会形成自引用，已通过定向测试固定。
 - 旧无 seat_contract_version review 保持兼容；新席位契约不能降级 legacy。
+# 2026-10-04 Waygate 1.1.0 blocked-binding / terminal-state findings
+
+- 两个独立 delivery 均复现 `host_goal_binding.status=blocked`、`human_wait=null`、宿主 Goal 已 active，但 workflow `user_resume` 仍要求 decision ID 的死路。
+- 底层 `prepare_reconciliation_checkpoint(..., operation="user_resume")` 接受 blocked；高层 workflow 只接受已有 human_wait decision，契约不一致。
+- 旧 `recover-blocked-host-goal-current-task-v1042.py` 硬绑定 1.0.42，不能作为 1.1.0 正式入口。
+- packaged closure validator 在 closed delivery 上失败后调用 `_write_failure()`，会把合法 `closed/delivery_closed` 污染成 `closure_failed`。
+- 当前插件权威源码位于本工作区；安装 cache 来自 repo-local 生成包，长期修复必须改源码、生成插件并更新 cachebuster/reinstall。
+- hotfix `1.1.0+codex.20261004064054` 已安装到 repo-local marketplace；当前 runtime provenance 为 `212b56f98eb0e65cf1a4295640ea21fe9e12a567e45e9eb91057d8bb04fe279e`。
+- 目标 agent 的旧 1.1.0 receipt 被新恢复入口审计迁移，fresh active Goal observation 被消费，TASK-012 executed evidence 与 completion canonical 通过。
