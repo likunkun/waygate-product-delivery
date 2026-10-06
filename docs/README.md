@@ -24,6 +24,7 @@ This directory stores formal documentation for the Waygate Product Delivery proj
 | `docs/operations/sample-product-delivery-monitoring.md` | Read-only monitoring report for a sample Product Delivery trial run. |
 | `docs/operations/product-delivery-agent-hardening-plan.md` | Improvement plan derived from monitored Product Delivery failures. |
 | `docs/operations/waygate-product-delivery-installation.md` | Build, package, install, and smoke-test instructions for the `waygate-product-delivery` Codex plugin. |
+| [`analysis/2026-10-06-waygate-industry-assessment.md`](analysis/2026-10-06-waygate-industry-assessment.md) | Source-backed Chinese assessment of Waygate 1.2.0, industry peers, maturity, and gap roadmap. |
 | [Open Spec packages](open-spec/README.md) | V0.1–V1.1 文档包与 V1.2 路线图；文档状态与运行时发布状态分开记录。 |
 | [V1.1 评审专家团产品需求](open-spec/v1.1-multi-agent-review-orchestration/01-requirements.md) | CR-002：角色职责、专家组合、用户流程与验收；设计目标版本 1.1.0。 |
 | [V1.1 技术与存储架构](open-spec/v1.1-multi-agent-review-orchestration/03-technical-solution.md) | 本地专家团编排、owner 权威、证据投影与中断恢复设计；尚未实施。 |

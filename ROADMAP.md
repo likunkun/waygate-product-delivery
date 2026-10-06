@@ -264,7 +264,45 @@ V1.2 增补：默认关闭的产品交付地图，覆盖产品目标、架构、
 
 目标：修复 V1.2 已有生产协作能力的恢复、写入冲突、兼容性及度量问题；不引入新的专家团范式。
 
-规划顺序：**V1.1 评审专家团 → V1.2 分阶段生产专家团 → V2.0–V2.3 OpenCode 能力**。以下 V2.x 版本边界保持原规划，不以平台接入代替本地生产与评审能力建设。
+### V1.2.6 - Delivery Observability Baseline
+
+目标版本：**1.2.6**。状态：**已规划，尚未实现**。
+
+目标：在不改变 canonical state、Goal、TASK、review 或 closure 权威的前提下，为交付生命周期、阶段执行、阻塞、证据、Host Goal 和资源消耗建立统一的可观测性基线。该版本先解决“能否准确看见交付发生了什么”，不提前声称多 Agent 已带来质量或成本收益。
+
+核心指标：
+
+| 指标 | 定义 | 最小数据来源 |
+| --- | --- | --- |
+| `delivery_cycle_time` | 从 delivery 创建到 canonical closure 通过的总时长，拆分暂停与等待；未闭包显示进行中，abandon 单列，不混入成功交付耗时 | lifecycle transition、closure/abandon event |
+| `stage_duration` | 每个 workflow stage 从进入到离开的耗时，区分 active、waiting、blocked | stage transition journal、Host Goal observation |
+| `blocked_duration` | 用户确认、宿主、环境、证据或恢复阻塞的累计时长，记录 blocker 类型和开始/结束原因 | blocker state、human wait、recovery transition |
+| `gate_failure_rate` | 按 gate 统计首次尝试失败的实例占比；总尝试失败率作为独立明细，不混用分母 | gate attempt/result、error class、retry metadata |
+| `first_pass_acceptance_rate` | 已有首次提交结果的工作单元中，首次提交即通过的比例；生产包、review、evidence、TASK 分别统计 | attempt/revision、review result、evidence status |
+| `rework_rate` | 已提交工作单元中发生 retry、revision 或批量返工的单元占比；work package/TASK 分开统计，并附返工次数及原因 | TeamRun history、review rejection、TASK journal |
+| `evidence_latency` | 记录的实现/生产结果完成时点到对应 executed evidence 被 canonical runtime 接纳的时长；不使用已经依赖证据的 TASK 完成时点作为起点 | production completion observation、evidence recorded、artifact manifest |
+| `closure_failure_rate` | 已尝试 canonical closure 的交付中，首次校验失败的比例；另列总尝试失败率和 blocker 分类 | finalization attempt/result、closure validator artifact |
+| `host_goal_health` | 展示宿主观测的 active、blocked、missing、unavailable、complete；绑定/checkpoint stale 和 observation freshness 单独标注 | Host Goal checkpoint/observation/recovery |
+| `usage_cost_per_delivery` | 每次 delivery 的 input/output tokens、缓存 tokens、费用和币种；仅接纳宿主提供的用量与可用来源信息，缺失部分显式标记 `unavailable` | host usage receipt、TeamRun usage |
+
+实现范围：
+
+- 统一指标所需的本地观测记录，以 `delivery_id` 关联可用的 run、TASK、gate、attempt、时间、结果与证据引用。覆盖 coordinator/team、UI/non-UI；新补充的尝试、拒绝和失败记录与已提交的 canonical transition 分开，不能把操作拒绝记成状态推进。
+- 复用现有 journal、TeamRun、Host Goal 和 artifact 数据，补齐缺失的计时及尝试结果。重复事件去重；未记录的历史区间、零分母和不适用项明确显示未知或不适用，不补造历史，不将缺失当作零。
+- 提供本地 timeline 查询和机器可读导出；`status/inspect` 增加当前 telemetry freshness、最近事件、活跃阻塞和数据可用性，progress map 只消费这些事实，不成为第二权威。
+- 观测数据独立于 canonical state，采集/展示/导出失败不阻塞交付，并可见地报告数据缺口。通过已有本地入口提示超时、持续阻塞、证据失效和重复失败；Prometheus/OpenTelemetry、独立 dashboard、后台监控服务及外部告警集成留作后续扩展。
+- 对 usage 建立宿主数据接入契约；禁止从耗时推算 token/cost，缺失时保留 `unavailable` 并记录缺失原因。不改变宿主模型选择和权限规则，不记录未脱敏的 prompt、源码或 secret。
+
+验收标准：
+
+- 一个 UI delivery 和一个 non-UI delivery 的完整演练都能生成从 start 到 closure 的可关联 timeline，并可由 `delivery_id`、`run_id`、`task_id`、`gate` 查询。
+- 十个指标均有明确统计口径和来源，能从 canonical event/artifact 及绑定的观测/宿主用量记录重新计算；比率展示分子、分母和数据完整率，重放或重复事件不重复计数。
+- 阶段重入分别计时，重叠阻塞区间不重复计入总阻塞时长；人工等待、暂停和环境故障可区分，abandon、未结束交付、缺失历史和缺失用量不会被误计为成功或零成本。
+- 至少覆盖 pause/resume、user wait、TeamRun retry/revision、review rejection、Host Goal blocked/recovery、evidence stale 和 closure failure 这些负向路径。
+- telemetry 导出失败不改变交付状态；观测记录仅引用证据路径/hash，不复制证据正文；观测数据保留与清理不删除 canonical 证据。
+- 发布一份 observability exercise report，报告十个指标、不可用字段、已知事件缺口、重复计数检查和异常提示结果；不把一次演练当作长期质量收益证明。
+
+规划顺序：**V1.1 评审专家团 → V1.2 分阶段生产专家团 → V1.2.6 交付可观测性基线 → V2.0–V2.3 OpenCode 能力**。以下 V2.x 版本边界保持原规划，不以平台接入代替本地生产与评审能力建设。
 
 ### V2.0.0 - OpenCode Native Plugin MVP
 
