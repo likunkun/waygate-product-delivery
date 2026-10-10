@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1
+
+- Changes live progress-map refresh from five seconds to one minute, preserving the selected view, filters and reading position.
+- Adds seat-scoped `review_briefs` containing the unchanged bound role tasks and complete frozen role cards, including quality rubrics and all five examples.
+- Validates role-card/task/seat hashes and rejects altered brief content when submitted, while keeping earlier reviews without briefs valid and preserving existing task identities.
+- Requires complete briefs in both coordinator and team review dispatch, with visible expert responsibilities, checks and actual reviewer identities.
+- Adds readable per-expert methods, positions, check evidence, findings and unresolved questions to review reports while retaining the full audit contract.
+- Keeps review and production role catalog versions unchanged. Active 1.2.0 deliveries continue using their original cached runtime; this release does not migrate them.
+
 ## 1.2.0
 
 - Adds an optional, default-off product progress map: project defaults, delivery overrides, source-bound architecture/task relationships, advisory plan changes, and separate production/integration/verification/review/delivery milestones.

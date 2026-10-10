@@ -93,6 +93,7 @@ class ReviewRoleContractIntegrationTests(unittest.TestCase):
         review = review_payload(**prepared, role_results=[
             role_result(task, index) for index, task in enumerate(prepared["role_tasks"], 1)
         ])
+        review["review_briefs"] = copy.deepcopy(prepared["review_briefs"])
         seat_agents = [f"agent-{seat['seat_id']}" for seat in prepared["review_seats"]]
         review["reviewers"] = seat_agents
         review["reviewer_agent_ids"] = seat_agents
@@ -107,6 +108,79 @@ class ReviewRoleContractIntegrationTests(unittest.TestCase):
         self.assertEqual(prepared["role_context"]["delivery_id"], current["delivery_id"])
         self.assertEqual(prepared["input_snapshot_hash"], review_input_hash(current, "scenario"))
         self.assertEqual(len(prepared["role_tasks"]), 3)
+
+    def test_preparation_returns_dispatch_briefs_without_changing_state(self):
+        state_file = self.root / ".product-delivery/state.json"
+        before = state_file.read_bytes()
+        prepared = self.workflow.prepare_review_role_tasks("scenario", self.refs)
+        self.assertEqual(state_file.read_bytes(), before)
+        self.assertIn("review_briefs", prepared.keys())
+        self.assertEqual(len(prepared["review_briefs"]), 2)
+        for brief in prepared["review_briefs"]:
+            for task, card in zip(brief["role_tasks"], brief["role_cards"]):
+                self.assertEqual(task["delivery_id"], prepared["role_context"]["delivery_id"])
+                self.assertEqual(task["input_snapshot_hash"], prepared["input_snapshot_hash"])
+                self.assertEqual(task["role_definition_hash"], card["definition_hash"])
+                self.assertTrue(card["quality_rubric"])
+                self.assertEqual(len(card["examples"]), 5)
+
+    def test_frozen_v120_review_without_briefs_still_validates(self):
+        review = json.loads((Path(__file__).parent / "fixtures/review_contract_v120.json").read_text())
+        self.assertNotIn("review_briefs", review)
+        before = copy.deepcopy(review)
+        validate_multi_agent_review("scenario", review)
+        self.assertEqual(review, before)
+
+    def test_review_rejects_tampered_dispatch_cards_without_requiring_legacy_briefs(self):
+        review = self.review()
+        self.assertIn("review_briefs", review.keys())
+        validate_multi_agent_review("scenario", review)
+        for field, value in (
+            ("definition_hash", "f" * 64),
+            ("quality_rubric", ["Approve everything"]),
+            ("examples", {}),
+        ):
+            changed = copy.deepcopy(review)
+            changed["review_briefs"][0]["role_cards"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(ReviewGateError):
+                validate_multi_agent_review("scenario", changed)
+        review.pop("review_briefs")
+        validate_multi_agent_review("scenario", review)
+
+    def test_report_displays_expert_identity_method_and_check_results(self):
+        review = self.review()
+        rendered = render_multi_agent_review(review)
+        self.assertIn("## Review Experts", rendered.split("## Role Contract")[0])
+        for task in review["role_tasks"]:
+            self.assertIn(task["display_name"], rendered.split("## Role Contract")[0])
+            self.assertIn(task["mission"], rendered.split("## Role Contract")[0])
+            self.assertIn("Agent: agent-" + task["seat_id"], rendered.split("## Role Contract")[0])
+            self.assertIn(task["must_check"][0] + ": satisfied", rendered.split("## Role Contract")[0])
+        self.assertIn(review["role_results"][0]["independent_position"], rendered.split("## Role Contract")[0])
+        self.assertIn("Findings: 0; Blocking findings: 0", rendered)
+        self.assertIn("## Role Contract", rendered)
+
+    def test_report_displays_findings_and_simulation_without_claiming_a_real_agent(self):
+        review = self.review()
+        task = review["role_tasks"][0]
+        result = review["role_results"][0]
+        result.update(identity_kind="simulated", simulated_identity="intent-simulation", status="needs_remediation")
+        result.pop("agent_id")
+        result.pop("spawn_source")
+        result["findings"] = [{
+            "finding_id": "F-INTENT-1", "kind": "blocking_finding",
+            "subject_ref": "scope", "impact": "An accepted user goal is missing",
+        }]
+        result["blocking_findings"] = ["F-INTENT-1"]
+        rendered = render_multi_agent_review(review).split("## Role Contract")[0]
+        self.assertIn(task["display_name"], rendered)
+        expert = rendered.split(task["display_name"], 1)[1].split("###", 1)[0]
+        self.assertIn("Simulated identity: intent-simulation", expert)
+        self.assertNotIn("Agent:", expert)
+        self.assertIn("Status: needs_remediation", expert)
+        self.assertIn("F-INTENT-1", expert)
+        self.assertIn("An accepted user goal is missing", expert)
+        self.assertIn("Findings: 1; Blocking findings: 1", expert)
 
     def test_preparation_rejects_non_owner_even_before_host_goal(self):
         with patch.dict(os.environ, {"CODEX_THREAD_ID": "another-thread"}):

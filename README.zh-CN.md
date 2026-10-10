@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.2.0-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.2.1-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -88,7 +88,7 @@ $waygate-product-delivery {"schema_version":"v1","action":"start","feature_slug"
 
 ## 可选的产品交付地图
 
-地图默认关闭，可用于团队模式和单主线程模式。开启后生成产品目标、架构模块、当前工作、剩余缺口和计划变化的交互 HTML，浏览器每 5 秒刷新；使用你已有的 HTTP 服务，不启动额外服务或后台进程。
+地图默认关闭，可用于团队模式和单主线程模式。开启后生成产品目标、架构模块、当前工作、剩余缺口和计划变化的交互 HTML，浏览器每 1 分钟刷新；使用你已有的 HTTP 服务，不启动额外服务或后台进程。
 
 ```text
 $waygate-product-delivery map on
@@ -121,6 +121,12 @@ $waygate-product-delivery start reports-v1 team multi-agent "管理员从现有�
 使用 `prepare_team_run`、`inspect_team_run`、`record_team_events`、`integrate_team_run`、`finalize_team_run`；non-UI 的 CLI/API 行为通过 `record_executed_behavior_evidence()` 进入正式证据，UI 使用 `record_executed_browser_evidence()`。完整事件、参数与恢复操作见生成包 `templates/team-production-workflow.md`。目录隔离是 shared_fs 契约，不能宣称 OS 沙箱；宿主负责实际 Agent 创建和终止，未提供用量时记录 unavailable。
 
 角色与规范：[V1.2 Open Spec](docs/open-spec/v1.2-team-production-orchestration/02-specification.md)、[15 张生产角色卡](docs/open-spec/v1.2-team-production-orchestration/09-production-role-cards.md)、[发布演练证据](docs/open-spec/v1.2-team-production-orchestration/10-release-exercise-report.md)。
+
+## 1.2.1 评审专家 brief
+
+`prepare_review_role_tasks(review_type, input_refs)` 新增 `review_briefs`，按两个固定评审席分组。派发时发送当前席的完整 brief：原有绑定任务 `role_tasks` 与完整冻结角色卡 `role_cards`，包含质量标准和五类正反案例。证据输入与权限仍以任务书为准。派发时展示席位、专家职责、必查项和真实 Agent ID；评审报告在完整审计 JSON 前展示各专家的独立立场、检查与问题。
+
+既有任务哈希及没有 brief 的历史评审保持兼容。正在运行的 1.2.0 交付继续使用原缓存 runtime；1.2.1 用于新交付，不迁移活跃状态。
 
 ## 安装
 
@@ -162,7 +168,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.2.0.tar.gz
+dist/waygate-product-delivery-1.2.1.tar.gz
 ```
 
 ## Codex 使用方式

@@ -17,7 +17,7 @@ non-UI 交付完成真实 CLI/API/service 旅程后，必须调用 `ProductDeliv
 
 ### 独立评审步骤
 
-团队在既有五类 gate 使用 V1.1 评审契约。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，主线程登记 `review_started`（review_type、两个实际 reviewer_agent_ids）。只读准备角色任务，冻结期间禁止整合生产补丁或重写 canonical 生产工件。
+团队在既有五类 gate 使用 V1.1 评审契约和上述完整 review_briefs 派发规则。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，只读准备 brief 并创建两个真实 reviewer；登记 `review_started`（review_type、两个实际 reviewer_agent_ids）后再开始输入读取。冻结期间禁止整合生产补丁或重写 canonical 生产工件。
 
 每位 reviewer 每阶段返回后，登记 `review_member`：review_type、agent_id、phase（independent/challenge/revision）以及 artifact `{ref,sha256}`。同阶段全员返回后才能进入下一阶段。原始意见须保存为真实工件；不得用无证据的完成标记补屏障。
 

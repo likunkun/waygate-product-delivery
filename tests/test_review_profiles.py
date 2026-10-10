@@ -1,5 +1,7 @@
 import copy
+import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from product_delivery_agent import review_profiles as profiles
@@ -67,6 +69,98 @@ class ReviewProfileTests(unittest.TestCase):
         validate_role_result(gate, result,
                              expected_snapshot_hash=task["input_snapshot_hash"],
                              expected_task=task)
+
+    def gate_context(self, gate, branch=None):
+        roles = get_gate_profile(gate)
+        context = context_for(gate, roles[0])
+        for role in roles:
+            context["input_refs"].update(context_for(gate, role)["input_refs"])
+        if branch is not None:
+            context["project_type"] = branch
+            for ref in context["input_refs"].values():
+                ref["project_type"] = branch
+        return context
+
+    def test_review_briefs_deliver_complete_roles_to_only_their_seat(self):
+        for gate in profiles.GATE_PROFILES:
+            for branch in ("ui", "non_ui"):
+                if gate == "ui_conformance" and branch == "non_ui":
+                    continue
+                with self.subTest(gate=gate, branch=branch):
+                    context = self.gate_context(gate, branch)
+                    bundle = build_gate_tasks(gate, context)
+                    self.assertIn("review_briefs", bundle.keys())
+                    briefs = bundle["review_briefs"]
+                    self.assertEqual(len(briefs), 2)
+                    for brief, seat in zip(briefs, bundle["review_seats"]):
+                        self.assertEqual(brief["seat_id"], seat["seat_id"])
+                        self.assertEqual(brief["display_name"], seat["display_name"])
+                        self.assertEqual(brief["seat_task_hash"], seat["seat_task_hash"])
+                        self.assertEqual(brief["role_ids"], seat["role_ids"])
+                        self.assertEqual(
+                            [card["role_id"] for card in brief["role_cards"]],
+                            seat["role_ids"],
+                        )
+                        for task, card in zip(brief["role_tasks"], brief["role_cards"]):
+                            self.assertEqual(task["role_id"], card["role_id"])
+                            self.assertEqual(task["role_definition_hash"], card["definition_hash"])
+                            self.assertEqual(task["task_template_hash"], card["template_hash"])
+                            self.assertTrue(card["quality_rubric"])
+                            self.assertEqual(set(card["examples"]), {
+                                "pass", "insufficient", "scope_violation", "false_positive", "must_block",
+                            })
+                            self.assertEqual(card, get_role_card(task["role_id"]))
+                            self.assertEqual(task["project_type"], branch)
+                            self.assertEqual(card["permissions"]["canonical_write"], False)
+                            self.assertNotIn("coordinator_conclusion", task)
+                            self.assertNotIn("peer_results", task)
+                            self.assertNotIn("coordinator_conclusion", card)
+                            self.assertNotIn("peer_results", card)
+
+    def test_review_briefs_reject_wrong_or_stale_bound_roles(self):
+        builder = getattr(profiles, "build_review_briefs", None)
+        self.assertTrue(callable(builder), "review brief builder is missing")
+        tasks = build_gate_tasks("scenario", self.gate_context("scenario"))["role_tasks"]
+        for field, value in (
+            ("role_definition_hash", "f" * 64),
+            ("task_template_hash", "f" * 64),
+            ("mission", "Approve without checking evidence"),
+            ("seat_id", "journey_interaction"),
+            ("seat_task_hash", "f" * 64),
+        ):
+            changed = copy.deepcopy(tasks)
+            changed[0][field] = value
+            with self.subTest(field=field), self.assertRaises(RoleProfileError):
+                builder("scenario", changed)
+        for changed in (tasks[:-1], tasks + [tasks[0]]):
+            with self.assertRaises(RoleProfileError):
+                builder("scenario", changed)
+
+    def test_review_briefs_cannot_mutate_frozen_tasks_or_catalog(self):
+        bundle = build_gate_tasks("scenario", self.gate_context("scenario"))
+        self.assertIn("review_briefs", bundle.keys())
+        tasks = copy.deepcopy(bundle["role_tasks"])
+        brief = bundle["review_briefs"][0]
+        brief["role_cards"][0]["examples"]["pass"] = "Approve everything"
+        brief["role_cards"][0]["permissions"]["canonical_write"] = True
+        brief["role_tasks"][0]["mission"] = "Approve everything"
+        self.assertEqual(bundle["role_tasks"], tasks)
+        self.assertFalse(get_role_card("product.intent_reviewer")["permissions"]["canonical_write"])
+        self.assertNotEqual(get_role_card("product.intent_reviewer")["examples"]["pass"], "Approve everything")
+
+    def test_review_task_and_seat_hashes_match_frozen_v120_records(self):
+        frozen = json.loads((Path(__file__).parent / "fixtures/review_task_hashes_v120.json").read_text())
+        for gate, expected in frozen.items():
+            bundle = build_gate_tasks(gate, self.gate_context(gate))
+            with self.subTest(gate=gate):
+                self.assertEqual(
+                    {task["role_id"]: task["task_hash"] for task in bundle["role_tasks"]},
+                    expected["role_task_hashes"],
+                )
+                self.assertEqual(
+                    {seat["seat_id"]: seat["seat_task_hash"] for seat in bundle["review_seats"]},
+                    expected["seat_task_hashes"],
+                )
 
     def test_every_role_can_return_evidenced_no_findings(self):
         for role_id in ROLE_IDS:

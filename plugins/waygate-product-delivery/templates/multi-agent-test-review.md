@@ -14,3 +14,5 @@
 - revisions: []
 - final_adjudication:
 - blocking_findings: []
+
+New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`; dispatch each seat its matching role tasks and complete role cards.

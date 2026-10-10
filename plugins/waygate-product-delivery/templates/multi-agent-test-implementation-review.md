@@ -9,6 +9,7 @@
 - status: draft
 - actual_test_code_paths: []
 - execution_evidence_paths: []
+- review_briefs: two seat-scoped briefs with complete frozen role cards
 - reviewed_test_ids: []
 - verified_action_assertions: []
 - false_positive_risks: []

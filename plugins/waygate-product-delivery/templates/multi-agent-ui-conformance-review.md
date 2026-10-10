@@ -16,6 +16,7 @@
 - structural_findings: []
 - visual_findings: []
 - interaction_findings: []
+- review_briefs: two seat-scoped briefs with complete frozen role cards
 - legacy_reuse_findings: []
 - unmapped_regions: []
 - accepted_visual_deviations: []

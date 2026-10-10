@@ -176,7 +176,7 @@ V1.0.34 起，高保真产品原型只能包含真实产品内容。新建或重
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.2.0`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.2.1`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 
@@ -193,6 +193,18 @@ V1.0.18 起，如果当前 authorized launch package 与旧 `delivery_goal` 的 
 ## Current Feature Evidence
 
 检查 Open Spec 或原型时必须按当前 feature slug 匹配。旧版本 `docs/open-spec/`、旧 prototype、聊天总结、`progress.md` 都不能替代当前 feature gate evidence。
+
+## V1.2.1 评审专家派发与展示
+
+这套规则适用于 coordinator/team 两种生产模式，以及 scenario、test、test_coverage、test_implementation、ui_conformance 五类评审。八个逻辑角色由每门两个固定席位承担，同席的每个角色分别返回结构化结果。
+
+1. 主线程调用 `prepare_review_role_tasks(review_type, input_refs)`，取得冻结的 `role_context`、`review_seats`、`role_tasks` 和按席分组的 `review_briefs`。每个 brief 包含 `seat_id/display_name/role_ids/seat_task_hash/role_tasks/role_cards`；卡内含 mission、task_steps、must_check、quality_rubric 和五类 examples。输入不足或绑定失效时先解决准备错误。
+2. 初轮派发消息由当前席的完整 brief 原样构成，必须同时携带本席 `role_tasks` 和完整 `role_cards`，再加只读评审与逐角色返回结果的指令。以任务书的 input_refs、must_check、permissions 和当前 gate 为证据与权限边界，角色卡的质量标准和案例用于判断方法。首轮使用 `fork_turns=none` 或宿主等价的无历史启动；其他席任务、peer 结果和主线程预设结论不进入该消息。
+3. 派发前展示“席位名称 → 各专家名称/role_id → 使命 → 必查项 → 待派发”；宿主返回真实 Agent ID 后，将该 ID 与席位、角色和“已派发”状态一起展示。技术 task_name 不能代替专家职责。显示已派发必须有实际宿主返回，显式 role_simulation 则显示模拟身份与弱证据。
+4. 收齐同轮结果后，按角色展示真实 Agent ID 或模拟身份、独立立场、逐项检查、证据引用、发现、阻断项和未解决问题；再汇总处理结论。无发现仍返回完整 check_records/completion_evidence。准备、派发、完成检查和通过门禁是不同状态，只有 canonical validator 接纳后才显示评审通过。
+5. 提交原始 `role_context/review_seats/role_tasks/role_results` 和 `review_briefs` 给现有 `record_multi_agent_review`，不要重写角色卡、输入或哈希。结果继续遵循每张任务书原有 output_schema；无需新增声称“人设已生效”的字段。runtime 校验身份和内容绑定，实际提示投递及独立性由宿主执行，不以 JSON 证明模型内部行为。
+
+历史评审可以没有 review_briefs，原任务、席位哈希与既有角色目录版本保持不变。旧 active delivery 使用启动时的原缓存 runtime；1.2.1 不能热替换其 runtime receipt。team 模式还遵守下述评审批次屏障和生产者不能评审自己的规则。
 
 ## V1.2 Team Production
 
@@ -213,7 +225,7 @@ non-UI 交付完成真实 CLI/API/service 旅程后，必须调用 `ProductDeliv
 
 ### 独立评审步骤
 
-团队在既有五类 gate 使用 V1.1 评审契约。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，主线程登记 `review_started`（review_type、两个实际 reviewer_agent_ids）。只读准备角色任务，冻结期间禁止整合生产补丁或重写 canonical 生产工件。
+团队在既有五类 gate 使用 V1.1 评审契约和上述完整 review_briefs 派发规则。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，只读准备 brief 并创建两个真实 reviewer；登记 `review_started`（review_type、两个实际 reviewer_agent_ids）后再开始输入读取。冻结期间禁止整合生产补丁或重写 canonical 生产工件。
 
 每位 reviewer 每阶段返回后，登记 `review_member`：review_type、agent_id、phase（independent/challenge/revision）以及 artifact `{ref,sha256}`。同阶段全员返回后才能进入下一阶段。原始意见须保存为真实工件；不得用无证据的完成标记补屏障。
 
@@ -242,7 +254,7 @@ status/inspect 查看进度；inspect_team_run 为只读。合并回执丢失时
 
 开关存储独立于 canonical state。恢复沿用该交付选择，不能重新应用项目默认值；旧 delivery 无配置保持关闭。开启不改变 Goal、TASK、评审或确认。关闭冻结已有页面并停止刷新，历史快照保留。
 
-实时入口 `.product-delivery/maps/index.html` 每 5 秒刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
+实时入口 `.product-delivery/maps/index.html` 每 1 分钟刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
 
 ### 地图开启时的角色交接
 

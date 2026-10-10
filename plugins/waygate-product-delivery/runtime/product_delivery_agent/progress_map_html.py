@@ -61,7 +61,7 @@ _JS = r"""
   const copy = el('div', undefined, 'masthead-copy');
   append(copy, el('h1', m.title || m.feature_slug || '交付进度地图'), el('p', m.objective || '交付目标尚未记录。明确目标后，地图将展示目标与能力的对应关系。'));
   const edition = el('div', undefined, 'edition');
-  append(edition, el('strong', m.current_version || '当前交付'), el('span', !config.enabled ? '自动更新已关闭' : config.live ? '实时地图 · 每 5 秒更新' : '离线快照 · 内容已固定', 'live-indicator' + (!config.enabled ? ' frozen' : '')), el('span', '数据时间：' + str(m.generated_at, '尚未记录'), 'timestamp'));
+  append(edition, el('strong', m.current_version || '当前交付'), el('span', !config.enabled ? '自动更新已关闭' : config.live ? '实时地图 · 每 1 分钟更新' : '离线快照 · 内容已固定', 'live-indicator' + (!config.enabled ? ' frozen' : '')), el('span', '数据时间：' + str(m.generated_at, '尚未记录'), 'timestamp'));
   append(header, copy, edition); root.replaceChildren(header);
   const meta=el('div',undefined,'map-meta');const identity=el('span','交付标识：'+str(m.delivery_id,'尚未分配'));identity.id='delivery-identity';const settingNames={system_default:'系统默认设置',project_default:'项目默认设置',delivery_override:'本次交付设置'};const setting=el('span','设置来源：'+str(settingNames[m.settings_source],str(m.settings_source,'尚未记录')));setting.id='settings-source';append(meta,identity,setting);root.appendChild(meta);
   if (!config.enabled) {const message=el('p','自动更新已关闭。保留数据时间为 '+str(m.generated_at,'尚未记录')+' 的内容，仍可筛选、展开能力与查看变更历史。','notice');message.id='disabled-message';root.appendChild(message);}
@@ -208,6 +208,6 @@ _JS = r"""
   renderMap();setView(state.view);const restoreScroll=state.scroll;requestAnimationFrame(()=>requestAnimationFrame(()=>{window.scrollTo(0,restoreScroll);window.addEventListener('scroll',saveScroll,{passive:true});}));
   window.addEventListener('pagehide',saveScroll);window.addEventListener('resize',()=>requestAnimationFrame(drawEdges));
   if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>requestAnimationFrame(drawEdges)).observe(grid);
-  if(config.live)window.setInterval(()=>{saveScroll();const url=new URL(window.location.href);url.searchParams.set('_map_refresh',String(Date.now()));window.location.replace(url.href);},5000);
+  if(config.live)window.setInterval(()=>{saveScroll();const url=new URL(window.location.href);url.searchParams.set('_map_refresh',String(Date.now()));window.location.replace(url.href);},60000);
 })();
 """

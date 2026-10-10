@@ -142,6 +142,7 @@ def main() -> None:
         assert page.locator("img").count() == 0
         checks.append("untrusted HTML remains text in title, objective and map nodes")
 
+        page.clock.install()
         page.goto(disabled.as_uri(), wait_until="networkidle")
         assert page.locator("#disabled-message").is_visible()
         assert "自动更新已关闭" in page.locator("#disabled-message").inner_text()
@@ -151,7 +152,7 @@ def main() -> None:
         assert page.locator(".component").count() == 2
         page.get_by_role("button", name="查看变更", exact=True).click()
         assert "纳入恢复场景" in page.locator("#changes-view").inner_text()
-        page.wait_for_timeout(5200)
+        page.clock.fast_forward(60_000)
         assert "_map_refresh" not in page.url
         page.goto(disabled_empty.as_uri(), wait_until="networkidle")
         assert "empty-delivery" in page.locator("body").inner_text()
@@ -159,18 +160,23 @@ def main() -> None:
         assert page.locator("#settings-source").inner_text() == "设置来源：项目默认设置"
         assert page.locator("#disabled-message").is_visible()
         page.goto(offline.as_uri(), wait_until="networkidle")
-        page.wait_for_timeout(5200)
+        page.clock.fast_forward(60_000)
         assert "_map_refresh" not in page.url
         checks.append("disabled maps retain content, history, identity and data time; disabled/snapshot do not refresh")
 
         page.goto(live.as_uri(), wait_until="networkidle")
+        assert page.locator(".live-indicator").inner_text() == "实时地图 · 每 1 分钟更新"
         page.get_by_role("button", name="查看变更", exact=True).click()
         live.write_text(render_progress_map({**model, "title": "报告交付已更新"}), encoding="utf-8")
-        page.wait_for_url("**?_map_refresh=*", timeout=9000, wait_until="networkidle")
+        page.clock.fast_forward(5_000)
+        assert "_map_refresh" not in page.url
+        assert page.locator("h1").inner_text() == model["title"]
+        page.clock.fast_forward(55_000)
+        page.wait_for_url("**?_map_refresh=*", timeout=5000, wait_until="networkidle")
         assert page.locator("h1").inner_text() == "报告交付已更新"
         assert page.locator("#changes-view").is_visible()
         assert page.get_by_role("button", name="仅看本版本", exact=True).get_attribute("aria-pressed") == "true"
-        checks.append("live file refresh loads new on-disk content every five seconds with cachebuster and retained state")
+        checks.append("live file stays unchanged after five seconds and refreshes at one minute with cachebuster and retained state")
         assert not remote, remote
         assert not errors, errors
         browser.close()

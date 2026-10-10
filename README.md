@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.2.0-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.2.1-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -100,7 +100,7 @@ $waygate-product-delivery map off
 $waygate-product-delivery map default on
 ```
 
-Delivery switches persist on resume. Project defaults affect only newly created deliveries. The live file is `.product-delivery/maps/index.html`; serve it with your existing static HTTP service. Its five-second refresh preserves the selected node, filters, and scroll position. No server or daemon is started. Exported single-file snapshots work offline and do not refresh; full evidence attachments remain external references.
+Delivery switches persist on resume. Project defaults affect only newly created deliveries. The live file is `.product-delivery/maps/index.html`; serve it with your existing static HTTP service. Its one-minute refresh preserves the selected node, filters, and scroll position. No server or daemon is started. Exported single-file snapshots work offline and do not refresh; full evidence attachments remain external references.
 
 When enabled, the coordinator records source-bound goal/component/capability/TASK relationships with help from the product, architecture, and test roles. Missing context is shown as unknown. Production, integration, verification, review, and final delivery are separate milestones; map explanations cannot approve scope or advance workflow gates. `status/inspect` includes the effective setting, origin, generation time, freshness, and rendering errors.
 
@@ -121,6 +121,12 @@ The coordinator leads six production stages using ten core and five conditional 
 The five orchestration APIs are `prepare_team_run`, `inspect_team_run`, `record_team_events`, `integrate_team_run`, and `finalize_team_run`. Non-UI deliveries record their final CLI/API behavior through `record_executed_behavior_evidence()`; UI deliveries use `record_executed_browser_evidence()`. See packaged `templates/team-production-workflow.md` for event payloads and recovery. Isolation is a shared-filesystem contract, not an OS sandbox; the host owns actual agent execution. Missing usage is reported as unavailable.
 
 [Specification](docs/open-spec/v1.2-team-production-orchestration/02-specification.md) · [Production roles](docs/open-spec/v1.2-team-production-orchestration/09-production-role-cards.md) · [Release exercise](docs/open-spec/v1.2-team-production-orchestration/10-release-exercise-report.md)
+
+## Reviewer Briefs in 1.2.1
+
+`prepare_review_role_tasks(review_type, input_refs)` returns `review_briefs`, one per fixed reviewer seat. Send each reviewer its complete brief: the existing bound `role_tasks` plus the frozen `role_cards`, including quality rubrics and five examples. Tasks still determine the allowed evidence inputs and permissions. Show the seat, expert responsibilities, required checks and actual Agent ID during dispatch; review reports now display each expert's position, checks and findings before the full audit JSON.
+
+Existing task hashes and reviews without briefs remain compatible. Active 1.2.0 deliveries keep their original cached runtime; 1.2.1 is for new deliveries and does not migrate active state.
 
 ## Install
 
@@ -162,7 +168,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.2.0.tar.gz
+dist/waygate-product-delivery-1.2.1.tar.gz
 ```
 
 ## Use In Codex

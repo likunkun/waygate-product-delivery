@@ -1376,6 +1376,7 @@ class ProductDeliveryWorkflow:
             "role_context": context,
             "review_seats": bundle["review_seats"],
             "role_tasks": tasks,
+            "review_briefs": bundle["review_briefs"],
             "input_snapshot_hash": context["input_snapshot_hash"],
         }
 

@@ -11,6 +11,42 @@ from product_delivery_agent.plugin_packaging import (
 
 
 class PluginPackagingTests(unittest.TestCase):
+    def test_packaged_review_briefs_deliver_complete_cards_without_source_tree(self):
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = package_codex_plugin(Path(tmp))["plugin_root"]
+            script = '''
+import json, sys
+sys.path.insert(0, "runtime")
+from product_delivery_agent.review_profiles import GATE_PROFILES, build_gate_tasks, get_role_card
+for gate, roles in GATE_PROFILES.items():
+    names = set()
+    for role in roles:
+        card = get_role_card(role)
+        names.update(card["required_inputs"] + card["optional_inputs"])
+    names.update(["test_source", "execution_evidence", "browser_evidence"])
+    names.discard("feature_slug")
+    context = {"delivery_id": "d", "feature_slug": "f", "project_type": "ui",
+               "input_snapshot_hash": "a" * 64,
+               "input_refs": {name: {"ref": name + ".md", "sha256": "b" * 64,
+                                     "project_type": "shared"} for name in names}}
+    bundle = build_gate_tasks(gate, context)
+    assert "review_briefs" in bundle, "dispatch lost the complete reviewer cards"
+    assert len(bundle["review_briefs"]) == 2
+    for brief in bundle["review_briefs"]:
+        for task, card in zip(brief["role_tasks"], brief["role_cards"]):
+            assert task["role_definition_hash"] == card["definition_hash"]
+            assert card["quality_rubric"] and len(card["examples"]) == 5
+print(json.dumps({"status": "complete review briefs usable from packaged runtime"}))
+'''
+            result = subprocess.run([sys.executable, "-I", "-c", script], cwd=root,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["status"],
+                             "complete review briefs usable from packaged runtime")
+
     def test_packaged_production_catalog_and_mode_work_without_source_tree(self):
         import subprocess
         import sys
@@ -82,7 +118,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
             manifest_text = manifest_path.read_text("utf-8")
             manifest = json.loads(manifest_text)
             self.assertEqual(manifest["name"], "waygate-product-delivery")
-            self.assertEqual(manifest["version"], "1.2.0")
+            self.assertEqual(manifest["version"], "1.2.1")
             self.assertEqual(manifest["skills"], "./skills/")
             self.assertEqual(
                 manifest["author"]["name"],
@@ -524,7 +560,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
                 closure_template["canonical_validator"],
                 "product_delivery_agent.finalization",
             )
-            self.assertEqual(closure_template["plugin_version"], "1.2.0")
+            self.assertEqual(closure_template["plugin_version"], "1.2.1")
             self.assertIn("prototype_conformance", closure_template)
             self.assertIn(
                 "conformance_evidence_sha256",
@@ -597,7 +633,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
 
             self.assertEqual(
                 archive_path.name,
-                "waygate-product-delivery-1.2.0.tar.gz",
+                "waygate-product-delivery-1.2.1.tar.gz",
             )
             self.assertTrue(archive_path.is_file())
 

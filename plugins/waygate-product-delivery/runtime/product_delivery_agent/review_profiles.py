@@ -681,7 +681,60 @@ def build_gate_tasks(review_type: str, context: dict[str, Any]) -> dict[str, Any
         "seat_contract_version": SEAT_PROFILE_VERSION,
         "review_seats": review_seats,
         "role_tasks": role_tasks,
+        "review_briefs": build_review_briefs(review_type, role_tasks),
     }
+
+
+def build_review_briefs(
+    review_type: str, role_tasks: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Attach complete frozen role cards without changing bound task identities."""
+    if not isinstance(role_tasks, list) or any(
+        not isinstance(task, dict) or not isinstance(task.get("role_id"), str)
+        for task in role_tasks
+    ):
+        raise RoleProfileError("review briefs require bound role tasks")
+    tasks_by_role = {task["role_id"]: task for task in role_tasks}
+    if (set(tasks_by_role) != set(get_gate_profile(review_type))
+            or len(tasks_by_role) != len(role_tasks)):
+        raise RoleProfileError("review brief roles must match the gate profile")
+    briefs = []
+    for seat in get_gate_seat_profile(review_type):
+        tasks = [tasks_by_role[role_id] for role_id in seat["role_ids"]]
+        cards = []
+        base_hashes = []
+        for task in tasks:
+            card = get_role_card(task["role_id"])
+            if (task.get("role_definition_hash") != card["definition_hash"]
+                    or task.get("task_template_hash") != card["template_hash"]
+                    or task != build_role_task(review_type, task["role_id"], task)):
+                raise RoleProfileError("review brief role card or task hash is stale")
+            if (task.get("seat_id") != seat["seat_id"]
+                    or task.get("seat_role_ids") != list(seat["role_ids"])
+                    or task.get("seat_display_name") != seat["display_name"]):
+                raise RoleProfileError("review brief task belongs to the wrong seat")
+            base = {key: value for key, value in task.items()
+                    if key not in {"seat_task_hash", "task_hash"}}
+            base_hashes.append(_stable_hash(base))
+            cards.append(card)
+        seat_hash = _stable_hash({
+            "seat_contract_version": SEAT_PROFILE_VERSION,
+            "seat_id": seat["seat_id"],
+            "role_ids": list(seat["role_ids"]),
+            "role_task_hashes": base_hashes,
+        })
+        if any(task.get("seat_task_hash") != seat_hash for task in tasks):
+            raise RoleProfileError("review brief seat task hash is stale")
+        briefs.append({
+            "seat_contract_version": SEAT_PROFILE_VERSION,
+            "seat_id": seat["seat_id"],
+            "display_name": seat["display_name"],
+            "role_ids": list(seat["role_ids"]),
+            "seat_task_hash": seat_hash,
+            "role_tasks": copy.deepcopy(tasks),
+            "role_cards": cards,
+        })
+    return briefs
 
 
 def _schema_check(value: Any, schema: dict[str, Any], path: str = "result") -> None:

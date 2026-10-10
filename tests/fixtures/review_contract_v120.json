@@ -1,0 +1,1598 @@
+{
+  "review_id": "MR-ROLE-CONTRACT-001",
+  "review_type": "scenario",
+  "status": "passed",
+  "review_mode": "spawned_subagents",
+  "reviewers": [
+    "agent-intent_boundary",
+    "agent-journey_interaction"
+  ],
+  "reviewer_agent_ids": [
+    "agent-intent_boundary",
+    "agent-journey_interaction"
+  ],
+  "reviewer_spawn_source": "test.spawn",
+  "artifact_version": "scenario-review-v1",
+  "independent_positions": [
+    "all roles checked"
+  ],
+  "cross_challenges": [
+    "roles challenged the scope"
+  ],
+  "revisions": [
+    "kept the current scope"
+  ],
+  "final_adjudication": "passed",
+  "conclusions": [
+    "role contract review passed"
+  ],
+  "accepted_suggestions": [],
+  "rejected_suggestions": [],
+  "unresolved_questions": [],
+  "blocking_findings": [],
+  "role_contract_version": "1.1.0",
+  "seat_contract_version": "1.1.0-seat.1",
+  "role_context": {
+    "feature_slug": "role-contract",
+    "delivery_id": "aaf46f3003a04511b26c776cfe1d7e70",
+    "project_type": "non_ui",
+    "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+    "input_refs": {
+      "non_goals": {
+        "ref": "non_goals.md",
+        "sha256": "5142820e555e18f180f923415885b59b8e02e9e270cf876342a3a0c16fc9116b",
+        "project_type": "shared"
+      },
+      "open_spec": {
+        "ref": "open_spec.md",
+        "sha256": "e90e4a3a7b3e562a53633ffc17a0c31ca380f565715d5087408d86fe2a3d9528",
+        "project_type": "shared"
+      },
+      "prior_confirmations": {
+        "ref": "prior_confirmations.md",
+        "sha256": "e8d3825e21d3ceb6313a4934389a3972319831891671bba418b70d012ca14a96",
+        "project_type": "shared"
+      },
+      "product_blueprint": {
+        "ref": "product_blueprint.md",
+        "sha256": "8bf1bf2af91dc9c20073716bd819b3e0b100a45728b09f31cf29787272635fc4",
+        "project_type": "shared"
+      },
+      "prototype_or_behavior_contract": {
+        "ref": "prototype_or_behavior_contract.md",
+        "sha256": "634017d53903263ededce3731532c25a7e953475c1961eae6b618d02679ea157",
+        "project_type": "shared"
+      },
+      "user_stories": {
+        "ref": "user_stories.md",
+        "sha256": "d1bea6fcc33654088e4d61e32ffe4c718c73ddaf3cff2d99069c198337b25235",
+        "project_type": "shared"
+      },
+      "negative_boundaries": {
+        "ref": "negative_boundaries.md",
+        "sha256": "7211d0442b410476ff0c620fb42bc9a972c24496e19a8c99bc22132858905215",
+        "project_type": "shared"
+      },
+      "permission_constraints": {
+        "ref": "permission_constraints.md",
+        "sha256": "7d286393fe8520b858018dee4e019b7f81ceb815956451cfcd85b51e610472cf",
+        "project_type": "shared"
+      },
+      "prior_review_findings": {
+        "ref": "prior_review_findings.md",
+        "sha256": "d11c9fbe726d48bb440b7aa4e393575c5f2290b36a6f99e3b7c8d97d289babc7",
+        "project_type": "shared"
+      },
+      "scenario_matrix": {
+        "ref": "scenario_matrix.md",
+        "sha256": "8d2857b5691b8d26fe0fcefe3f16d5f8393d14626617e59b2ed54627a0b92858",
+        "project_type": "shared"
+      },
+      "scope": {
+        "ref": "scope.md",
+        "sha256": "4c3bd5f2ceb6887f698c01ca14e3c32e17721650ec13c9a00275adec664ca3a3",
+        "project_type": "shared"
+      },
+      "acceptance_anchors": {
+        "ref": "acceptance_anchors.md",
+        "sha256": "1aebdc6b04b2a4e189a318bd214b7dec1f2986c6a847b630181e03f5698e17d8",
+        "project_type": "shared"
+      },
+      "baseline_entry_paths": {
+        "ref": "baseline_entry_paths.md",
+        "sha256": "20ec9e1895a314ad16ff5e0f9939cc842c9b46691542049efbb07022fbc31f9d",
+        "project_type": "shared"
+      },
+      "browser_evidence": {
+        "ref": "browser_evidence.md",
+        "sha256": "95557b393f6307d117e94f3fe129c4d8d5fc57523176ea69e5b10f4d7a071c8a",
+        "project_type": "shared"
+      },
+      "journeys": {
+        "ref": "journeys.md",
+        "sha256": "2da8966830b21a9c9d8e8da91d1cd1f70b64d04e2f60682d33b54c25cc21520b",
+        "project_type": "shared"
+      }
+    }
+  },
+  "review_seats": [
+    {
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "intent_boundary",
+      "display_name": "产品意图与边界",
+      "role_ids": [
+        "product.intent_reviewer",
+        "negative.boundary_reviewer"
+      ],
+      "role_task_hashes": {
+        "product.intent_reviewer": "c8d26a8d49f42aabbdd2728fd9d70ec7f2fce4ac556a877e864c080245415449",
+        "negative.boundary_reviewer": "e3c7a7890abc20513c10a7f3daecac0dfcfe23a35cdac27524bab967398515e3"
+      },
+      "seat_task_hash": "47dc868ee8c451e49190cce69dd9d50c15f94dbe394aa1331bac08d80ae79c60"
+    },
+    {
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "journey_interaction",
+      "display_name": "用户旅程与交互",
+      "role_ids": [
+        "scenario.journey_reviewer"
+      ],
+      "role_task_hashes": {
+        "scenario.journey_reviewer": "449554a25eaa49ca5cdf2c1d13dca7eddc8aa023592c5819c9a7745e8c55e68a"
+      },
+      "seat_task_hash": "5c927fa0537779495f40df221045e841a08713da3a4004f59b5cce4fd05aee76"
+    }
+  ],
+  "role_tasks": [
+    {
+      "role_id": "product.intent_reviewer",
+      "role_version": "1.1.0",
+      "display_name": "产品意图评审专家",
+      "mission": "判断交付是否仍表达清晰、可验证的产品意图和边界。",
+      "when_to_invoke": "scenario gate 在产品基线确认前启用。",
+      "scope": [
+        "product_blueprint",
+        "open_spec",
+        "scope",
+        "acceptance"
+      ],
+      "non_goals": [
+        "改变产品优先级",
+        "发明未声明的商业目标",
+        "直接批准范围变化"
+      ],
+      "task_steps": [
+        "提取目标用户、用户任务、期望结果和非目标。",
+        "建立目标—功能—验收标准对应关系。",
+        "标出目标遗漏、范围冲突和不支持的推断。",
+        "为每个结论绑定原始需求或产品材料证据。"
+      ],
+      "must_check": [
+        "intent.target_user",
+        "intent.user_job",
+        "intent.scope",
+        "intent.acceptance"
+      ],
+      "must_not_do": [
+        "add_product_goal",
+        "change_priority",
+        "treat_preference_as_blocker",
+        "change_scope",
+        "edit_TASK",
+        "write_code",
+        "edit_tests",
+        "update_Goal",
+        "close_delivery",
+        "write_canonical_artifact",
+        "expand_input_scope",
+        "delegate_review",
+        "override_gate_by_majority"
+      ],
+      "required_capabilities": [
+        "read_open_spec",
+        "read_artifact",
+        "structured_output"
+      ],
+      "permissions": {
+        "read": [
+          "role_brief",
+          "input_snapshot_refs"
+        ],
+        "write": [
+          "member_result_return"
+        ],
+        "canonical_write": false
+      },
+      "evidence_requirements": [
+        "每个关键目标有功能和验收锚点",
+        "冲突引用具体文档位置",
+        "每项检查引用任务内当前材料和具体锚点；快照外材料需先升级 owner，不得自行扩读。",
+        "判断、风险和未知项分别报告；无发现也要逐项填写检查依据。"
+      ],
+      "completion_criteria": [
+        "每个关键目标有功能和验收锚点",
+        "冲突引用具体文档位置"
+      ],
+      "escalation_conditions": [
+        "缺目标证据",
+        "范围与已确认基线冲突",
+        "验收无法描述用户结果",
+        "必需输入不可读、能力缺失、快照漂移或越权时 blocked；已完成但需修复时 needs_remediation。"
+      ],
+      "peer_challenge_contract": {
+        "can_challenge": [
+          "scenario.journey_reviewer",
+          "negative.boundary_reviewer"
+        ],
+        "must_respond_to": [
+          "不重复确认的目标无需阻塞",
+          "意见冲突需引用目标和证据"
+        ],
+        "cannot_adjudicate": [
+          "用户意图变更",
+          "他人专业结论的最终裁决",
+          "确定性门禁豁免",
+          "用户确认或 closure"
+        ],
+        "escalate_to_owner": [
+          "缺目标证据",
+          "范围与已确认基线冲突",
+          "验收无法描述用户结果"
+        ],
+        "no_findings": "逐项列出 checked_items、check_records 和证据，不制造争议。",
+        "challenge_format": [
+          "target_role",
+          "check_id_or_finding_id",
+          "question",
+          "evidence_refs"
+        ],
+        "response_format": [
+          "challenge_ref",
+          "position",
+          "evidence_refs",
+          "revision_or_no_change_reason"
+        ]
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blocking_findings",
+          "check_records",
+          "checked_items",
+          "completion_evidence",
+          "completion_status",
+          "evidence_refs",
+          "findings",
+          "identity_kind",
+          "independent_position",
+          "input_snapshot_hash",
+          "role_definition_hash",
+          "role_id",
+          "role_version",
+          "status",
+          "task_hash",
+          "task_template_hash",
+          "unresolved_questions",
+          "write_intents"
+        ],
+        "properties": {
+          "role_id": {
+            "type": "string"
+          },
+          "role_version": {
+            "type": "string"
+          },
+          "role_definition_hash": {
+            "type": "string"
+          },
+          "task_template_hash": {
+            "type": "string"
+          },
+          "task_hash": {
+            "type": "string"
+          },
+          "input_snapshot_hash": {
+            "type": "string"
+          },
+          "independent_position": {
+            "type": "string"
+          },
+          "seat_contract_version": {
+            "type": "string"
+          },
+          "seat_id": {
+            "type": "string"
+          },
+          "seat_task_hash": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "blocked",
+              "needs_remediation"
+            ]
+          },
+          "completion_status": {
+            "enum": [
+              "complete",
+              "incomplete"
+            ]
+          },
+          "identity_kind": {
+            "enum": [
+              "spawned",
+              "simulated"
+            ]
+          },
+          "agent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spawn_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "simulated_identity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "check_records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "check_id",
+                "outcome",
+                "reason",
+                "evidence_refs"
+              ],
+              "properties": {
+                "check_id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "satisfied",
+                    "finding",
+                    "blocked",
+                    "not_applicable"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "completion_evidence": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "finding_id",
+                "kind",
+                "check_id",
+                "subject_ref",
+                "evidence_refs",
+                "impact",
+                "recommendation",
+                "disposition",
+                "rationale"
+              ],
+              "properties": {
+                "finding_id": {
+                  "type": "string"
+                },
+                "check_id": {
+                  "type": "string"
+                },
+                "subject_ref": {
+                  "type": "string"
+                },
+                "impact": {
+                  "type": "string"
+                },
+                "recommendation": {
+                  "type": "string"
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "finding",
+                    "risk",
+                    "unresolved_question",
+                    "blocking_finding"
+                  ]
+                },
+                "disposition": {
+                  "enum": [
+                    "open",
+                    "accepted",
+                    "rejected"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocking_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unresolved_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "write_intents": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      },
+      "runtime_policy": {
+        "timeout_seconds": 600,
+        "max_recovery": 1,
+        "max_revision_rounds": 1,
+        "model_control": "host_managed"
+      },
+      "feature_slug": "role-contract",
+      "delivery_id": "aaf46f3003a04511b26c776cfe1d7e70",
+      "project_type": "non_ui",
+      "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+      "review_type": "scenario",
+      "role_definition_hash": "c20d31c17188bcc8bf3533e1d5e51038f626df2567bdbb48179a0a9fbc25280d",
+      "task_template_hash": "ff073efd714f8260f0d8d6ea5c08922cd99604dd99d358d24dcc3cfd0b030c41",
+      "required_inputs": [
+        "open_spec",
+        "product_blueprint",
+        "user_stories",
+        "non_goals"
+      ],
+      "input_refs": {
+        "non_goals": {
+          "ref": "non_goals.md",
+          "sha256": "5142820e555e18f180f923415885b59b8e02e9e270cf876342a3a0c16fc9116b",
+          "project_type": "shared"
+        },
+        "open_spec": {
+          "ref": "open_spec.md",
+          "sha256": "e90e4a3a7b3e562a53633ffc17a0c31ca380f565715d5087408d86fe2a3d9528",
+          "project_type": "shared"
+        },
+        "prior_confirmations": {
+          "ref": "prior_confirmations.md",
+          "sha256": "e8d3825e21d3ceb6313a4934389a3972319831891671bba418b70d012ca14a96",
+          "project_type": "shared"
+        },
+        "product_blueprint": {
+          "ref": "product_blueprint.md",
+          "sha256": "8bf1bf2af91dc9c20073716bd819b3e0b100a45728b09f31cf29787272635fc4",
+          "project_type": "shared"
+        },
+        "prototype_or_behavior_contract": {
+          "ref": "prototype_or_behavior_contract.md",
+          "sha256": "634017d53903263ededce3731532c25a7e953475c1961eae6b618d02679ea157",
+          "project_type": "shared"
+        },
+        "user_stories": {
+          "ref": "user_stories.md",
+          "sha256": "d1bea6fcc33654088e4d61e32ffe4c718c73ddaf3cff2d99069c198337b25235",
+          "project_type": "shared"
+        }
+      },
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "intent_boundary",
+      "seat_display_name": "产品意图与边界",
+      "seat_role_ids": [
+        "product.intent_reviewer",
+        "negative.boundary_reviewer"
+      ],
+      "seat_task_hash": "47dc868ee8c451e49190cce69dd9d50c15f94dbe394aa1331bac08d80ae79c60",
+      "task_hash": "c8d26a8d49f42aabbdd2728fd9d70ec7f2fce4ac556a877e864c080245415449"
+    },
+    {
+      "role_id": "negative.boundary_reviewer",
+      "role_version": "1.1.0",
+      "display_name": "负面边界评审专家",
+      "mission": "识别越界、未支持、越权和高风险行为，保护版本范围。",
+      "when_to_invoke": "scenario 或 test_coverage gate 需要负面边界检查时启用。",
+      "scope": [
+        "non_goals",
+        "permissions",
+        "unsupported_behavior",
+        "failure_boundaries"
+      ],
+      "non_goals": [
+        "凭空添加法规要求",
+        "改变权限政策",
+        "把个人风险偏好列为阻塞"
+      ],
+      "task_steps": [
+        "提取明确不支持、未来版本和越权行为。",
+        "为每个边界构造触发条件和预期拒绝结果。",
+        "检查成功提示是否可能掩盖实际失败。",
+        "把边界转成可执行验证建议。"
+      ],
+      "must_check": [
+        "boundary.out_of_scope",
+        "boundary.permission",
+        "boundary.invalid_input",
+        "boundary.failure_result"
+      ],
+      "must_not_do": [
+        "invent_policy",
+        "expand_scope",
+        "waive_declared_boundary",
+        "change_scope",
+        "edit_TASK",
+        "write_code",
+        "edit_tests",
+        "update_Goal",
+        "close_delivery",
+        "write_canonical_artifact",
+        "expand_input_scope",
+        "delegate_review",
+        "override_gate_by_majority"
+      ],
+      "required_capabilities": [
+        "read_scope_artifacts",
+        "read_permission_rules",
+        "structured_output"
+      ],
+      "permissions": {
+        "read": [
+          "role_brief",
+          "input_snapshot_refs"
+        ],
+        "write": [
+          "member_result_return"
+        ],
+        "canonical_write": false
+      },
+      "evidence_requirements": [
+        "每个边界有触发、拒绝结果和证据",
+        "未声明规则被标为 question 而非 blocker",
+        "每项检查引用任务内当前材料和具体锚点；快照外材料需先升级 owner，不得自行扩读。",
+        "判断、风险和未知项分别报告；无发现也要逐项填写检查依据。"
+      ],
+      "completion_criteria": [
+        "每个边界有触发、拒绝结果和证据",
+        "未声明规则被标为 question 而非 blocker"
+      ],
+      "escalation_conditions": [
+        "越权可达",
+        "未来功能泄漏",
+        "失败被错误地报告为成功",
+        "必需输入不可读、能力缺失、快照漂移或越权时 blocked；已完成但需修复时 needs_remediation。"
+      ],
+      "peer_challenge_contract": {
+        "can_challenge": [
+          "product.intent_reviewer",
+          "scenario.journey_reviewer"
+        ],
+        "must_respond_to": [
+          "必须回应其他角色发现的边界冲突",
+          "边界语义缺失时升级 owner"
+        ],
+        "cannot_adjudicate": [
+          "用户意图变更",
+          "他人专业结论的最终裁决",
+          "确定性门禁豁免",
+          "用户确认或 closure"
+        ],
+        "escalate_to_owner": [
+          "越权可达",
+          "未来功能泄漏",
+          "失败被错误地报告为成功"
+        ],
+        "no_findings": "逐项列出 checked_items、check_records 和证据，不制造争议。",
+        "challenge_format": [
+          "target_role",
+          "check_id_or_finding_id",
+          "question",
+          "evidence_refs"
+        ],
+        "response_format": [
+          "challenge_ref",
+          "position",
+          "evidence_refs",
+          "revision_or_no_change_reason"
+        ]
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blocking_findings",
+          "check_records",
+          "checked_items",
+          "completion_evidence",
+          "completion_status",
+          "evidence_refs",
+          "findings",
+          "identity_kind",
+          "independent_position",
+          "input_snapshot_hash",
+          "role_definition_hash",
+          "role_id",
+          "role_version",
+          "status",
+          "task_hash",
+          "task_template_hash",
+          "unresolved_questions",
+          "write_intents"
+        ],
+        "properties": {
+          "role_id": {
+            "type": "string"
+          },
+          "role_version": {
+            "type": "string"
+          },
+          "role_definition_hash": {
+            "type": "string"
+          },
+          "task_template_hash": {
+            "type": "string"
+          },
+          "task_hash": {
+            "type": "string"
+          },
+          "input_snapshot_hash": {
+            "type": "string"
+          },
+          "independent_position": {
+            "type": "string"
+          },
+          "seat_contract_version": {
+            "type": "string"
+          },
+          "seat_id": {
+            "type": "string"
+          },
+          "seat_task_hash": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "blocked",
+              "needs_remediation"
+            ]
+          },
+          "completion_status": {
+            "enum": [
+              "complete",
+              "incomplete"
+            ]
+          },
+          "identity_kind": {
+            "enum": [
+              "spawned",
+              "simulated"
+            ]
+          },
+          "agent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spawn_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "simulated_identity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "check_records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "check_id",
+                "outcome",
+                "reason",
+                "evidence_refs"
+              ],
+              "properties": {
+                "check_id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "satisfied",
+                    "finding",
+                    "blocked",
+                    "not_applicable"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "completion_evidence": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "finding_id",
+                "kind",
+                "check_id",
+                "subject_ref",
+                "evidence_refs",
+                "impact",
+                "recommendation",
+                "disposition",
+                "rationale"
+              ],
+              "properties": {
+                "finding_id": {
+                  "type": "string"
+                },
+                "check_id": {
+                  "type": "string"
+                },
+                "subject_ref": {
+                  "type": "string"
+                },
+                "impact": {
+                  "type": "string"
+                },
+                "recommendation": {
+                  "type": "string"
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "finding",
+                    "risk",
+                    "unresolved_question",
+                    "blocking_finding"
+                  ]
+                },
+                "disposition": {
+                  "enum": [
+                    "open",
+                    "accepted",
+                    "rejected"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocking_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unresolved_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "write_intents": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      },
+      "runtime_policy": {
+        "timeout_seconds": 600,
+        "max_recovery": 1,
+        "max_revision_rounds": 1,
+        "model_control": "host_managed"
+      },
+      "feature_slug": "role-contract",
+      "delivery_id": "aaf46f3003a04511b26c776cfe1d7e70",
+      "project_type": "non_ui",
+      "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+      "review_type": "scenario",
+      "role_definition_hash": "95e26265f08f695b8b500a2a001a7e0ed07f502b4432b16fe1340f06723e33d7",
+      "task_template_hash": "1d18a5b1d6e69b4da95a1439024a96bcf7c53f3d262c54a69f5a2f4242cf1979",
+      "required_inputs": [
+        "scope",
+        "non_goals",
+        "negative_boundaries",
+        "scenario_matrix",
+        "permission_constraints"
+      ],
+      "input_refs": {
+        "negative_boundaries": {
+          "ref": "negative_boundaries.md",
+          "sha256": "7211d0442b410476ff0c620fb42bc9a972c24496e19a8c99bc22132858905215",
+          "project_type": "shared"
+        },
+        "non_goals": {
+          "ref": "non_goals.md",
+          "sha256": "5142820e555e18f180f923415885b59b8e02e9e270cf876342a3a0c16fc9116b",
+          "project_type": "shared"
+        },
+        "permission_constraints": {
+          "ref": "permission_constraints.md",
+          "sha256": "7d286393fe8520b858018dee4e019b7f81ceb815956451cfcd85b51e610472cf",
+          "project_type": "shared"
+        },
+        "prior_review_findings": {
+          "ref": "prior_review_findings.md",
+          "sha256": "d11c9fbe726d48bb440b7aa4e393575c5f2290b36a6f99e3b7c8d97d289babc7",
+          "project_type": "shared"
+        },
+        "scenario_matrix": {
+          "ref": "scenario_matrix.md",
+          "sha256": "8d2857b5691b8d26fe0fcefe3f16d5f8393d14626617e59b2ed54627a0b92858",
+          "project_type": "shared"
+        },
+        "scope": {
+          "ref": "scope.md",
+          "sha256": "4c3bd5f2ceb6887f698c01ca14e3c32e17721650ec13c9a00275adec664ca3a3",
+          "project_type": "shared"
+        }
+      },
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "intent_boundary",
+      "seat_display_name": "产品意图与边界",
+      "seat_role_ids": [
+        "product.intent_reviewer",
+        "negative.boundary_reviewer"
+      ],
+      "seat_task_hash": "47dc868ee8c451e49190cce69dd9d50c15f94dbe394aa1331bac08d80ae79c60",
+      "task_hash": "e3c7a7890abc20513c10a7f3daecac0dfcfe23a35cdac27524bab967398515e3"
+    },
+    {
+      "role_id": "scenario.journey_reviewer",
+      "role_version": "1.1.0",
+      "display_name": "用户旅程评审专家",
+      "mission": "检查每个用户角色能否从真实入口完成普通、异常和恢复旅程。",
+      "when_to_invoke": "scenario gate 或 UI conformance gate 需要旅程检查时启用。",
+      "scope": [
+        "actors",
+        "entry_paths",
+        "journeys",
+        "states",
+        "exceptions",
+        "recovery"
+      ],
+      "non_goals": [
+        "重新设计产品",
+        "只审查理想路径",
+        "以说明文字代替真实交互"
+      ],
+      "task_steps": [
+        "按角色列出普通入口、前置条件和最终结果。",
+        "逐项走查异常、取消、重试、恢复和权限不足。",
+        "核对 US/J/SC/AC 锚点和状态变化。",
+        "将每个缺口绑定到具体 journey、state 或 action。"
+      ],
+      "must_check": [
+        "journey.actor",
+        "journey.entry",
+        "journey.happy_path",
+        "journey.exception",
+        "journey.recovery",
+        "journey.permission"
+      ],
+      "must_not_do": [
+        "ignore_negative_paths",
+        "redesign_product",
+        "accept_static_explanation_as_interaction",
+        "change_scope",
+        "edit_TASK",
+        "write_code",
+        "edit_tests",
+        "update_Goal",
+        "close_delivery",
+        "write_canonical_artifact",
+        "expand_input_scope",
+        "delegate_review",
+        "override_gate_by_majority"
+      ],
+      "required_capabilities": [
+        "read_scenario_matrix",
+        "read_ui_or_behavior_evidence",
+        "structured_output"
+      ],
+      "permissions": {
+        "read": [
+          "role_brief",
+          "input_snapshot_refs"
+        ],
+        "write": [
+          "member_result_return"
+        ],
+        "canonical_write": false
+      },
+      "evidence_requirements": [
+        "每个角色和旅程有覆盖结论",
+        "异常/恢复路径有证据",
+        "每项检查引用任务内当前材料和具体锚点；快照外材料需先升级 owner，不得自行扩读。",
+        "判断、风险和未知项分别报告；无发现也要逐项填写检查依据。"
+      ],
+      "completion_criteria": [
+        "每个角色和旅程有覆盖结论",
+        "异常/恢复路径有证据"
+      ],
+      "escalation_conditions": [
+        "入口无法到达",
+        "关键状态缺失",
+        "异常后无法恢复",
+        "既有入口被平行页面替换",
+        "必需输入不可读、能力缺失、快照漂移或越权时 blocked；已完成但需修复时 needs_remediation。"
+      ],
+      "peer_challenge_contract": {
+        "can_challenge": [
+          "product.intent_reviewer",
+          "negative.boundary_reviewer"
+        ],
+        "must_respond_to": [
+          "其他角色指出路径缺口时必须回应证据",
+          "不可用状态要升级 owner"
+        ],
+        "cannot_adjudicate": [
+          "用户意图变更",
+          "他人专业结论的最终裁决",
+          "确定性门禁豁免",
+          "用户确认或 closure"
+        ],
+        "escalate_to_owner": [
+          "入口无法到达",
+          "关键状态缺失",
+          "异常后无法恢复",
+          "既有入口被平行页面替换"
+        ],
+        "no_findings": "逐项列出 checked_items、check_records 和证据，不制造争议。",
+        "challenge_format": [
+          "target_role",
+          "check_id_or_finding_id",
+          "question",
+          "evidence_refs"
+        ],
+        "response_format": [
+          "challenge_ref",
+          "position",
+          "evidence_refs",
+          "revision_or_no_change_reason"
+        ]
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blocking_findings",
+          "check_records",
+          "checked_items",
+          "completion_evidence",
+          "completion_status",
+          "evidence_refs",
+          "findings",
+          "identity_kind",
+          "independent_position",
+          "input_snapshot_hash",
+          "role_definition_hash",
+          "role_id",
+          "role_version",
+          "status",
+          "task_hash",
+          "task_template_hash",
+          "unresolved_questions",
+          "write_intents"
+        ],
+        "properties": {
+          "role_id": {
+            "type": "string"
+          },
+          "role_version": {
+            "type": "string"
+          },
+          "role_definition_hash": {
+            "type": "string"
+          },
+          "task_template_hash": {
+            "type": "string"
+          },
+          "task_hash": {
+            "type": "string"
+          },
+          "input_snapshot_hash": {
+            "type": "string"
+          },
+          "independent_position": {
+            "type": "string"
+          },
+          "seat_contract_version": {
+            "type": "string"
+          },
+          "seat_id": {
+            "type": "string"
+          },
+          "seat_task_hash": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "blocked",
+              "needs_remediation"
+            ]
+          },
+          "completion_status": {
+            "enum": [
+              "complete",
+              "incomplete"
+            ]
+          },
+          "identity_kind": {
+            "enum": [
+              "spawned",
+              "simulated"
+            ]
+          },
+          "agent_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spawn_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "simulated_identity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "check_records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "check_id",
+                "outcome",
+                "reason",
+                "evidence_refs"
+              ],
+              "properties": {
+                "check_id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "enum": [
+                    "satisfied",
+                    "finding",
+                    "blocked",
+                    "not_applicable"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "completion_evidence": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "finding_id",
+                "kind",
+                "check_id",
+                "subject_ref",
+                "evidence_refs",
+                "impact",
+                "recommendation",
+                "disposition",
+                "rationale"
+              ],
+              "properties": {
+                "finding_id": {
+                  "type": "string"
+                },
+                "check_id": {
+                  "type": "string"
+                },
+                "subject_ref": {
+                  "type": "string"
+                },
+                "impact": {
+                  "type": "string"
+                },
+                "recommendation": {
+                  "type": "string"
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "finding",
+                    "risk",
+                    "unresolved_question",
+                    "blocking_finding"
+                  ]
+                },
+                "disposition": {
+                  "enum": [
+                    "open",
+                    "accepted",
+                    "rejected"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocking_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unresolved_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "write_intents": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      },
+      "runtime_policy": {
+        "timeout_seconds": 600,
+        "max_recovery": 1,
+        "max_revision_rounds": 1,
+        "model_control": "host_managed"
+      },
+      "feature_slug": "role-contract",
+      "delivery_id": "aaf46f3003a04511b26c776cfe1d7e70",
+      "project_type": "non_ui",
+      "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+      "review_type": "scenario",
+      "role_definition_hash": "1103a934085ba8ff9feac6c416c440d42928c0db9fcccd67dbf5949cdb671636",
+      "task_template_hash": "3f17d1644a3879c99309b41a9e4ebe1f53df281cf5b2c37a95eeb51b928896b1",
+      "required_inputs": [
+        "scenario_matrix",
+        "user_stories",
+        "journeys",
+        "acceptance_anchors",
+        "prototype_or_behavior_contract"
+      ],
+      "input_refs": {
+        "acceptance_anchors": {
+          "ref": "acceptance_anchors.md",
+          "sha256": "1aebdc6b04b2a4e189a318bd214b7dec1f2986c6a847b630181e03f5698e17d8",
+          "project_type": "shared"
+        },
+        "baseline_entry_paths": {
+          "ref": "baseline_entry_paths.md",
+          "sha256": "20ec9e1895a314ad16ff5e0f9939cc842c9b46691542049efbb07022fbc31f9d",
+          "project_type": "shared"
+        },
+        "browser_evidence": {
+          "ref": "browser_evidence.md",
+          "sha256": "95557b393f6307d117e94f3fe129c4d8d5fc57523176ea69e5b10f4d7a071c8a",
+          "project_type": "shared"
+        },
+        "journeys": {
+          "ref": "journeys.md",
+          "sha256": "2da8966830b21a9c9d8e8da91d1cd1f70b64d04e2f60682d33b54c25cc21520b",
+          "project_type": "shared"
+        },
+        "prototype_or_behavior_contract": {
+          "ref": "prototype_or_behavior_contract.md",
+          "sha256": "634017d53903263ededce3731532c25a7e953475c1961eae6b618d02679ea157",
+          "project_type": "shared"
+        },
+        "scenario_matrix": {
+          "ref": "scenario_matrix.md",
+          "sha256": "8d2857b5691b8d26fe0fcefe3f16d5f8393d14626617e59b2ed54627a0b92858",
+          "project_type": "shared"
+        },
+        "user_stories": {
+          "ref": "user_stories.md",
+          "sha256": "d1bea6fcc33654088e4d61e32ffe4c718c73ddaf3cff2d99069c198337b25235",
+          "project_type": "shared"
+        }
+      },
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "journey_interaction",
+      "seat_display_name": "用户旅程与交互",
+      "seat_role_ids": [
+        "scenario.journey_reviewer"
+      ],
+      "seat_task_hash": "5c927fa0537779495f40df221045e841a08713da3a4004f59b5cce4fd05aee76",
+      "task_hash": "449554a25eaa49ca5cdf2c1d13dca7eddc8aa023592c5819c9a7745e8c55e68a"
+    }
+  ],
+  "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+  "role_results": [
+    {
+      "role_id": "product.intent_reviewer",
+      "role_version": "1.1.0",
+      "role_definition_hash": "c20d31c17188bcc8bf3533e1d5e51038f626df2567bdbb48179a0a9fbc25280d",
+      "task_template_hash": "ff073efd714f8260f0d8d6ea5c08922cd99604dd99d358d24dcc3cfd0b030c41",
+      "task_hash": "c8d26a8d49f42aabbdd2728fd9d70ec7f2fce4ac556a877e864c080245415449",
+      "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+      "identity_kind": "spawned",
+      "agent_id": "agent-intent_boundary",
+      "spawn_source": "test.spawn",
+      "status": "passed",
+      "completion_status": "complete",
+      "checked_items": [
+        "intent.target_user",
+        "intent.user_job",
+        "intent.scope",
+        "intent.acceptance"
+      ],
+      "check_records": [
+        {
+          "check_id": "intent.target_user",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "non_goals.md"
+          ]
+        },
+        {
+          "check_id": "intent.user_job",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "non_goals.md"
+          ]
+        },
+        {
+          "check_id": "intent.scope",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "non_goals.md"
+          ]
+        },
+        {
+          "check_id": "intent.acceptance",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "non_goals.md"
+          ]
+        }
+      ],
+      "completion_evidence": {
+        "每个关键目标有功能和验收锚点": [
+          "non_goals.md"
+        ],
+        "冲突引用具体文档位置": [
+          "non_goals.md"
+        ]
+      },
+      "evidence_refs": [
+        "non_goals.md",
+        "open_spec.md",
+        "prior_confirmations.md",
+        "product_blueprint.md",
+        "prototype_or_behavior_contract.md",
+        "user_stories.md"
+      ],
+      "independent_position": "Required checks were verified against the attached evidence.",
+      "findings": [],
+      "blocking_findings": [],
+      "unresolved_questions": [],
+      "write_intents": [],
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "intent_boundary",
+      "seat_task_hash": "47dc868ee8c451e49190cce69dd9d50c15f94dbe394aa1331bac08d80ae79c60"
+    },
+    {
+      "role_id": "negative.boundary_reviewer",
+      "role_version": "1.1.0",
+      "role_definition_hash": "95e26265f08f695b8b500a2a001a7e0ed07f502b4432b16fe1340f06723e33d7",
+      "task_template_hash": "1d18a5b1d6e69b4da95a1439024a96bcf7c53f3d262c54a69f5a2f4242cf1979",
+      "task_hash": "e3c7a7890abc20513c10a7f3daecac0dfcfe23a35cdac27524bab967398515e3",
+      "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+      "identity_kind": "spawned",
+      "agent_id": "agent-intent_boundary",
+      "spawn_source": "test.spawn",
+      "status": "passed",
+      "completion_status": "complete",
+      "checked_items": [
+        "boundary.out_of_scope",
+        "boundary.permission",
+        "boundary.invalid_input",
+        "boundary.failure_result"
+      ],
+      "check_records": [
+        {
+          "check_id": "boundary.out_of_scope",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "negative_boundaries.md"
+          ]
+        },
+        {
+          "check_id": "boundary.permission",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "negative_boundaries.md"
+          ]
+        },
+        {
+          "check_id": "boundary.invalid_input",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "negative_boundaries.md"
+          ]
+        },
+        {
+          "check_id": "boundary.failure_result",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "negative_boundaries.md"
+          ]
+        }
+      ],
+      "completion_evidence": {
+        "每个边界有触发、拒绝结果和证据": [
+          "negative_boundaries.md"
+        ],
+        "未声明规则被标为 question 而非 blocker": [
+          "negative_boundaries.md"
+        ]
+      },
+      "evidence_refs": [
+        "negative_boundaries.md",
+        "non_goals.md",
+        "permission_constraints.md",
+        "prior_review_findings.md",
+        "scenario_matrix.md",
+        "scope.md"
+      ],
+      "independent_position": "Required checks were verified against the attached evidence.",
+      "findings": [],
+      "blocking_findings": [],
+      "unresolved_questions": [],
+      "write_intents": [],
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "intent_boundary",
+      "seat_task_hash": "47dc868ee8c451e49190cce69dd9d50c15f94dbe394aa1331bac08d80ae79c60"
+    },
+    {
+      "role_id": "scenario.journey_reviewer",
+      "role_version": "1.1.0",
+      "role_definition_hash": "1103a934085ba8ff9feac6c416c440d42928c0db9fcccd67dbf5949cdb671636",
+      "task_template_hash": "3f17d1644a3879c99309b41a9e4ebe1f53df281cf5b2c37a95eeb51b928896b1",
+      "task_hash": "449554a25eaa49ca5cdf2c1d13dca7eddc8aa023592c5819c9a7745e8c55e68a",
+      "input_snapshot_hash": "ce4dcc00e6cbe4070928de4e74a3ba75c8c8016ebc34a8346b5865c9c67d54ae",
+      "identity_kind": "spawned",
+      "agent_id": "agent-journey_interaction",
+      "spawn_source": "test.spawn",
+      "status": "passed",
+      "completion_status": "complete",
+      "checked_items": [
+        "journey.actor",
+        "journey.entry",
+        "journey.happy_path",
+        "journey.exception",
+        "journey.recovery",
+        "journey.permission"
+      ],
+      "check_records": [
+        {
+          "check_id": "journey.actor",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "acceptance_anchors.md"
+          ]
+        },
+        {
+          "check_id": "journey.entry",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "acceptance_anchors.md"
+          ]
+        },
+        {
+          "check_id": "journey.happy_path",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "acceptance_anchors.md"
+          ]
+        },
+        {
+          "check_id": "journey.exception",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "acceptance_anchors.md"
+          ]
+        },
+        {
+          "check_id": "journey.recovery",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "acceptance_anchors.md"
+          ]
+        },
+        {
+          "check_id": "journey.permission",
+          "outcome": "satisfied",
+          "reason": "Current input contains the required mapping.",
+          "evidence_refs": [
+            "acceptance_anchors.md"
+          ]
+        }
+      ],
+      "completion_evidence": {
+        "每个角色和旅程有覆盖结论": [
+          "acceptance_anchors.md"
+        ],
+        "异常/恢复路径有证据": [
+          "acceptance_anchors.md"
+        ]
+      },
+      "evidence_refs": [
+        "acceptance_anchors.md",
+        "baseline_entry_paths.md",
+        "browser_evidence.md",
+        "journeys.md",
+        "prototype_or_behavior_contract.md",
+        "scenario_matrix.md",
+        "user_stories.md"
+      ],
+      "independent_position": "Required checks were verified against the attached evidence.",
+      "findings": [],
+      "blocking_findings": [],
+      "unresolved_questions": [],
+      "write_intents": [],
+      "seat_contract_version": "1.1.0-seat.1",
+      "seat_id": "journey_interaction",
+      "seat_task_hash": "5c927fa0537779495f40df221045e841a08713da3a4004f59b5cce4fd05aee76"
+    }
+  ]
+}

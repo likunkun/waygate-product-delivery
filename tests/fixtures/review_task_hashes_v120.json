@@ -1,0 +1,54 @@
+{
+  "scenario": {
+    "role_task_hashes": {
+      "product.intent_reviewer": "3748a65604d906cdb49534ec7d01dfe3ec5f7d57b0ba7f6907a4912023419b9b",
+      "negative.boundary_reviewer": "9b234f7ebf4ef74601bc0168ed4929e002bf99dc9269936039441d16120cfe2f",
+      "scenario.journey_reviewer": "eeec2fda84130636e46af80d6d5fab523f73c01aba55ffbf579af3b95b0b942f"
+    },
+    "seat_task_hashes": {
+      "intent_boundary": "08169a7d5a788ab45c5c27210f7fc16453b02ee67059d25c3e4e17234b09c139",
+      "journey_interaction": "5dc0949800e61ed4c7fc57a0005a93d294c8f6775f0023a0fddb6e3391a8a24f"
+    }
+  },
+  "test": {
+    "role_task_hashes": {
+      "test.strategy_reviewer": "4368c3c1ba4aafda1d3689ff562f68fcea38dc86d7b3615654e641cebedfc46c",
+      "coverage.assertion_reviewer": "111f5a9a1e120d66ac0094e947987b7b78278ae075cdff54516d5b55e2e935d5"
+    },
+    "seat_task_hashes": {
+      "test_strategy": "664c91a35999785931e7bf029874c3c086843bb93aa057f505ee0848c1134e0a",
+      "assertion_quality": "36bf943d92ac051f363f5bf6f116ef365fdf313ec930ad7534e1ecb8e7ae709c"
+    }
+  },
+  "test_coverage": {
+    "role_task_hashes": {
+      "coverage.traceability_reviewer": "69716727b2cb589b00b3b7f7ce0626b91a85909c84d3a1f77a566fd18af8374f",
+      "negative.boundary_reviewer": "e2cd9e6be3c75467fefd4591da9fcc4bd3acd006794c8ad3788fdf730745c38e",
+      "coverage.assertion_reviewer": "02cf625d31667314dec49740600afecd0c699422dd8a6692a014f1bf3d0c3856"
+    },
+    "seat_task_hashes": {
+      "coverage_boundary": "bf54a55b03bb0ece45b80b8fc1ba5df6eb8a8ff0c1f294ce7e6d3a4a2b18950d",
+      "assertion_quality": "2234d8e800e5eb7779140f56a16e0600573e937312d0f9b06bf7ed050e49d433"
+    }
+  },
+  "test_implementation": {
+    "role_task_hashes": {
+      "test.implementation_reviewer": "ef25da0a7c8548612bbd1eae081d36ff61567943a5200988aa1ee4a42e3b1308",
+      "coverage.assertion_reviewer": "e55a4fc463f058e8844f01aa66fe9f2d4f43a686b2f572ca889cbcd3adcd0914"
+    },
+    "seat_task_hashes": {
+      "implementation_evidence": "519beb0159c5d2b4ac9783bb180fe0995e894ab007ca2d8584c0225c7c08eb55",
+      "assertion_quality": "ea69414e3fcbcd3b63556305dbf0ebdb57e66302beabf488a949bb13607dae90"
+    }
+  },
+  "ui_conformance": {
+    "role_task_hashes": {
+      "ui.conformance_reviewer": "ee19c728a52725386a19655b9cb51919de42b8389b5abce13ea34d609905122d",
+      "scenario.journey_reviewer": "147012bccf91fc09eeee6c86111f91564167607558b6023356048ea2a5b1b301"
+    },
+    "seat_task_hashes": {
+      "ui_conformance": "002b4b1ac3b1e547f206fd450c71e6c9a5a83d1fa2a798ab64640d5934298384",
+      "journey_interaction": "eb87735e0e4f5bbcc1a6aa1b378de62c9b6bfa1626c673717760a43c22d645c8"
+    }
+  }
+}

@@ -17,6 +17,8 @@
 - ordinary_path_coverage: []
 - scenario_granularity_findings: []
 
+New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`; dispatch each seat its matching role tasks and complete role cards.
+
 ## Collection Coverage
 
 | collection_id | required_items | covered_items | item_level_assertions |

@@ -496,8 +496,11 @@ def _write_templates(templates_dir: Path) -> None:
         "review-role-task.md": (
             "# Review Role Task\n\n"
             "Generate with `workflow.prepare_review_role_tasks(review_type, input_refs)`; "
-            "send each member only its own task. Submit the returned role_context/role_tasks "
-            "with role_results through the existing review gate. Never hand-author hashes.\n\n"
+            "dispatch each reviewer seat from its matching `review_briefs` entry. Send the "
+            "complete seat brief: its `role_tasks` and frozen `role_cards`, including each "
+            "card's quality rubric and five examples. Submit the returned "
+            "role_context/review_seats/role_tasks/review_briefs with role_results through the "
+            "existing review gate. Never hand-author hashes.\n\n"
             "Review Type:\n"
             "Role:\n"
             "Role Version:\n"
@@ -505,6 +508,11 @@ def _write_templates(templates_dir: Path) -> None:
             "Seat ID:\n"
             "Seat Display Name:\n"
             "Seat Role IDs:\n"
+            "Review Brief (required): complete generated entry for this seat\n"
+            "Frozen Role Cards (required): original role_cards payload\n"
+            "Quality Rubric (required): role_cards[].quality_rubric\n"
+            "Examples (required): role_cards[].examples with pass, insufficient, "
+            "scope_violation, false_positive, must_block\n"
             "Mission:\n"
             "Current Delivery:\n"
             "Feature Slug:\n"
@@ -552,6 +560,9 @@ def _write_templates(templates_dir: Path) -> None:
             "- global_visual_continuity_findings: []\n"
             "- annotation_separation_findings: []\n"
             "- blocking_findings: []\n"
+            "\nNew reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`. "
+            "Dispatch only the matching brief to each seat; it contains that seat's role tasks and complete "
+            "frozen role cards, including quality rubrics and five examples.\n"
             "\nFor incremental existing-surface UI, `baseline_inheritance_review` must prove "
             "the scenario inherits the previous real entry path and does not replace it "
             "with a parallel page.\n"
@@ -573,6 +584,8 @@ def _write_templates(templates_dir: Path) -> None:
             "- revisions: []\n"
             "- final_adjudication:\n"
             "- blocking_findings: []\n"
+            "\nNew reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`; "
+            "dispatch each seat its matching role tasks and complete role cards.\n"
         ),
         "multi-agent-test-coverage-review.md": (
             "# Multi-Agent Test Coverage Review\n\n"
@@ -591,6 +604,8 @@ def _write_templates(templates_dir: Path) -> None:
             "- role_journey_coverage: []\n"
             "- ordinary_path_coverage: []\n"
             "- scenario_granularity_findings: []\n\n"
+            "New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`; "
+            "dispatch each seat its matching role tasks and complete role cards.\n\n"
             "## Collection Coverage\n\n"
             "| collection_id | required_items | covered_items | item_level_assertions |\n"
             "| --- | --- | --- | --- |\n\n"
@@ -610,6 +625,7 @@ def _write_templates(templates_dir: Path) -> None:
             "- status: draft\n"
             "- actual_test_code_paths: []\n"
             "- execution_evidence_paths: []\n"
+            "- review_briefs: two seat-scoped briefs with complete frozen role cards\n"
             "- reviewed_test_ids: []\n"
             "- verified_action_assertions: []\n"
             "- false_positive_risks: []\n"
@@ -650,6 +666,7 @@ def _write_templates(templates_dir: Path) -> None:
             "- structural_findings: []\n"
             "- visual_findings: []\n"
             "- interaction_findings: []\n"
+            "- review_briefs: two seat-scoped briefs with complete frozen role cards\n"
             "- legacy_reuse_findings: []\n"
             "- unmapped_regions: []\n"
             "- accepted_visual_deviations: []\n"
@@ -1220,7 +1237,22 @@ def _skill_markdown() -> str:
             '| `start <slug> team multi-agent "<request>"` | 同时设置 `production_mode_if_created=team` 和 `review_mode_if_created=spawned_subagents_authorized`。 |\n'
             '| `start <slug> team role-play "<request>"` | 生产仍使用真实成员；仅评审显式降级为 `role_simulation_allowed`。 |\n')
     text = text.replace(marker, rows + marker, 1)
-    return text + "\n" + _team_workflow_markdown() + "\n" + _progress_map_markdown()
+    return text + "\n" + _review_workflow_markdown() + "\n" + _team_workflow_markdown() + "\n" + _progress_map_markdown()
+
+
+def _review_workflow_markdown() -> str:
+    return """## V1.2.1 评审专家派发与展示
+
+这套规则适用于 coordinator/team 两种生产模式，以及 scenario、test、test_coverage、test_implementation、ui_conformance 五类评审。八个逻辑角色由每门两个固定席位承担，同席的每个角色分别返回结构化结果。
+
+1. 主线程调用 `prepare_review_role_tasks(review_type, input_refs)`，取得冻结的 `role_context`、`review_seats`、`role_tasks` 和按席分组的 `review_briefs`。每个 brief 包含 `seat_id/display_name/role_ids/seat_task_hash/role_tasks/role_cards`；卡内含 mission、task_steps、must_check、quality_rubric 和五类 examples。输入不足或绑定失效时先解决准备错误。
+2. 初轮派发消息由当前席的完整 brief 原样构成，必须同时携带本席 `role_tasks` 和完整 `role_cards`，再加只读评审与逐角色返回结果的指令。以任务书的 input_refs、must_check、permissions 和当前 gate 为证据与权限边界，角色卡的质量标准和案例用于判断方法。首轮使用 `fork_turns=none` 或宿主等价的无历史启动；其他席任务、peer 结果和主线程预设结论不进入该消息。
+3. 派发前展示“席位名称 → 各专家名称/role_id → 使命 → 必查项 → 待派发”；宿主返回真实 Agent ID 后，将该 ID 与席位、角色和“已派发”状态一起展示。技术 task_name 不能代替专家职责。显示已派发必须有实际宿主返回，显式 role_simulation 则显示模拟身份与弱证据。
+4. 收齐同轮结果后，按角色展示真实 Agent ID 或模拟身份、独立立场、逐项检查、证据引用、发现、阻断项和未解决问题；再汇总处理结论。无发现仍返回完整 check_records/completion_evidence。准备、派发、完成检查和通过门禁是不同状态，只有 canonical validator 接纳后才显示评审通过。
+5. 提交原始 `role_context/review_seats/role_tasks/role_results` 和 `review_briefs` 给现有 `record_multi_agent_review`，不要重写角色卡、输入或哈希。结果继续遵循每张任务书原有 output_schema；无需新增声称“人设已生效”的字段。runtime 校验身份和内容绑定，实际提示投递及独立性由宿主执行，不以 JSON 证明模型内部行为。
+
+历史评审可以没有 review_briefs，原任务、席位哈希与既有角色目录版本保持不变。旧 active delivery 使用启动时的原缓存 runtime；1.2.1 不能热替换其 runtime receipt。team 模式还遵守下述评审批次屏障和生产者不能评审自己的规则。
+"""
 
 
 def _progress_map_markdown() -> str:
@@ -1239,7 +1271,7 @@ def _progress_map_markdown() -> str:
 
 开关存储独立于 canonical state。恢复沿用该交付选择，不能重新应用项目默认值；旧 delivery 无配置保持关闭。开启不改变 Goal、TASK、评审或确认。关闭冻结已有页面并停止刷新，历史快照保留。
 
-实时入口 `.product-delivery/maps/index.html` 每 5 秒刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
+实时入口 `.product-delivery/maps/index.html` 每 1 分钟刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
 
 ### 地图开启时的角色交接
 
@@ -1284,7 +1316,7 @@ non-UI 交付完成真实 CLI/API/service 旅程后，必须调用 `ProductDeliv
 
 ### 独立评审步骤
 
-团队在既有五类 gate 使用 V1.1 评审契约。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，主线程登记 `review_started`（review_type、两个实际 reviewer_agent_ids）。只读准备角色任务，冻结期间禁止整合生产补丁或重写 canonical 生产工件。
+团队在既有五类 gate 使用 V1.1 评审契约和上述完整 review_briefs 派发规则。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，只读准备 brief 并创建两个真实 reviewer；登记 `review_started`（review_type、两个实际 reviewer_agent_ids）后再开始输入读取。冻结期间禁止整合生产补丁或重写 canonical 生产工件。
 
 每位 reviewer 每阶段返回后，登记 `review_member`：review_type、agent_id、phase（independent/challenge/revision）以及 artifact `{ref,sha256}`。同阶段全员返回后才能进入下一阶段。原始意见须保存为真实工件；不得用无证据的完成标记补屏障。
 

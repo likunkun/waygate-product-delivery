@@ -22,5 +22,7 @@
 - annotation_separation_findings: []
 - blocking_findings: []
 
+New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`. Dispatch only the matching brief to each seat; it contains that seat's role tasks and complete frozen role cards, including quality rubrics and five examples.
+
 For incremental existing-surface UI, `baseline_inheritance_review` must prove the scenario inherits the previous real entry path and does not replace it with a parallel page.
 The review must bind the current design bundle and audit, positively cover every product-context dimension, and judge whether the inherited shell and overall composition are coherent. Empty findings alone are not positive coverage, and reviewers cannot waive a failed `prototype_design_integrity` gate.

@@ -183,6 +183,10 @@ def _validate_role_contract(
                               for role_id in get_gate_profile(review_type)]
         if tasks != expected_tasks:
             raise ReviewGateError("role_tasks must match current role tasks and task_hash values")
+        if "review_briefs" in review and (
+            not seat_mode or review["review_briefs"] != expected_bundle["review_briefs"]
+        ):
+            raise ReviewGateError("review_briefs must match the bound tasks and frozen role cards")
         validate_role_results(review_type, results,
                               expected_snapshot_hash=snapshot_hash,
                               expected_tasks=expected_tasks)
@@ -289,6 +293,55 @@ def _validate_ui_conformance_review(
             )
 
 
+def _render_review_experts(review: dict[str, Any]) -> list[str]:
+    results = {result["role_id"]: result for result in review.get("role_results") or []}
+    lines = ["## Review Experts", ""]
+    for task in review.get("role_tasks") or []:
+        role_id = task["role_id"]
+        result = results.get(role_id, {})
+        lines.extend([
+            f"### {task['display_name']} ({role_id})",
+            "",
+            f"Seat: {task.get('seat_display_name') or role_id}",
+            f"Mission: {task['mission']}",
+        ])
+        if result.get("identity_kind") == "spawned":
+            lines.append(f"Agent: {result.get('agent_id') or 'unavailable'}")
+        elif result.get("identity_kind") == "simulated":
+            lines.append(f"Simulated identity: {result.get('simulated_identity') or 'unavailable'}")
+        else:
+            lines.append("Reviewer identity: unavailable")
+        lines.extend([
+            f"Status: {result.get('status') or 'missing'}",
+            f"Position: {result.get('independent_position') or 'unavailable'}",
+            "",
+            "Method:",
+            *_bullets(task["task_steps"]),
+            "",
+            "Required checks: " + ", ".join(task["must_check"]),
+            "",
+            "Check results:",
+            *_bullets([
+                f"{record['check_id']}: {record['outcome']}; {record['reason']}; "
+                + "Evidence: " + ", ".join(record["evidence_refs"])
+                for record in result.get("check_records") or []
+            ]),
+            "",
+            f"Findings: {len(result.get('findings') or [])}; "
+            f"Blocking findings: {len(result.get('blocking_findings') or [])}",
+            *_bullets([
+                f"{finding['finding_id']} ({finding['kind']}): "
+                f"{finding['subject_ref']}; {finding['impact']}"
+                for finding in result.get("findings") or []
+            ]),
+            "",
+            "Unresolved questions:",
+            *_bullets(result.get("unresolved_questions") or []),
+            "",
+        ])
+    return lines
+
+
 def render_multi_agent_review(review: dict[str, Any]) -> str:
     """Render a multi-agent review as Markdown."""
     lines = [
@@ -332,12 +385,16 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
         "",
     ]
     if "role_contract_version" in review:
+        lines.extend(_render_review_experts(review))
+        contract = {key: review.get(key) for key in (
+            "role_contract_version", "seat_contract_version", "input_snapshot_hash",
+            "role_context", "review_seats", "role_tasks", "role_results",
+        )}
+        if "review_briefs" in review:
+            contract["review_briefs"] = review["review_briefs"]
         lines.extend([
             "## Role Contract", "", "```json",
-            json.dumps({key: review.get(key) for key in (
-                "role_contract_version", "seat_contract_version", "input_snapshot_hash",
-                "role_context", "review_seats", "role_tasks", "role_results",
-            )}, indent=2, sort_keys=True, ensure_ascii=False),
+            json.dumps(contract, indent=2, sort_keys=True, ensure_ascii=False),
             "```", "",
         ])
     if review["review_type"] == "scenario":
