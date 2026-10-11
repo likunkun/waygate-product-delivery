@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import importlib.util
 import json
 import sys
@@ -29,6 +30,7 @@ def main() -> None:
     live = args.output_dir / "live.html"
     disabled = args.output_dir / "disabled.html"
     hostile = args.output_dir / "untrusted.html"
+    named = args.output_dir / "named-experts.html"
     disabled_empty = args.output_dir / "disabled-empty.html"
     offline.write_text(render_progress_map(model, live=False), encoding="utf-8")
     live.write_text(render_progress_map(model), encoding="utf-8")
@@ -36,6 +38,18 @@ def main() -> None:
     disabled_empty.write_text(render_progress_map({"delivery_id": "empty-delivery", "generated_at": "2026-10-06T11:00:00+08:00", "settings_source": "project_default"}, enabled=False), encoding="utf-8")
     attack = '</script><img src=x onerror="window.pwned=true"><script>window.pwned=true</script>'
     hostile.write_text(render_progress_map({**model, "title": attack, "objective": attack, "components": [{**model["components"][0], "title": attack}]}, live=False), encoding="utf-8")
+    from product_delivery_agent.agent_naming import producer_identity, review_identity
+    producer = {**producer_identity({"role_ids": ["production.product_requirements"], "feature_slug": "v2.0.5-report"}),
+                "agent_id": "/root/product_requirements_v205", "id": "WP-demo", "status": "running"}
+    producer["identity_history"] = [{**producer, "agent_spawn_name": "product_requirements_v205_previous",
+                                     "agent_id": "/root/previous_producer", "attempt": 1}]
+    reviewer = {**review_identity("v2.0.5-report", {"seat_id": "journey_interaction", "display_name": "用户旅程与交互", "role_ids": ["review.scenario_interaction"]}),
+                "agent_id": "/root/review_journey_interaction_v205"}
+    named_model = copy.deepcopy(model)
+    named_model["current_work"]["work_packages"] = [producer]
+    named_model["tasks"][0]["work_packages"] = [producer]
+    named_model["reviews"] = [{"gate": "scenario", "status": "needs_remediation", "agent_identities": [reviewer]}]
+    named.write_text(render_progress_map(named_model, live=False), encoding="utf-8")
     checks = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -141,6 +155,24 @@ def main() -> None:
         assert page.evaluate("window.pwned === undefined")
         assert page.locator("img").count() == 0
         checks.append("untrusted HTML remains text in title, objective and map nodes")
+
+        page.goto(named.as_uri(), wait_until="networkidle")
+        assert producer["agent_display_name"] in page.locator("#current-work").inner_text()
+        assert producer["agent_id"] in page.locator("#current-work").inner_text()
+        page.get_by_role("button", name="定位当前任务", exact=True).click()
+        detail = page.locator('[data-capability="draft"] .capability-detail')
+        assert producer["agent_display_name"] in detail.inner_text()
+        assert producer["agent_spawn_name"] in detail.inner_text()
+        assert producer["agent_id"] in detail.inner_text()
+        detail.locator(".identity-history summary").click()
+        assert "/root/previous_producer" in detail.locator(".identity-history").inner_text()
+        assert "product_requirements_v205_previous" in detail.locator(".identity-history").inner_text()
+        page.get_by_role("button", name="查看变更", exact=True).click()
+        assert reviewer["agent_display_name"] in page.locator("#changes-view").inner_text()
+        assert reviewer["agent_id"] in page.locator("#changes-view").inner_text()
+        assert reviewer["seat_display_name"] in page.locator("#changes-view").inner_text()
+        page.screenshot(path=str(args.output_dir / "named-experts.png"), full_page=True)
+        checks.append("readable producer/reviewer names, semantic spawn names, seats and real IDs in current work, TASK details and review history")
 
         page.clock.install()
         page.goto(disabled.as_uri(), wait_until="networkidle")

@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.2.1-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.2.3-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#验证)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![English](https://img.shields.io/badge/docs-English-374151)](README.md)
@@ -128,6 +128,18 @@ $waygate-product-delivery start reports-v1 team multi-agent "管理员从现有�
 
 既有任务哈希及没有 brief 的历史评审保持兼容。正在运行的 1.2.0 交付继续使用原缓存 runtime；1.2.1 用于新交付，不迁移活跃状态。
 
+## 1.2.2 Host Goal 自动恢复
+
+Goal 丢失、提前完成或网关瞬时错误产生持久恢复契约，最多三个恢复 attempt，分别退避 5/15/30 秒。调用 `prepare_host_goal_auto_recovery()` 获取下一步，执行指定的真实 Goal 工具，再通过 `record_host_goal_auto_recovery(checkpoint_id, observation, attempt_id=...)` 回写结果。旧 Goal 仍 active 时重绑，确认 missing/complete 后使用新 binding 执行 get/create/get。重复回调、等待期间读取均不重写状态；status/inspect 显示次数、原因和重试时间。
+
+宿主必须按 `retry_at` 调度同一 owner thread；插件没有计时器或 sleep。当前 Paseo 的 cron 调度没有秒级同线程唤醒接口，现有 Goal 工具也不能恢复或覆盖 blocked Goal。因此明确由网络故障造成的 blocked 返回宿主原生 Resume 契约并有限验证，未知原因 blocked、显式用户等待和业务阻塞仍由人工处理。工具未暴露属于永久不可用。暂停、放弃与 canonical closure 后禁止自动重建；预算耗尽需要显式 Goal 恢复授权。
+
+1.2.2 用于新线程和新交付；安装时保留 1.2.1 原缓存和活跃交付证据，不原位迁移。
+
+## 1.2.3 专家 Agent 可识别命名
+
+生产和评审子 Agent 使用稳定的“角色｜职责｜业务版本”展示名，同时生成 Paseo/Codex 可识别的语义任务名（例如 `product_requirements_v205`）。派发首条消息带有身份、使命、必查项、权限和完整工作包；状态、地图、TeamRun 与评审报告同时显示可读名称、席位和真实 Agent ID。旧任务哈希、角色卡哈希和历史 Agent 身份保持兼容。宿主支持 thread/title API 时可增强设置标题；不支持时使用语义任务名并明确标记 fallback。
+
 ## 安装
 
 可安装插件位于：
@@ -168,7 +180,7 @@ python3 scripts/package_waygate_product_delivery.py
 输出：
 
 ```text
-dist/waygate-product-delivery-1.2.1.tar.gz
+dist/waygate-product-delivery-1.2.3.tar.gz
 ```
 
 ## Codex 使用方式

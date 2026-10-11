@@ -126,6 +126,11 @@ _JS = r"""
     });
     obligations.filter(obligation=>!shown.has(obligation)).forEach(obligation=>{const section=el('section',undefined,'scenario-trace');section.dataset.scenario=str(obligation.scenario_id);section.appendChild(el('strong','关联场景：'+str(obligation.scenario_id,'尚未关联')));section.appendChild(el('p','场景详情尚未记录，以下保留已登记的测试义务。'));section.appendChild(obligationRow(obligation));parent.appendChild(section);});
   };
+  const agentHistory=(parent,pkg)=>{
+    if(!list(pkg.identity_history).length)return;
+    const history=el('details',undefined,'identity-history');history.appendChild(el('summary','工作包 '+str(pkg.id)+' 的历史身份'));
+    list(pkg.identity_history).forEach(identity=>history.appendChild(el('p',str(identity.agent_display_name,'历史成员')+' · '+str(identity.agent_spawn_name,'历史任务名')+' · 真实 Agent ID：'+str(identity.agent_id,'未派发')+' · attempt '+str(identity.attempt))));parent.appendChild(history);
+  };
   const capability = cap => {
     const node = el('div', undefined, 'capability'); node.dataset.capability = str(cap.id); capabilityNodes.set(str(cap.id), node);
     const b = el('button', undefined, 'capability-button'); b.type = 'button'; b.setAttribute('aria-expanded', String(state.selected === str(cap.id)));
@@ -138,7 +143,7 @@ _JS = r"""
     const goals = list(m.goals).filter(goal => list(cap.goal_ids).includes(goal.id)); if (goals.length) {detail.appendChild(el('h4','服务目标')); notes(detail,goals.map(goal => goal.title || goal.id));}
     if (list(cap.gaps).length) {detail.appendChild(el('h4','尚缺什么')); notes(detail,cap.gaps);}
     const tasks = list(m.tasks).filter(task => list(cap.task_ids).includes(task.task_id));
-    if (tasks.length) {detail.appendChild(el('h4','关联任务')); tasks.forEach(task => {const row = el('div', undefined, 'node-task'); append(row,el('strong',task.title || task.task_id),el('p','状态：' + status(task.status)),el('p','验证：' + str(task.verification,'尚未记录'))); if (task.owner) row.appendChild(el('p','负责：' + task.owner)); list(task.work_packages).forEach(pkg => row.appendChild(el('p','工作包 ' + str(pkg.id) + '：' + status(pkg.status) + ' · ' + str(pkg.agent_id,'待分配')))); sourceList(row,task.evidence); detail.appendChild(row);});}
+    if (tasks.length) {detail.appendChild(el('h4','关联任务')); tasks.forEach(task => {const row = el('div', undefined, 'node-task'); append(row,el('strong',task.title || task.task_id),el('p','状态：' + status(task.status)),el('p','验证：' + str(task.verification,'尚未记录'))); if (task.owner) row.appendChild(el('p','负责：' + task.owner)); list(task.work_packages).forEach(pkg => {const label = str(pkg.agent_display_name, list(pkg.role_ids).join('、') || '历史成员'); const actual = pkg.agent_id ? ' · 真实 Agent ID：' + pkg.agent_id : ''; row.appendChild(el('p','工作包 ' + str(pkg.id) + '：' + status(pkg.status) + ' · ' + label + actual)); if (pkg.agent_spawn_name) row.appendChild(el('small','语义任务名：' + pkg.agent_spawn_name));agentHistory(row,pkg);}); sourceList(row,task.evidence); detail.appendChild(row);});}
     scenarioTrace(detail,cap);
     detail.appendChild(el('h4','来源与证据')); if (list(cap.sources).length) sourceList(detail,cap.sources); else detail.appendChild(el('p','尚未记录可追溯的来源。'));
     return node;
@@ -177,7 +182,7 @@ _JS = r"""
   const current = m.current_work || {}; const work = el('section',undefined,'current-work'); work.id='current-work'; work.tabIndex=-1;
   append(work,el('div','正在推进','label'),el('h2',current.title || '当前任务尚未明确'),el('p',current.description || '明确下一项任务后，这里将说明它对交付的作用。'));
   const workFields=el('dl');field(workFields,'为什么现在做',current.why);field(workFields,'完成后解锁',list(current.unlocks).join('；'));field(workFields,'负责',current.owner);field(workFields,'当前阻塞',list(current.blockers).length?list(current.blockers).join('；'):'未记录阻塞');
-  list(current.work_packages).forEach(pkg=>field(workFields,'工作包 '+str(pkg.id),list(pkg.role_ids).join('、')+' / '+status(pkg.status)+(pkg.agent_id?' / '+pkg.agent_id:'')));work.appendChild(workFields);
+  list(current.work_packages).forEach(pkg=>field(workFields,'工作包 '+str(pkg.id),str(pkg.agent_display_name,list(pkg.role_ids).join('、')||'历史成员')+' / '+status(pkg.status)+(pkg.agent_id?' / '+pkg.agent_id:'')));work.appendChild(workFields);list(current.work_packages).forEach(pkg=>agentHistory(work,pkg));
   const next=el('div',undefined,'next-action');append(next,el('span','下一步'),el('p',current.next_action || '明确当前任务和验收方式'));work.appendChild(next);append(aside,work,el('p','阶段推进与能力完成分别记录；完成产出不代表已验证或已交付。','aside-note'));
   const stagesPanel=el('section',undefined,'stages-panel');append(stagesPanel,el('h2','六阶段交付路径'),el('p','每一步保留自己的完成条件。'));
   const stages=el('ol');stages.id='stages';
@@ -203,7 +208,7 @@ _JS = r"""
   });
   views.changes.appendChild(el('h3','历史记录','history-title'));if(!list(m.history).length)views.changes.appendChild(el('p','尚无历史快照。','empty'));
   list(m.history).forEach(entry=>{const row=el('article',undefined,'list-item');append(row,el('small','修订 '+str(entry.revision,'未知')+'　'+str(entry.generated_at)),el('h4',entry.summary || '交付记录已更新'),el('p','基线：'+status(entry.baseline_status)));if(list(entry.sources).length){const sources=el('details');sources.appendChild(el('summary','查看该修订的来源'));sourceList(sources,entry.sources);row.appendChild(sources);}views.changes.appendChild(row);});
-  if(list(m.reviews).length||list(m.confirmations).length){views.changes.appendChild(el('h3','评审与确认','history-title'));list(m.reviews).forEach(review=>views.changes.appendChild(el('p',str(review.gate)+'：'+status(review.status))));list(m.confirmations).forEach(confirmation=>views.changes.appendChild(el('p',str(confirmation.target)+'：'+status(confirmation.status))));}
+  if(list(m.reviews).length||list(m.confirmations).length){views.changes.appendChild(el('h3','评审与确认','history-title'));list(m.reviews).forEach(review=>{const row=el('article',undefined,'review-summary');append(row,el('p',str(review.gate)+'：'+status(review.status)));list(review.agent_identities).forEach(identity=>{const label=identity.agent_display_name||identity.seat_display_name||'历史身份';const actual=identity.agent_id?' · 真实 Agent ID：'+identity.agent_id:'';row.appendChild(el('p','专家：'+label+actual));if(identity.seat_display_name)row.appendChild(el('small','评审席位：'+identity.seat_display_name));});views.changes.appendChild(row);});list(m.confirmations).forEach(confirmation=>views.changes.appendChild(el('p',str(confirmation.target)+'：'+status(confirmation.status))));}
   const footer=el('footer');append(footer,el('span','交付 '+str(m.delivery_id,'尚未分配')),el('span','内容修订 '+str(m.source_revision,'尚未记录').slice(0,16)),el('span',!config.enabled?'只读冻结地图 · 自动更新已关闭':config.live?'只读视图 · 随交付记录更新':'只读离线快照 · 筛选与展开仍可使用'));root.appendChild(footer);
   renderMap();setView(state.view);const restoreScroll=state.scroll;requestAnimationFrame(()=>requestAnimationFrame(()=>{window.scrollTo(0,restoreScroll);window.addEventListener('scroll',saveScroll,{passive:true});}));
   window.addEventListener('pagehide',saveScroll);window.addEventListener('resize',()=>requestAnimationFrame(drawEdges));

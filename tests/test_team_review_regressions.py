@@ -300,6 +300,7 @@ class TeamReviewRegressionTests(unittest.TestCase):
             "work_package_id": key, "attempt": 1, "agent_id": "implementation-worker",
             "spawn_source": "fixture.host.spawn",
         }
+        event.update({field: run["work_packages"][key][field] for field in ("agent_display_name", "agent_spawn_name")})
         self.host.reconcile()
         first = self.workflow.record_team_events(
             run["run_id"], [event], expected_revision=run["revision"],

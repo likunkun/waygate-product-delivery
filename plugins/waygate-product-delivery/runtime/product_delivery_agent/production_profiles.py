@@ -659,7 +659,8 @@ def build_stage_tasks(stage: str, context: dict[str, Any],
             raise ProductionProfileError("work package dependency graph contains a cycle")
         complete.update(ready)
         remaining -= ready
-    return {"profile": profile, "tasks": tasks}
+    from product_delivery_agent.agent_naming import producer_identities
+    return {"profile": profile, "tasks": tasks, "agent_identities": producer_identities(tasks)}
 
 
 def _schema_check(value: Any, schema: dict[str, Any], name: str = "result") -> None:

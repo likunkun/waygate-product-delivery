@@ -39,7 +39,7 @@ VALID_PROJECT_TYPES = {"ui", "non_ui"}
 TERMINAL_STATUSES = {"closed", "closed_local_product_delivery", "complete", "completed"}
 CANONICAL_VALIDATOR = "product_delivery_agent.finalization"
 CANONICAL_SCHEMA_VERSION = "v0.11"
-PLUGIN_VERSION = "1.2.1"
+PLUGIN_VERSION = "1.2.3"
 IMPLEMENTATION_STATUSES = {
     "implementation_ready",
     "implementation_goal_active",
@@ -73,7 +73,10 @@ ROLE_REVIEW_BINDING_FIELDS = (
 
 def role_review_binding_hash(review: dict[str, Any]) -> str:
     """Hash the accepted compact role binding, without mutable gate status."""
-    return stable_state_hash({key: review.get(key) for key in ROLE_REVIEW_BINDING_FIELDS})
+    material = {key: review.get(key) for key in ROLE_REVIEW_BINDING_FIELDS}
+    if review.get("agent_identities"):
+        material["agent_identities"] = review["agent_identities"]
+    return stable_state_hash(material)
 
 
 def validate_role_input_files(

@@ -136,13 +136,23 @@ V1.0.24 起，内部 `delivery_goal` 只表示 TASK 计划，不得冒充 Codex 
 
 当 active implementation delivery 的 Host Goal binding 为 `blocked`，且 `human_wait`、pending checkpoint 与 authorized transition 都为空时，使用 `scripts/recover-orphaned-blocked-host-goal-v110.py --project-root <repo>`。恢复请求通过 stdin 提供严格 JSON，必须包含冻结 state SHA-256、精确授权语、owner host turn、fresh `get_goal=active` observation 与 `dry_run`。必须先 dry-run 并确认 state 字节不变，再用相同 observation 正式恢复。入口只恢复当前 TASK，校验 runtime provenance、objective、threadId 与 journal，追加 `host_goal_orphaned_binding_recovered`，并签发一次性 `user_resume` transition；不得用于 human decision、终态 delivery 或任意 gate 跳转。
 
-handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。
+handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、stale observation 都必须 fail closed。非恢复 checkpoint 重放必须拒绝；恢复回调只有输入、attempt ID 和 delivery identity 完全相同时才允许无写入幂等返回。Goal 工具不可用时记录 unavailable observation；瞬时故障按下述恢复契约处理，工具未暴露或权限不足时阻塞。
+
+### V1.2.2 Host Goal 自动恢复
+
+`missing`、提前 `complete` 和瞬时 unavailable 不再要求每次人工授权。runtime 归档旧 binding、保留 delivery/feature/launch package/owner/当前 gate 与 TASK 证据，签发新的 generation、nonce 和 objective，并写入 hash-linked `host_goal_auto_recreated`。最多三个恢复 attempt，退避依次 5、15、30 秒；初始故障不是恢复 attempt。每个 attempt 包含稳定 `attempt_id`、原因、retry_at 与诊断历史，第三次恢复失败后记录 `host_goal_auto_recovery_exhausted` 并等待人工授权。成功后保留本交付已消耗的自动恢复预算，防止频繁成功/断线绕过上限。
+
+故障 observation response、status/inspect 与 Stop guard 暴露 `recovery_action`、`recovery_attempt`、`recovery_attempt_id`、`retry_after_seconds`、`retry_at`。主线程调用 `prepare_host_goal_auto_recovery()`；若 `operation=wait_for_retry`，由支持该契约的宿主按 `retry_at` 调度同一 owner thread，等待期间不得写 canonical state、调用 Goal 工具或忙轮询。到期取得 checkpoint 后执行指定 Goal 工具，并调用 `record_host_goal_auto_recovery(checkpoint_id, observation, attempt_id=recovery_attempt_id)`。prepare 和 record 在 workspace lock 中重新加载 state；checkpoint projection、identity 与 journal 必须匹配，重复回调不得重复创建 Goal 或重复追加 transition。
+
+网关错误按实际 error_type 记录，例如 `connection_error`、`gateway_restart`、`timeout`、`transport_error`、`service_unavailable`、`rate_limit`、`thread_unavailable`、`host_goal_lost`。恢复探测先 get_goal；旧 Goal 仍 active 时只重绑精确 archived objective/thread/identifier，不能创建重复 Goal；missing 或绑定的旧 Goal 已 complete 才能进入 create/get 验证。observed blocked 只有明确瞬时 error_type 或 Goal blockedReason 才进入 `resume_host_goal` 契约；宿主使用其原生恢复能力后再次 get_goal 验证。Goal 仍 blocked 时只能有限重试，不能伪造 active、覆盖未完成 Goal 或为换 Goal 提前标记 complete。未知原因 blocked、human_wait、真实外部阻塞和显式 update_goal(blocked) 保留人工语义。
+
+插件没有计时器或内部 sleep。当前 Paseo CLI 的 schedule 是 cron 周期调度，不能证明 5/15/30 秒同线程唤醒已经接通；若宿主没有延迟重试或 Goal Resume 能力，须明确说明 scheduler_required=host，并保留恢复契约，不能宣称无人值守自动恢复已生效。用户 pause/stop/abandon、终态交付或 canonical closure 后禁止自动重建。1.2.2 只用于新线程和新 runtime，不原位迁移 1.2.1 活跃交付；安装时备份并保留旧缓存。
 
 每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 `get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。同一 stage 内低层文件写入不需要重复查询，但任何 canonical gate 写入都必须消费一条新鲜、目标 gate 匹配的一次性 observation。
 
 `wait_for_user` 必须生成并复用稳定 `decision_id`、prompt hash 和 blocker fingerprint；同一问题只展示一次，自动 Goal turn 不得重复提问，也不得修改产品、测试、证据或 closure。用户回复必须匹配当前 `decision_id`，并通过 `user_resume` 再次观察 Host Goal active 后才能继续。只有三个不同 `host_turn_id` 连续观察到相同 blocker，才允许调用 `update_goal(status=blocked)`。
 
-canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。Goal 曾经 active 后若 missing 或提前 complete，禁止静默创建 replacement，必须调用 `authorize_host_goal_reactivation()` 取得新的用户授权。`action=abandon` 需要 `stop_delivery` 对账，停止后 binding 标记为 `stopped_by_user`，不得自动恢复。
+canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。Goal 曾经 active 后若 missing 或提前 complete，1.2.2 按自动恢复契约处理；预算耗尽后调用 `authorize_host_goal_reactivation()` 取得新的用户授权。`action=abandon` 需要 `stop_delivery` 对账，停止后 binding 标记为 `stopped_by_user`，不得自动恢复。
 
 V1.0.25 起，Goal 尚未 ever active 且 activation checkpoint 因后续合法 transition 过期时，必须调用 `recover_stale_host_goal_checkpoint(checkpoint_id)`。runtime 会验证 delivery、feature、authorization、generation、nonce、objective 和 journal hash chain，归档旧 checkpoint，追加 `host_goal_checkpoint_superseded` transition，并以相同 binding identity 重新签发 `inspect_before_activation` checkpoint。不得手改 state、重新 start delivery 或重放旧 checkpoint。
 
@@ -176,7 +186,7 @@ V1.0.34 起，高保真产品原型只能包含真实产品内容。新建或重
 
 pre-handoff 通过后必须创建 Product Delivery implementation delivery goal，目标覆盖完整 planned TASK queue、executed E2E evidence 和 formal closure。不要在 TASK 未完成时停止；每次准备停止或总结前必须检查 remaining TASK。如果还有 TASK 且没有用户确认、外部环境阻塞或连续失败阻塞，就继续执行下一 TASK。closure validator 未通过时不要 complete goal，closure 失败时 goal 保持 active，下一步必须修复 closure evidence。`progress.md` 和聊天总结不能替代 delivery goal status。
 
-final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.2.1`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
+final summary、stop、goal complete 前必须运行 `validate-closure-artifact.py --project-root <repo> --closure-artifact <path>`。该脚本必须非 0 fail closed，并写入 `.product-delivery/artifacts/closure-validator-result.md`。V1.0.8 起，只有调用 installed packaged `product_delivery_agent.finalization` 并写入 `closure_validation.validator=product_delivery_agent.finalization`、`canonical_schema_version=v0.11`、`plugin_version=1.2.3`、`closure_artifact_sha256`、`transition_journal` closure event 的结果才是 Product Delivery closure truth。target-specific validator、repo-local `scripts/verify/validate-closure-artifact.py`、Open Spec closure claim、聊天总结和 `progress.md` 只能作为 supporting evidence，不能解除 closure blocker。任何 closure-like 状态，包括 `closed_local_product_delivery`、`blocking_gates.closure=true`、`implementation.current_task=COMPLETE` 或 `delivery_goal.status=complete`，都必须同时满足 `closure_validation.status=passed`、`feature_closure.status=passed`、`delivery_goal.status=complete`；UI 项目还必须满足 `executed_browser_evidence.status=passed`。missing goal 在 handoff 后、implementation 中或 closure-like 状态下必须阻塞。
 
 V1.0.8 起，critical transitions 必须写入 hash-linked `transition_journal`。handoff、TASK completion、executed browser evidence、closure validation、goal complete 都必须来自 canonical runtime API；手写 `.product-delivery/state.json`、批量补 TASK JSON、旧 feature closure result 或 docs 领先状态必须 fail closed。
 
@@ -194,17 +204,25 @@ V1.0.18 起，如果当前 authorized launch package 与旧 `delivery_goal` 的 
 
 检查 Open Spec 或原型时必须按当前 feature slug 匹配。旧版本 `docs/open-spec/`、旧 prototype、聊天总结、`progress.md` 都不能替代当前 feature gate evidence。
 
+## V1.2.3 专家 Agent 可识别命名
+
+生产者和评审者必须使用 runtime 生成的稳定身份：`agent_display_name` 是“角色｜职责｜业务版本”，`agent_spawn_name` 是 Paseo/Codex 可接受的 `lower_snake_case` 语义任务名。名称来自 `role_id`、席位和当前 `feature_slug`，模型不得临时自造；`role_id`、task/seat/role definition hash 和真实 `agent_id` 继续保留。宿主支持时可对真实 thread/Agent ID 调用 `thread/name/set` 或等价 title API；不支持时必须显示语义任务名并标记 semantic fallback，不能声称中文标题已被宿主设置。
+
+派发前把“可读专家名 → 语义任务名 → 席位/工作包 → 待派发”展示给用户。创建子 Agent 时使用对应 `agent_spawn_name`，首条消息必须以 `【agent_display_name】` 开头，并包含角色使命、必查项、允许写入、禁止事项和完整绑定任务/brief。宿主返回后立即记录真实 `agent_id`、`spawn_source`、显示名和语义名；状态、地图、TeamRun/Review 报告同时展示可读名和真实 ID。历史身份保留原值并标记为历史，不覆盖旧结果。
+
 ## V1.2.1 评审专家派发与展示
 
 这套规则适用于 coordinator/team 两种生产模式，以及 scenario、test、test_coverage、test_implementation、ui_conformance 五类评审。八个逻辑角色由每门两个固定席位承担，同席的每个角色分别返回结构化结果。
 
-1. 主线程调用 `prepare_review_role_tasks(review_type, input_refs)`，取得冻结的 `role_context`、`review_seats`、`role_tasks` 和按席分组的 `review_briefs`。每个 brief 包含 `seat_id/display_name/role_ids/seat_task_hash/role_tasks/role_cards`；卡内含 mission、task_steps、must_check、quality_rubric 和五类 examples。输入不足或绑定失效时先解决准备错误。
-2. 初轮派发消息由当前席的完整 brief 原样构成，必须同时携带本席 `role_tasks` 和完整 `role_cards`，再加只读评审与逐角色返回结果的指令。以任务书的 input_refs、must_check、permissions 和当前 gate 为证据与权限边界，角色卡的质量标准和案例用于判断方法。首轮使用 `fork_turns=none` 或宿主等价的无历史启动；其他席任务、peer 结果和主线程预设结论不进入该消息。
-3. 派发前展示“席位名称 → 各专家名称/role_id → 使命 → 必查项 → 待派发”；宿主返回真实 Agent ID 后，将该 ID 与席位、角色和“已派发”状态一起展示。技术 task_name 不能代替专家职责。显示已派发必须有实际宿主返回，显式 role_simulation 则显示模拟身份与弱证据。
+1. 主线程调用 `prepare_review_role_tasks(review_type, input_refs)`，取得冻结的 `role_context`、`review_seats`、`role_tasks`、按席分组的 `review_briefs` 和命名侧车 `dispatch_briefs`。每个 brief 包含 `seat_id/display_name/role_ids/seat_task_hash/role_tasks/role_cards`；卡内含 mission、task_steps、must_check、quality_rubric 和五类 examples。输入不足或绑定失效时先解决准备错误。
+2. 根据 seat_id 选择对应 `dispatch_briefs`：`spawn_agent(task_name=dispatch_brief.agent_spawn_name, message=dispatch_brief.dispatch_message, fork_turns=none)` 或宿主等价调用。完整派发消息以身份头开始，原样包含该席完整 review brief 和只读评审指令。以任务书的 input_refs、must_check、permissions 和当前 gate 为证据与权限边界，角色卡的质量标准和案例用于判断方法。其他席任务、peer 结果和主线程预设结论不进入首轮消息；同席多个逻辑角色共享同一 Agent，逐角色返回结果。
+3. 派发前展示“席位名称 → 各专家名称/role_id → 可读 Agent 名称 → 语义 task_name → 使命 → 必查项 → 待派发”；宿主返回真实 Agent ID 后，将该 ID 与席位、角色和“已派发”状态一起展示。技术 task_name 不能代替专家职责。显示已派发必须有实际宿主返回，显式 role_simulation 则显示模拟身份与弱证据。
 4. 收齐同轮结果后，按角色展示真实 Agent ID 或模拟身份、独立立场、逐项检查、证据引用、发现、阻断项和未解决问题；再汇总处理结论。无发现仍返回完整 check_records/completion_evidence。准备、派发、完成检查和通过门禁是不同状态，只有 canonical validator 接纳后才显示评审通过。
-5. 提交原始 `role_context/review_seats/role_tasks/role_results` 和 `review_briefs` 给现有 `record_multi_agent_review`，不要重写角色卡、输入或哈希。结果继续遵循每张任务书原有 output_schema；无需新增声称“人设已生效”的字段。runtime 校验身份和内容绑定，实际提示投递及独立性由宿主执行，不以 JSON 证明模型内部行为。
+5. 提交原始 `role_context/review_seats/role_tasks/role_results`、`review_briefs` 和 `dispatch_briefs` 给现有 `record_multi_agent_review`，填写真实 `reviewer_agent_ids/reviewer_spawn_source`，不要重写角色卡、输入或哈希。结果继续遵循每张任务书原有 output_schema；无需新增声称“人设已生效”的字段。runtime 校验身份和内容绑定，实际提示投递及独立性由宿主执行，不以 JSON 证明模型内部行为。
 
 历史评审可以没有 review_briefs，原任务、席位哈希与既有角色目录版本保持不变。旧 active delivery 使用启动时的原缓存 runtime；1.2.1 不能热替换其 runtime receipt。team 模式还遵守下述评审批次屏障和生产者不能评审自己的规则。
+
+生产派发名包含 run/工作包/attempt 的稳定后缀；新 attempt 重新读取行中的名字和消息，禁止沿用旧 staging_root 或旧真实 ID。评审派发名包含 gate/快照绑定的席位哈希后缀，避免不同 gate 或新输入快照覆盖旧子 Agent；同一快照的挑战/修订阶段复用该席真实 Agent。展示名保持“角色｜职责｜业务版本”，不把后缀当作专家职责。
 
 ## V1.2 Team Production
 
@@ -215,8 +233,8 @@ V1.0.18 起，如果当前 authorized launch package 与旧 `delivery_goal` 的 
 ### 生产步骤
 
 1. 从 `production_profiles.get_stage_profile(stage, project_type)` 和 `get_production_role_card(role_id)` 获取角色方法；完整目录在 `templates/production-role-catalog.json`。六阶段依次为 product_definition、architecture_version_planning、open_spec_product_surface、test_design、implementation_execution、delivery_preparation。产品基线确认在产品表面 scenario review 后；详细测试设计在该确认后。实现期只能绑定当前权威 TASK。
-2. 主线程准备输入引用 `{logical_input:{ref,sha256}}` 和工作包 `{work_package_id,role_ids,depends_on,allowed_write_paths}`。路径必须逐文件明确；需要的新文件也必须列出。调用 `prepare_team_run(stage, work_packages, input_refs=..., task_id=..., condition_flags=...)`，可用 implementation_roles 裁剪 frontend/backend/test_automation；integration 仍必需。条件角色不能突破当前阶段权限。
-3. 读取 run.work_packages 内任务，只把该任务、角色方法、输入及分配目录交给真实子 Agent。不得 fork 完整历史或注入评审预设结论。宿主创建 Agent 后，用实际返回身份记录 `dispatched` 事件：event_id/type/work_package_id/agent_id/spawn_source/attempt。以 API 返回的 staging_root 为唯一工作目录。一次至多两个 running 成员，依赖必须已整合，同文件任务串行。
+2. 主线程准备输入引用 `{logical_input:{ref,sha256}}` 和工作包 `{work_package_id,role_ids,depends_on,allowed_write_paths}`。路径必须逐文件明确；需要的新文件也必须列出。调用 `prepare_team_run(stage, work_packages, input_refs=..., task_id=..., condition_flags=...)`，返回行中的 `agent_display_name/agent_spawn_name/dispatch_message` 是唯一命名来源；创建子 Agent 时使用 `agent_spawn_name`，并把完整 `dispatch_message` 作为首条消息（先等待 coordinator 提供真实 `staging_root`）。可用 implementation_roles 裁剪 frontend/backend/test_automation；integration 仍必需。条件角色不能突破当前阶段权限。
+3. 读取 run.work_packages 内任务，只把该任务、角色方法、输入及分配目录交给真实子 Agent。使用 `task_name=row.agent_spawn_name`、`message=row.dispatch_message` 和 `fork_turns=none`。宿主创建 Agent 后，用实际返回身份记录 `dispatched` 事件：event_id/type/work_package_id/agent_id/spawn_source/attempt；新命名工作包必须同时提交行内 agent_display_name/agent_spawn_name 以校验，历史无命名行保持旧事件兼容。事件返回后发送该行重新生成的完整 dispatch_message，其中真实 staging_root 是唯一工作目录，成员此时才允许写入。不得注入评审预设结论。一次至多两个 running 成员，依赖必须已整合，同文件任务串行。
 4. 成员编辑任务副本并返回 ProductionResult：task_hash/input_snapshot_hash/role_ids/status/artifacts/changes/check_records/completion_evidence/risks/blockers/unresolved_questions/handoff。artifacts 的 path 相对 staging_root；changes 包含 path、operation、base_sha256、result_sha256、staged_path。不得编造哈希，读取真实字节计算。结果为 ready_for_integration、needs_input、needs_rework 或 failed，绝不能把提交称作评审通过。
 5. 主线程使用 `record_team_events(run_id, events, expected_revision=...)` 登记 result，事件带真实 agent_id 和 attempt。调用 `integrate_team_run(run_id, expected_revision=...)` 合并已接受结果。下游 dispatch 绑定已整合的依赖字节及新 task_hash。结果工件被保存到 owner 管理的 accepted 目录，验证实际文件与当前版本。
 6. 主线程通过既有 API 登记场景、原型、测试计划、TASK 执行证据等；运行真实集成验证。`finalize_team_run` 只检查阶段出口，不替代产品确认、TASK completion、Host Goal 或 closure。

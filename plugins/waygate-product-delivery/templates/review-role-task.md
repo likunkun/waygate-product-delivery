@@ -1,6 +1,6 @@
 # Review Role Task
 
-Generate with `workflow.prepare_review_role_tasks(review_type, input_refs)`; dispatch each reviewer seat from its matching `review_briefs` entry. Send the complete seat brief: its `role_tasks` and frozen `role_cards`, including each card's quality rubric and five examples. Submit the returned role_context/review_seats/role_tasks/review_briefs with role_results through the existing review gate. Never hand-author hashes.
+Generate with `workflow.prepare_review_role_tasks(review_type, input_refs)`; dispatch each reviewer seat from its matching `dispatch_briefs` entry using its canonical agent_spawn_name and full dispatch_message. Preserve the complete seat brief: its `role_tasks` and frozen `role_cards`, including each card's quality rubric and five examples. Submit the returned role_context/review_seats/role_tasks/review_briefs/dispatch_briefs with role_results through the existing review gate. Never hand-author hashes.
 
 Review Type:
 Role:

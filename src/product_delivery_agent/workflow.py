@@ -104,6 +104,7 @@ from product_delivery_agent.host_goal import (
     build_host_goal_authorization,
     consume_authorized_transition,
     host_goal_required,
+    host_goal_recovery_response,
     initialize_host_goal_owner,
     initialize_host_goal_binding,
     inspect_host_goal_owner,
@@ -1377,6 +1378,7 @@ class ProductDeliveryWorkflow:
             "review_seats": bundle["review_seats"],
             "role_tasks": tasks,
             "review_briefs": bundle["review_briefs"],
+            "dispatch_briefs": bundle["dispatch_briefs"],
             "input_snapshot_hash": context["input_snapshot_hash"],
         }
 
@@ -1555,6 +1557,17 @@ class ProductDeliveryWorkflow:
                     },
                     "seat_contract_version": review.get("seat_contract_version"),
                     "review_seats": deepcopy(review.get("review_seats") or []),
+                    "agent_identities": [
+                        {key: deepcopy(brief[key]) for key in (
+                            "naming_version", "member_kind", "agent_display_name", "agent_spawn_name",
+                            "seat_id", "seat_display_name", "role_ids", "feature_slug",
+                        )} | {
+                            "agent_id": next((row.get("agent_id") for row in role_results
+                                              if row.get("seat_id") == brief["seat_id"]), None),
+                            "spawn_source": review.get("reviewer_spawn_source"),
+                        }
+                        for brief in review.get("dispatch_briefs") or []
+                    ],
                     "seat_ids": [seat.get("seat_id") for seat in review.get("review_seats") or []],
                     "seat_agent_ids": sorted({
                         row.get("agent_id") for row in role_results if row.get("agent_id")
@@ -2260,7 +2273,11 @@ class ProductDeliveryWorkflow:
             state = self._require_started(allow_pending_authorization=True, allow_input_enrichment=True)
             if bool(state.get("paused")) == paused:
                 return state
-            if host_goal_required(state):
+            recovery_binding = state.get("host_goal_binding") or {}
+            recovering = bool(recovery_binding.get("auto_recovery")) and recovery_binding.get("status") in {
+                "activation_pending", "creation_ready", "verification_pending", "auto_recovery_exhausted",
+            }
+            if host_goal_required(state) and not recovering:
                 try:
                     state = consume_authorized_transition(state)
                 except HostGoalError as error:
@@ -3897,14 +3914,29 @@ class ProductDeliveryWorkflow:
 
     def prepare_host_goal_activation(self) -> dict[str, Any]:
         """Prepare the next Codex get_goal/create_goal activation action."""
-        state = self._require_started(allow_host_goal_bootstrap=True)
-        try:
-            binding, response = prepare_activation_checkpoint(state)
-        except HostGoalError as error:
-            raise WorkflowError(str(error)) from error
-        state["host_goal_binding"] = binding
-        write_state(self.project_root, state)
-        return response
+        from product_delivery_agent.artifact_protocol import _write_state_locked
+
+        with state_write_lock(self.project_root):
+            state = self._require_started(allow_host_goal_bootstrap=True)
+            try:
+                binding, response = prepare_activation_checkpoint(state)
+            except HostGoalError as error:
+                raise WorkflowError(str(error)) from error
+            if binding != state.get("host_goal_binding"):
+                state["host_goal_binding"] = binding
+                _write_state_locked(self.project_root, state)
+            return response
+
+    def prepare_host_goal_auto_recovery(self) -> dict[str, Any]:
+        """Read the retry contract or issue one due activation checkpoint."""
+        return self.prepare_host_goal_activation()
+
+    def record_host_goal_auto_recovery(
+        self, checkpoint_id: str, observation: dict[str, Any], *, attempt_id: str,
+    ) -> dict[str, Any]:
+        """Consume a recovery callback with its frozen attempt identity."""
+        return self.record_host_goal_observation(
+            checkpoint_id, observation, recovery_attempt_id=attempt_id)
 
     def inspect_host_goal_owner_context(self) -> dict[str, Any]:
         """Inspect coordinator ownership without mutating delivery state."""
@@ -3978,6 +4010,17 @@ class ProductDeliveryWorkflow:
         user_message: str | None = None,
     ) -> dict[str, Any]:
         """Prepare one fresh Host Goal observation for a canonical gate."""
+        with state_write_lock(self.project_root):
+            return self._prepare_host_goal_reconciliation_locked(
+                operation, target_gate, host_turn_id=host_turn_id,
+                decision_id=decision_id, user_message=user_message)
+
+    def _prepare_host_goal_reconciliation_locked(
+        self, operation: str, target_gate: str | None, *,
+        host_turn_id: str | None, decision_id: str | None, user_message: str | None,
+    ) -> dict[str, Any]:
+        from product_delivery_agent.artifact_protocol import _write_state_locked
+
         state = self._require_started(allow_host_goal_bootstrap=True)
         gate = target_gate or state.get("next_gate")
         continuation_status = None
@@ -4040,7 +4083,7 @@ class ProductDeliveryWorkflow:
         except HostGoalError as error:
             raise WorkflowError(str(error)) from error
         state["host_goal_binding"] = binding
-        write_state(self.project_root, state)
+        _write_state_locked(self.project_root, state)
         if continuation_status:
             response["continuation_status"] = continuation_status
         if human_decision_id:
@@ -4052,9 +4095,46 @@ class ProductDeliveryWorkflow:
         self,
         checkpoint_id: str,
         observation: dict[str, Any],
+        *,
+        recovery_attempt_id: str | None = None,
     ) -> dict[str, Any]:
         """Record and validate an actual Codex Goal tool result."""
+        with state_write_lock(self.project_root):
+            return self._record_host_goal_observation_locked(
+                checkpoint_id, observation, recovery_attempt_id)
+
+    def _record_host_goal_observation_locked(
+        self, checkpoint_id: str, observation: dict[str, Any],
+        recovery_attempt_id: str | None,
+    ) -> dict[str, Any]:
+        from product_delivery_agent.artifact_protocol import _write_state_locked
+
         state = self._require_started(allow_host_goal_bootstrap=True)
+        binding = state.get("host_goal_binding") or {}
+        recovery = binding.get("auto_recovery") or {}
+        receipts = list(state.get("host_goal_recovery_receipts") or [])
+        receipt = next((item for item in receipts if item.get("checkpoint_id") == checkpoint_id), None)
+        if receipt:
+            receipt_linked = any(
+                event.get("transition_name") == "host_goal_observed"
+                and (event.get("metadata") or {}).get("checkpoint_id") == checkpoint_id
+                and (event.get("metadata") or {}).get("observation_sha256") == receipt.get("observation_sha256")
+                for event in (state.get("transition_journal") or {}).get("events") or []
+            )
+            if (receipt.get("observation_sha256") != host_goal_stable_hash(observation)
+                or receipt.get("delivery_id") != state.get("delivery_id")
+                or receipt.get("feature_slug") != state.get("feature_slug")
+                or receipt.get("launch_package_hash") != (state.get("delivery_goal") or {}).get("launch_package_hash")
+                or (recovery_attempt_id is not None and recovery_attempt_id != receipt.get("attempt_id"))
+                or not receipt_linked or journal_integrity_errors(state)):
+                raise WorkflowError("Host Goal recovery callback replay does not match receipt")
+            return {**state, **host_goal_recovery_response(binding)}
+        if recovery_attempt_id is not None and (
+            recovery.get("status") != "pending" or recovery.get("attempt_id") != recovery_attempt_id
+        ):
+            raise WorkflowError("current Host Goal recovery attempt_id is required")
+        if recovery.get("status") == "pending" and host_goal_recovery_response(binding)["retry_after_seconds"] > 0:
+            raise WorkflowError("Host Goal recovery callback arrived before retry_at")
         try:
             next_state = apply_host_goal_observation(
                 state,
@@ -4063,6 +4143,43 @@ class ProductDeliveryWorkflow:
             )
         except HostGoalError as error:
             raise WorkflowError(str(error)) from error
+        auto_recovery = (next_state.get("host_goal_binding") or {}).get(
+            "auto_recovery"
+        ) or {}
+        if auto_recovery.get("transition_pending"):
+            exhausted = auto_recovery.get("status") == "exhausted"
+            auto_recovery["transition_pending"] = False
+            next_state["host_goal_binding"]["auto_recovery"] = auto_recovery
+            next_state = append_transition(
+                next_state,
+                "host_goal_auto_recovery_exhausted" if exhausted else "host_goal_auto_recreated",
+                feature_slug=next_state.get("feature_slug"),
+                runtime_version=PLUGIN_VERSION,
+                input_artifact_hashes={
+                    "checkpoint": host_goal_stable_hash(checkpoint_id),
+                    "previous_host_goal_binding": host_goal_stable_hash(
+                        (next_state.get("host_goal_binding_history") or [{}])[-1].get("binding") or binding),
+                },
+                output_artifact_hashes={
+                    "host_goal_binding": host_goal_stable_hash(
+                        next_state.get("host_goal_binding") or {}
+                    )
+                },
+                metadata={
+                    "attempt": auto_recovery.get("attempt"),
+                    "attempt_id": auto_recovery.get("attempt_id"),
+                    "reason": auto_recovery.get("reason"),
+                    "retry_after_seconds": auto_recovery.get("retry_after_seconds"),
+                },
+            )
+        elif recovery.get("status") in {"pending", "manual_authorized"} and auto_recovery.get("status") == "resolved":
+            next_state = append_transition(
+                next_state, "host_goal_auto_recovery_resolved",
+                feature_slug=next_state.get("feature_slug"), runtime_version=PLUGIN_VERSION,
+                input_artifact_hashes={"checkpoint": host_goal_stable_hash(checkpoint_id)},
+                output_artifact_hashes={"binding": host_goal_stable_hash(next_state["host_goal_binding"])},
+                metadata={"attempt_id": auto_recovery.get("attempt_id")},
+            )
         next_state = append_transition(
             next_state,
             "host_goal_observed",
@@ -4081,6 +4198,8 @@ class ProductDeliveryWorkflow:
             },
             metadata={
                 "operation": str(observation.get("tool") or ""),
+                "checkpoint_id": checkpoint_id,
+                "observation_sha256": host_goal_stable_hash(observation),
                 "status": str(
                     (next_state.get("host_goal_binding") or {}).get(
                         "last_observed_status"
@@ -4089,7 +4208,18 @@ class ProductDeliveryWorkflow:
                 ),
             },
         )
-        return write_state(self.project_root, next_state)
+        if auto_recovery or recovery:
+            receipts.append({
+                "checkpoint_id": checkpoint_id,
+                "attempt_id": recovery.get("attempt_id"),
+                "delivery_id": state.get("delivery_id"),
+                "feature_slug": state.get("feature_slug"),
+                "launch_package_hash": binding.get("launch_package_hash"),
+                "observation_sha256": host_goal_stable_hash(observation),
+            })
+            next_state["host_goal_recovery_receipts"] = receipts[-100:]
+        persisted = _write_state_locked(self.project_root, next_state)
+        return {**persisted, **host_goal_recovery_response(persisted.get("host_goal_binding") or {})}
 
     def recover_stale_host_goal_checkpoint(
         self,
@@ -4458,12 +4588,19 @@ class ProductDeliveryWorkflow:
 
     def recover_host_goal_binding(self, user_message: str) -> dict[str, Any]:
         """Authorize and rebuild Host Goal binding for a legacy active delivery."""
+        with state_write_lock(self.project_root):
+            return self._recover_host_goal_binding_locked(user_message)
+
+    def _recover_host_goal_binding_locked(self, user_message: str) -> dict[str, Any]:
+        from product_delivery_agent.artifact_protocol import _write_state_locked
+
         state = self._require_started(allow_host_goal_bootstrap=True)
         binding = state.get("host_goal_binding") or {}
         if binding.get("status") not in {
             "legacy_unverified",
             "reactivation_required",
             "unavailable",
+            "auto_recovery_exhausted",
         }:
             return state
         normalized = user_message.strip().lower()
@@ -4497,8 +4634,27 @@ class ProductDeliveryWorkflow:
         state["host_goal_binding_history"] = history
         state["host_goal_authorization"] = authorization
         state["host_goal_binding"] = initialize_host_goal_binding(state)
+        if binding.get("status") == "auto_recovery_exhausted":
+            replacement = state["host_goal_binding"]
+            replacement["resume_gate"] = binding.get("resume_gate") or replacement["resume_gate"]
+            replacement["recovery_goal"] = deepcopy(binding.get("recovery_goal") or {
+                key: binding.get(key) for key in
+                ("binding_nonce", "objective", "objective_sha256", "host_identifiers")
+            })
+            replacement["auto_recovery"] = {
+                "status": "manual_authorized", "attempt": 0,
+                "attempt_id": uuid.uuid4().hex, "max_attempts": 3,
+                "reason": "explicit_user_reauthorization", "recovery_action": "recreate_host_goal",
+            }
+            state = append_transition(
+                state, "host_goal_auto_recovery_authorized",
+                feature_slug=state.get("feature_slug"), runtime_version=PLUGIN_VERSION,
+                input_artifact_hashes={"binding": host_goal_stable_hash(binding)},
+                output_artifact_hashes={"binding": host_goal_stable_hash(replacement)},
+                metadata={"authorization_sha256": host_goal_stable_hash(user_message)},
+            )
         state["next_gate"] = "host_goal_activation"
-        return write_state(self.project_root, state)
+        return _write_state_locked(self.project_root, state)
 
     def authorize_host_goal_reactivation(self, user_message: str) -> dict[str, Any]:
         """Explicitly authorize a replacement after a bound Goal disappears."""

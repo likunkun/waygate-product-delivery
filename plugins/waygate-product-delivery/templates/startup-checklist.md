@@ -25,3 +25,5 @@
 - If an older active delivery has unverified or mismatched ownership, open a fresh top-level thread, call `prepare_host_goal_owner_claim('恢复交付主线程，接管当前 Host Goal')`, record that thread's `get_goal`, and continue activation only after the transfer succeeds.
 - If an owner-claim checkpoint becomes stale after a legal transition, call `recover_stale_host_goal_owner_claim(checkpoint_id)` before recording the new `get_goal`; never delete `pending_claim` manually.
 - At every post-handoff turn start and stage/review transition, call `prepare_host_goal_reconciliation()` and record the actual Goal tool result with `record_host_goal_observation()`.
+- In 1.2.2, transient loss returns a durable recovery contract: use `prepare_host_goal_auto_recovery()` and `record_host_goal_auto_recovery(checkpoint_id, observation, attempt_id=...)`; schedule 5/15/30-second retries in the host, never sleep or loop inside the plugin.
+- `wait_for_host_goal_retry` is read-only. Reattach an exact matching still-active Goal; a blocked Goal requires host-native resume and cannot be overwritten. Three failed recovery attempts require manual intervention.

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.3
+
+- Adds stable readable producer and reviewer identities in the form `角色｜职责｜业务版本`, with deterministic semantic `agent_spawn_name` fallbacks for Paseo/Codex listings.
+- Includes complete identity headers in dispatch messages and records display name, semantic name, seat/role IDs, real Agent ID and spawn source in TeamRun, review, status, map and report projections.
+- Adds a separate `agent-identity-catalog.json` presentation catalog without changing signed role cards, task hashes, seat hashes or historical identities.
+- Keeps optional host title updates honest: unsupported or failed `thread/name/set` and Paseo updates remain marked `semantic_fallback`.
+- Releases runtime, generated Skill/templates and distribution as 1.2.3. Existing 1.2.2 active deliveries remain on their original cached runtime; installation must retain old caches.
+
+## 1.2.2
+
+- Adds bounded Host Goal recovery for missing/prematurely completed Goals and transient gateway unavailability, with three host-scheduled attempts after 5/15/30 seconds. Initial failure is separate from these attempts; consumed budget persists after recovery to bound churn.
+- Archives bindings, preserves delivery/feature/launch package/owner/current gate and TASK evidence, regenerates binding identity, and records hash-linked recreation, resolution and exhaustion transitions.
+- Adds canonical recovery prepare/record facades, attempt identities, locked checkpoint validation and exact-input callback receipts. Waiting and duplicate callbacks are read-only; foreign Goals, owner changes, launch changes and stale observations fail closed.
+- Reattaches exact matching live Goals after transport timeouts. Only missing or completed Goals can be recreated. Transport-classified blocking requests host-native resume; unknown blocking, explicit blocked updates, user waits, permanent tool absence, paused/stopped deliveries and canonical closure retain their semantics.
+- Exposes recovery action, attempt, retry time and host scheduling requirement in observation responses, continuation, status/inspect and Stop guard. The plugin does not sleep or install a timer; current Paseo cron/Goal APIs do not establish second-level wakeup or automatic blocked-Goal Resume support.
+- Releases runtime, generated Skill/templates and distribution as 1.2.2. Existing 1.2.1 active deliveries remain on their original cached runtime; installation must retain old caches.
+
 ## 1.2.1
 
 - Changes live progress-map refresh from five seconds to one minute, preserving the selected view, filters and reading position.

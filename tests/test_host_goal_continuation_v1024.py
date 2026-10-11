@@ -271,7 +271,7 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                     },
                 )
 
-    def test_goal_tool_unavailable_is_recorded_and_blocks_progress(self):
+    def test_goal_tool_unavailable_is_auto_recreated_with_retry_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow = handed_off_workflow(Path(tmp))
             checkpoint = workflow.prepare_host_goal_activation()
@@ -282,35 +282,87 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                     "observation_source": "codex_goal_tool",
                     "tool": "get_goal",
                     "availability_status": "unavailable",
-                    "error_type": "tool_not_exposed",
-                    "error_message": "Goal tools are not available in this host",
+                    "error_type": "connection_error",
+                    "error_message": "temporary gateway disconnection",
                 },
             )
 
-            self.assertEqual(
-                unavailable["host_goal_binding"]["status"], "unavailable"
-            )
-            self.assertEqual(
-                unavailable["next_gate"], "use_goal_capable_codex_host"
-            )
+            self.assertEqual(unavailable["host_goal_binding"]["status"], "activation_pending")
+            recovery = unavailable["host_goal_binding"]["auto_recovery"]
+            self.assertEqual(recovery["attempt"], 1)
+            self.assertEqual(recovery["retry_after_seconds"], 5)
+            self.assertEqual(recovery["reason"], "unavailable")
+            self.assertEqual(unavailable["next_gate"], "host_goal_activation")
             continuation = derive_continuation_status(unavailable)
-            self.assertEqual(continuation["status"], "blocked")
-            self.assertIn(
-                "autonomous_continuation_unavailable", continuation["blockers"]
-            )
-            with self.assertRaisesRegex(WorkflowError, "unavailable"):
-                workflow.prepare_host_goal_activation()
+            self.assertEqual(continuation["status"], "wait_for_host_goal_retry")
+            self.assertEqual(continuation["retry_after_seconds"], 5)
+            retry = workflow.prepare_host_goal_activation()
+            self.assertEqual(retry["operation"], "wait_for_retry")
+            self.assertEqual(retry["retry_after_seconds"], 5)
 
-            recovered = workflow.authorize_host_goal_reactivation(
-                "恢复交付并授权 Goal 重新激活"
+    def test_host_goal_auto_recovery_uses_three_attempts_then_requires_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = handed_off_workflow(Path(tmp))
+            for expected_attempt, expected_delay in ((1, 5), (2, 15), (3, 30)):
+                checkpoint = workflow.prepare_host_goal_activation()
+                if checkpoint["operation"] == "wait_for_retry":
+                    state = workflow.status()
+                    state["host_goal_binding"]["auto_recovery"]["retry_at_epoch"] = 0
+                    write_state(Path(tmp), state)
+                    checkpoint = workflow.prepare_host_goal_activation()
+                unavailable = workflow.record_host_goal_observation(
+                    checkpoint["checkpoint_id"],
+                    {
+                        "observation_source": "codex_goal_tool",
+                        "tool": checkpoint["required_tool"],
+                        "availability_status": "unavailable",
+                        "error_type": "gateway_restart",
+                        "error_message": "temporary gateway loss",
+                    },
+                )
+                recovery = unavailable["host_goal_binding"]["auto_recovery"]
+                self.assertEqual(recovery["attempt"], expected_attempt)
+                self.assertEqual(recovery["retry_after_seconds"], expected_delay)
+            checkpoint = workflow.prepare_host_goal_activation()
+            if checkpoint["operation"] == "wait_for_retry":
+                state = workflow.status()
+                state["host_goal_binding"]["auto_recovery"]["retry_at_epoch"] = 0
+                write_state(Path(tmp), state)
+                checkpoint = workflow.prepare_host_goal_activation()
+            exhausted = workflow.record_host_goal_observation(
+                checkpoint["checkpoint_id"],
+                {
+                    "observation_source": "codex_goal_tool",
+                    "tool": checkpoint["required_tool"],
+                    "availability_status": "unavailable",
+                    "error_type": "gateway_restart",
+                    "error_message": "still unavailable",
+                },
             )
+            self.assertEqual(exhausted["host_goal_binding"]["status"], "auto_recovery_exhausted")
+            self.assertEqual(derive_continuation_status(exhausted)["status"], "wait_for_user")
             self.assertEqual(
-                recovered["host_goal_binding"]["status"], "activation_pending"
+                derive_continuation_status(exhausted)["next_action"],
+                "host_goal_reactivation_authorization",
             )
-            self.assertEqual(
-                recovered["host_goal_binding_history"][-1]["binding"]["status"],
-                "unavailable",
+
+    def test_explicit_user_stop_does_not_auto_recreate_host_goal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workflow = handed_off_workflow(Path(tmp))
+            active = activate_host_goal(workflow)
+            objective = active["host_goal_binding"]["objective"]
+            checkpoint = workflow.prepare_host_goal_reconciliation(
+                "stop_delivery", target_gate=active["next_gate"]
             )
+            stopped = workflow.record_host_goal_observation(
+                checkpoint["checkpoint_id"],
+                {
+                    "observation_source": "codex_goal_tool",
+                    "tool": "get_goal",
+                    "result": goal_result(objective, status="active"),
+                },
+            )
+            self.assertNotIn("auto_recovery", stopped["host_goal_binding"])
 
     def test_post_handoff_progress_requires_fresh_goal_reconciliation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -530,7 +582,7 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
                 legacy_marker,
             )
 
-    def test_missing_or_prematurely_complete_goal_requires_new_authorization(self):
+    def test_missing_or_prematurely_complete_goal_auto_recreates_binding(self):
         for observed_status, observed_result in (
             ("missing", {"goal": None}),
             ("complete", None),
@@ -559,25 +611,19 @@ class HostGoalContinuationV1024Tests(unittest.TestCase):
 
                     self.assertEqual(
                         stale["host_goal_binding"]["status"],
-                        "reactivation_required",
-                    )
-                    self.assertEqual(
-                        stale["next_gate"], "host_goal_reactivation_authorization"
-                    )
-                    with self.assertRaisesRegex(
-                        WorkflowError, "recovery authorization"
-                    ):
-                        workflow.prepare_host_goal_activation()
-
-                    recovered = workflow.authorize_host_goal_reactivation(
-                        "恢复交付并授权 Goal 重新激活"
-                    )
-                    self.assertEqual(
-                        recovered["host_goal_binding"]["status"],
                         "activation_pending",
                     )
+                    self.assertEqual(
+                        stale["next_gate"], "host_goal_activation"
+                    )
+                    self.assertEqual(stale["host_goal_binding"]["auto_recovery"]["attempt"], 1)
+                    state = workflow.status()
+                    state["host_goal_binding"]["auto_recovery"]["retry_at_epoch"] = 0
+                    write_state(Path(tmp), state)
+                    recovered = workflow.prepare_host_goal_activation()
+                    self.assertEqual(recovered["operation"], "inspect_before_activation")
                     self.assertNotEqual(
-                        recovered["host_goal_binding"]["binding_nonce"],
+                        workflow.status()["host_goal_binding"]["binding_nonce"],
                         active["host_goal_binding"]["binding_nonce"],
                     )
 

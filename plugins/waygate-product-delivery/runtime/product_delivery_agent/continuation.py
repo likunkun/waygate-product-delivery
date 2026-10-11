@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+import math
 from typing import Any
 
 from product_delivery_agent.confirmation_policy import (
@@ -16,32 +18,10 @@ from product_delivery_agent.gatekeeper import (
 from product_delivery_agent.host_goal import (
     canonical_closure_passed,
     current_codex_thread_id,
-)
-
-
-EXTERNAL_BLOCKER_MARKERS = (
-    "external",
-    "environment",
-    "dependency",
-    "credential",
-    "secret",
-    "network",
-    "database",
-    "port",
-)
-REPEATED_FAILURE_MARKERS = (
-    "consecutive_failure",
-    "repeated_failure",
-    "failed_three_times",
-    "three_failed_attempts",
-)
-USER_WAIT_MARKERS = (
-    "user_clarification",
-    "requirements_clarification",
-    "awaiting_user",
-    "needs_user",
-    "human_input",
-    "manual_confirmation",
+    host_goal_auto_recovery_allowed,
+    EXTERNAL_BLOCKER_MARKERS,
+    REPEATED_FAILURE_MARKERS,
+    USER_WAIT_MARKERS,
 )
 
 
@@ -69,6 +49,13 @@ def derive_continuation_status(state: dict[str, Any]) -> dict[str, Any]:
             "complete",
             can_stop=True,
             reason="product delivery closure is complete",
+            next_action=state.get("next_gate"),
+        )
+
+    if state.get("paused"):
+        return _decision(
+            "wait_for_user", can_stop=True,
+            reason="waiting for explicit delivery resume", blockers=["paused"],
             next_action=state.get("next_gate"),
         )
 
@@ -207,8 +194,9 @@ def _decision(
     blockers: list[str] | None = None,
     next_action: Any = None,
     remaining_tasks: list[str] | None = None,
+    **extra: Any,
 ) -> dict[str, Any]:
-    return {
+    decision = {
         "status": status,
         "can_stop": can_stop,
         "reason": reason,
@@ -216,6 +204,8 @@ def _decision(
         "next_action": str(next_action) if _has_text(next_action) else None,
         "remaining_tasks": remaining_tasks or [],
     }
+    decision.update(extra)
+    return decision
 
 
 def _state_integrity_errors(state: dict[str, Any]) -> list[str]:
@@ -254,6 +244,38 @@ def _host_goal_continuation_decision(
         return None
     binding = state.get("host_goal_binding") or {}
     status = binding.get("status")
+    auto_recovery = binding.get("auto_recovery") or {}
+    retry_at_epoch = float(auto_recovery.get("retry_at_epoch") or 0)
+    if status == "activation_pending" and auto_recovery.get("status") == "pending":
+        if not host_goal_auto_recovery_allowed(state):
+            return _decision(
+                "wait_for_user", can_stop=True,
+                reason="Host Goal recovery is suspended by closure or a business blocker",
+                blockers=["host_goal:recovery_not_allowed"],
+                next_action=state.get("next_gate"),
+            )
+        if retry_at_epoch > time.time():
+            return _decision(
+                "wait_for_host_goal_retry",
+                can_stop=True,
+                reason="Host Goal transient recovery is waiting for host retry time",
+                blockers=["host_goal:auto_recovery_wait"],
+                next_action="host_goal_auto_recovery",
+                retry_after_seconds=max(1, math.ceil(retry_at_epoch - time.time())),
+                recovery_attempt=auto_recovery.get("attempt"),
+                retry_at=auto_recovery.get("retry_at"),
+                recovery_attempt_id=auto_recovery.get("attempt_id"),
+                recovery_action=auto_recovery.get("recovery_action"),
+                scheduler_required="host",
+            )
+    if status == "auto_recovery_exhausted":
+        return _decision(
+            "wait_for_user",
+            can_stop=True,
+            reason="Host Goal automatic recovery attempts are exhausted",
+            blockers=["host_goal:auto_recovery_exhausted"],
+            next_action="host_goal_reactivation_authorization",
+        )
     if status in {
         "activation_pending",
         "creation_ready",

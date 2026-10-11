@@ -30,6 +30,7 @@ class HookResult:
     warnings: list[str] = field(default_factory=list)
     missing_items: list[str] = field(default_factory=list)
     passed: bool = True
+    retry_contract: dict[str, Any] = field(default_factory=dict)
 
 
 def build_resume_context(project_root: str | Path) -> HookResult:
@@ -120,6 +121,15 @@ def check_stop_guardrail(project_root: str | Path) -> HookResult:
         return invalid
 
     continuation = derive_continuation_status(state)
+    if continuation["status"] == "wait_for_host_goal_retry":
+        return HookResult(
+            active=True, silent=False, passed=True,
+            message="continuation_guard=wait_for_host_goal_retry",
+            retry_contract={key: continuation.get(key) for key in (
+                "retry_at", "retry_after_seconds", "recovery_attempt",
+                "recovery_attempt_id", "recovery_action", "scheduler_required",
+            )},
+        )
     if continuation["status"] == "wait_for_user":
         return HookResult(
             active=True,
@@ -222,6 +232,9 @@ def _state_summary(state: dict[str, Any], *, stage_label: str) -> str:
     parts.append(f"continuation={continuation['status']}")
     if continuation.get("next_action"):
         parts.append(f"next_action={continuation['next_action']}")
+    if continuation.get("retry_at"):
+        parts.append(f"host_goal_retry_at={continuation['retry_at']}")
+        parts.append(f"host_goal_recovery_attempt={continuation.get('recovery_attempt')}/3")
 
     confirmed = confirmed_user_confirmation_targets(state)
     pending = [

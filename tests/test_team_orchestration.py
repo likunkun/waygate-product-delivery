@@ -44,6 +44,10 @@ class TeamOrchestrationTests(unittest.TestCase):
 
     def event(self, run, kind, **payload):
         event = {"event_id": f"E-{run['revision']}-{kind}", "type": kind, "work_package_id": "WP-01", **payload}
+        if kind == "dispatched":
+            row = run["work_packages"][event["work_package_id"]]
+            for field in ("agent_display_name", "agent_spawn_name"):
+                event.setdefault(field, row[field])
         return self.workflow.record_team_events(run["run_id"], [event], expected_revision=run["revision"])
 
     def dispatch(self, run, agent="worker-a"):
@@ -102,6 +106,7 @@ class TeamOrchestrationTests(unittest.TestCase):
         self.start()
         run = self.prepare()
         event = {"event_id": "spawn-1", "type": "dispatched", "work_package_id": "WP-01", "agent_id": "worker-a", "spawn_source": "test.host", "attempt": 1}
+        event.update({field: run["work_packages"]["WP-01"][field] for field in ("agent_display_name", "agent_spawn_name")})
         first = self.workflow.record_team_events(run["run_id"], [event], expected_revision=0)
         second = self.workflow.record_team_events(run["run_id"], [event], expected_revision=0)
         self.assertEqual(second["revision"], first["revision"])

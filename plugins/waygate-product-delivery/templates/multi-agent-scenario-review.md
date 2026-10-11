@@ -26,3 +26,15 @@ New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_
 
 For incremental existing-surface UI, `baseline_inheritance_review` must prove the scenario inherits the previous real entry path and does not replace it with a parallel page.
 The review must bind the current design bundle and audit, positively cover every product-context dimension, and judge whether the inherited shell and overall composition are coherent. Empty findings alone are not positive coverage, and reviewers cannot waive a failed `prototype_design_integrity` gate.
+
+## 专家身份与结论
+
+- dispatch_briefs: preserve the canonical seat-scoped naming sidecar
+- 评审席位：<seat_display_name>
+- 专家：<agent_display_name>
+- 语义任务名：<agent_spawn_name>
+- 真实 Agent ID：<host-returned agent_id>
+- 派发来源：<reviewer_spawn_source>
+- 逻辑角色：<role_ids shared by this seat>
+- 职责：<mission>
+- 结论：<status/stance>

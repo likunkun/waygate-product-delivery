@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import time
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -39,6 +41,21 @@ ACTIVATION_OPERATIONS = {
     "create_goal",
     "verify_activation",
 }
+AUTO_RECOVERY_MAX_ATTEMPTS = 3
+AUTO_RECOVERY_BACKOFF_SECONDS = (5, 15, 30)
+TRANSIENT_HOST_ERRORS = {
+    "connection_error", "gateway_restart", "transport_error", "timeout",
+    "rate_limit", "service_unavailable", "thread_unavailable", "host_goal_lost",
+}
+EXTERNAL_BLOCKER_MARKERS = (
+    "external", "environment", "dependency", "credential", "secret", "network", "database", "port",
+)
+REPEATED_FAILURE_MARKERS = (
+    "consecutive_failure", "repeated_failure", "failed_three_times", "three_failed_attempts",
+)
+USER_WAIT_MARKERS = (
+    "user_clarification", "requirements_clarification", "awaiting_user", "needs_user", "human_input", "manual_confirmation",
+)
 
 
 class HostGoalError(RuntimeError):
@@ -250,6 +267,10 @@ def prepare_activation_checkpoint(state: dict[str, Any]) -> tuple[dict[str, Any]
     """Prepare the next get/create/get action for initial activation."""
     assert_host_goal_owner(state)
     binding = deepcopy(state.get("host_goal_binding") or {})
+    if state.get("paused"):
+        raise HostGoalError("paused delivery cannot activate a Host Goal")
+    if binding.get("auto_recovery"):
+        _validate_current_recovery_binding(state, binding)
     status = binding.get("status")
     operations = {
         "activation_pending": ("inspect_before_activation", "get_goal"),
@@ -258,6 +279,20 @@ def prepare_activation_checkpoint(state: dict[str, Any]) -> tuple[dict[str, Any]
     }
     if status == "active":
         return binding, _activation_response(binding, None)
+    auto_recovery = binding.get("auto_recovery") or {}
+    retry_at_epoch = float(auto_recovery.get("retry_at_epoch") or 0)
+    if status == "activation_pending" and retry_at_epoch > time.time():
+        remaining = max(1, math.ceil(retry_at_epoch - time.time()))
+        return binding, {
+            **_activation_response(binding, None),
+            "operation": "wait_for_retry",
+            "required_tool": None,
+            "recovery_action": "wait_for_retry",
+            "recovery_attempt": auto_recovery.get("attempt"),
+            "retry_after_seconds": remaining,
+            "retry_at": auto_recovery.get("retry_at"),
+            "scheduler_required": "host",
+        }
     if status in {"legacy_unverified", "reactivation_required"}:
         raise HostGoalError("Host Goal recovery authorization is required")
     if status not in operations:
@@ -293,6 +328,15 @@ def prepare_reconciliation_checkpoint(
     """Prepare a fresh get_goal checkpoint for one canonical transition."""
     assert_host_goal_owner(state)
     binding = deepcopy(state.get("host_goal_binding") or {})
+    if binding.get("auto_recovery"):
+        for label, stored, current in (
+            ("delivery", binding.get("delivery_id"), state.get("delivery_id")),
+            ("feature", binding.get("feature_slug"), state.get("feature_slug")),
+            ("launch package", binding.get("launch_package_hash"), (state.get("delivery_goal") or {}).get("launch_package_hash")),
+            ("authorization", binding.get("authorization_hash"), (state.get("host_goal_authorization") or {}).get("authorization_hash")),
+        ):
+            if stored != current:
+                raise HostGoalError(f"recovered Host Goal {label} identity mismatch")
     if operation not in RECONCILIATION_OPERATIONS:
         raise HostGoalError(f"unsupported Host Goal operation: {operation}")
     operation_tools = {
@@ -714,6 +758,11 @@ def apply_host_goal_observation(
         next_state, binding=binding
     ):
         raise HostGoalError("Host Goal checkpoint state projection is stale")
+    if (binding.get("auto_recovery") or {}).get("status") in {"pending", "manual_authorized"}:
+        _validate_current_recovery_binding(next_state, binding)
+        _validate_recovery_identity(next_state, binding, checkpoint)
+    if journal_integrity_errors(next_state):
+        raise HostGoalError("Host Goal observation requires an intact journal")
     if observation.get("observation_source") != HOST_GOAL_SOURCE:
         raise HostGoalError("Host Goal observation_source must be codex_goal_tool")
     tool = str(observation.get("tool") or "")
@@ -751,6 +800,9 @@ def apply_host_goal_observation(
         binding["unavailable_observation"] = record
         next_state["host_goal_binding"] = binding
         next_state["next_gate"] = "use_goal_capable_codex_host"
+        if record["error_type"] in TRANSIENT_HOST_ERRORS | {"unknown"} and checkpoint.get("operation") != "stop_delivery":
+            next_state, _ = auto_recreate_host_goal_binding(
+                next_state, "unavailable", resume_gate=str(state.get("next_gate") or ""))
         return next_state
     result = observation.get("result")
     if not isinstance(result, dict):
@@ -758,7 +810,9 @@ def apply_host_goal_observation(
     normalized = normalize_tool_result(tool, result)
     operation = str(checkpoint.get("operation") or "")
     _validate_observed_goal_thread(normalized, owner_thread_id)
-    _validate_observed_goal(binding, normalized, operation)
+    block_reason = str(normalized.get("blocked_reason") or observation.get("error_type") or "")
+    _validate_observed_goal(binding, normalized, operation,
+                            allow_transport_recovery=block_reason in TRANSIENT_HOST_ERRORS)
 
     consumed.append(checkpoint_id)
     binding["consumed_checkpoint_ids"] = consumed[-100:]
@@ -768,6 +822,8 @@ def apply_host_goal_observation(
         "operation": operation,
         "tool": tool,
         "status": normalized["status"],
+        "blocked_reason": normalized.get("blocked_reason"),
+        "error_type": observation.get("error_type"),
         "objective": normalized.get("objective"),
         "host_identifiers": normalized.get("host_identifiers", {}),
         "result_sha256": stable_hash(result),
@@ -780,9 +836,57 @@ def apply_host_goal_observation(
     binding["last_observation_sha256"] = stable_hash(record)
     binding["last_observed_at"] = record["observed_at"]
 
+    # A transport timeout can leave the original Goal alive. Inspect before
+    # creating anything, and accept only the exact archived owned Goal.
+    recovery_goal = binding.get("recovery_goal") or {}
+    archived_goal_observed = bool(
+        operation == "inspect_before_activation"
+        and recovery_goal.get("objective") == normalized.get("objective")
+        and normalized["status"] != "missing"
+    )
+    if archived_goal_observed and normalized["status"] == "active":
+        for key in ("binding_nonce", "objective", "objective_sha256", "host_identifiers"):
+            binding[key] = deepcopy(recovery_goal[key])
+        _mark_active(binding, normalized)
+        binding.pop("recovery_goal", None)
+        next_state["host_goal_binding"] = binding
+        next_state["next_gate"] = binding.get("resume_gate") or _delivery_goal_next_gate(next_state)
+        return next_state
+
+    if (
+        normalized["status"] in {"missing", "complete", "blocked"}
+        and operation not in {"inspect_before_activation", "complete_goal", "verify_completion", "block_goal", "stop_delivery"}
+    ) or (operation == "inspect_before_activation" and normalized["status"] == "blocked"):
+        blocked = normalized["status"] == "blocked"
+        transient_block = block_reason in TRANSIENT_HOST_ERRORS or (
+            not block_reason
+            and (binding.get("auto_recovery") or {}).get("reason") == "observed_blocked_transport"
+        )
+        binding["status"] = "blocked" if blocked else "reactivation_required"
+        if blocked:
+            binding["host_identifiers"] = deepcopy(normalized.get("host_identifiers") or {})
+        binding["reactivation_reason"] = f"observed_{normalized['status']}"
+        next_state["host_goal_binding"] = binding
+        if not blocked or transient_block:
+            recovered, response = auto_recreate_host_goal_binding(
+                next_state, "observed_blocked_transport" if blocked else binding["reactivation_reason"],
+                resume_gate=str(state.get("next_gate") or binding.get("resume_gate") or ""),
+            )
+            if response["recovery_action"] != "not_allowed":
+                return recovered
+        next_state["next_gate"] = "host_goal_resume_required" if blocked else "host_goal_reactivation_authorization"
+        if binding.get("auto_recovery"):
+            binding["auto_recovery"].update(
+                status="suspended", recovery_action="manual_recovery_required",
+                reason=block_reason or binding.get("reactivation_reason"),
+            )
+        return next_state
+
     if operation == "inspect_before_activation":
-        if normalized["status"] == "missing":
+        if normalized["status"] in {"missing", "complete"}:
             binding["status"] = "creation_ready"
+            binding.pop("recovery_goal", None)
+            binding.pop("host_identifiers", None)
         elif normalized["status"] == "active":
             _mark_active(binding, normalized)
     elif operation == "create_goal":
@@ -803,14 +907,7 @@ def apply_host_goal_observation(
         next_state["stage"] = "feature_closure_passed"
         next_state["next_gate"] = "plugin_packaging"
     elif operation == "turn_start":
-        if normalized["status"] == "blocked":
-            binding["status"] = "blocked"
-            next_state["next_gate"] = "host_goal_resume_required"
-        elif normalized["status"] != "active":
-            binding["status"] = "reactivation_required"
-            binding["reactivation_reason"] = f"observed_{normalized['status']}"
-            next_state["next_gate"] = "host_goal_reactivation_authorization"
-        elif checkpoint.get("human_decision_id"):
+        if checkpoint.get("human_decision_id"):
             _record_human_wait_turn(binding, checkpoint)
         else:
             _reset_human_wait_episode(binding)
@@ -848,13 +945,6 @@ def apply_host_goal_observation(
                 "observation_sha256": stable_hash(record),
                 "authorized_at": _timestamp(),
             }
-        elif normalized["status"] == "blocked":
-            binding["status"] = "blocked"
-            next_state["next_gate"] = "host_goal_resume_required"
-        else:
-            binding["status"] = "reactivation_required"
-            binding["reactivation_reason"] = f"observed_{normalized['status']}"
-            next_state["next_gate"] = "host_goal_reactivation_authorization"
     elif operation in {
         "stage_transition",
         "pre_complete",
@@ -1077,6 +1167,9 @@ def goal_state_projection_hash(
         "delivery_id": state.get("delivery_id"),
         "feature_slug": state.get("feature_slug"),
         "launch_package_hash": goal.get("launch_package_hash"),
+        "delivery_status": state.get("status"),
+        "active": state.get("active"),
+        "paused": state.get("paused"),
         "authorization_hash": authorization.get("authorization_hash"),
         "owner_generation": owner.get("generation"),
         "coordinator_thread_id": owner.get("coordinator_thread_id"),
@@ -1129,6 +1222,7 @@ def normalize_tool_result(tool: str, result: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "objective": objective,
         "host_identifiers": identifiers,
+        "blocked_reason": goal.get("blockedReason") or goal.get("blocked_reason"),
     }
 
 
@@ -1602,6 +1696,7 @@ def _activation_response(
         "objective": binding.get("objective"),
         "objective_sha256": binding.get("objective_sha256"),
     }
+    response.update(host_goal_recovery_response(binding))
     if checkpoint:
         response.update(
             {
@@ -1617,6 +1712,7 @@ def _validate_observed_goal(
     binding: dict[str, Any],
     normalized: dict[str, Any],
     operation: str,
+    *, allow_transport_recovery: bool = False,
 ) -> None:
     status = normalized["status"]
     objective = normalized.get("objective")
@@ -1624,13 +1720,17 @@ def _validate_observed_goal(
         return
     if status == "missing":
         if operation in {
-            "create_goal",
-            "verify_activation",
             "block_goal",
             "complete_goal",
             "verify_completion",
         }:
             raise HostGoalError("Host Goal is missing")
+        return
+    recovery_goal = binding.get("recovery_goal") or {}
+    if operation == "inspect_before_activation" and objective == recovery_goal.get("objective"):
+        for key, value in (recovery_goal.get("host_identifiers") or {}).items():
+            if (normalized.get("host_identifiers") or {}).get(key) != value:
+                raise HostGoalError("observed recovery Goal identifier does not match binding")
         return
     if objective != binding.get("objective"):
         raise HostGoalError("observed Host Goal objective does not match binding")
@@ -1645,7 +1745,7 @@ def _validate_observed_goal(
         for key, value in bound_identifiers.items()
     ):
         raise HostGoalError("observed Host Goal identifier does not match binding")
-    if operation in {"create_goal", "verify_activation"} and status != "active":
+    if operation in {"create_goal", "verify_activation"} and status == "blocked" and not allow_transport_recovery:
         raise HostGoalError("Host Goal activation must be observed active")
     if operation in {"complete_goal", "verify_completion"} and status != "complete":
         raise HostGoalError("Host Goal completion must be observed complete")
@@ -1695,6 +1795,157 @@ def _mark_active(binding: dict[str, Any], normalized: dict[str, Any]) -> None:
         existing_identifiers.setdefault(key, value)
     binding["host_identifiers"] = existing_identifiers
     binding["activated_at"] = _timestamp()
+    auto_recovery = binding.get("auto_recovery")
+    if isinstance(auto_recovery, dict) and auto_recovery.get("status") in {"pending", "manual_authorized"}:
+        auto_recovery["status"] = "resolved"
+        auto_recovery["resolved_at"] = _timestamp()
+        binding["auto_recovery"] = auto_recovery
+
+
+def auto_recreate_host_goal_binding(
+    state: dict[str, Any], reason: str, *, resume_gate: str | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Recreate a transiently lost Host Goal with bounded host scheduling retries."""
+    next_state = deepcopy(state)
+    if not host_goal_auto_recovery_allowed(next_state):
+        return next_state, {"recovery_action": "not_allowed", "reason": reason}
+    previous = deepcopy(next_state.get("host_goal_binding") or {})
+    owner_thread_id = assert_host_goal_owner(next_state)
+    _validate_current_recovery_binding(next_state, previous)
+    previous_policy = previous.get("auto_recovery") or {}
+    attempt = int(previous_policy.get("attempt") or 0) + 1
+    history = list(next_state.get("host_goal_binding_history") or [])
+    if attempt > AUTO_RECOVERY_MAX_ATTEMPTS:
+        exhausted = dict(previous_policy)
+        exhausted.update(
+            {
+                "status": "exhausted",
+                "reason": reason,
+                "attempt": attempt - 1,
+                "max_attempts": AUTO_RECOVERY_MAX_ATTEMPTS,
+                "exhausted_at": _timestamp(),
+                "transition_pending": True,
+                "recovery_action": "manual_recovery_required",
+            }
+        )
+        previous["auto_recovery"] = exhausted
+        previous["status"] = "auto_recovery_exhausted"
+        previous["pending_checkpoint"] = None
+        previous["authorized_transition"] = None
+        next_state["host_goal_binding"] = previous
+        next_state["next_gate"] = "host_goal_reactivation_authorization"
+        return next_state, {
+            "recovery_action": "manual_recovery_required",
+            "recovery_attempt": attempt - 1,
+            "reason": reason,
+        }
+    delay = AUTO_RECOVERY_BACKOFF_SECONDS[attempt - 1]
+    retry_at_epoch = time.time() + delay
+    retry_at = datetime.fromtimestamp(retry_at_epoch, timezone.utc).replace(
+        microsecond=0
+    ).isoformat()
+    history.append(
+        {
+            "binding": previous,
+            "archived_at": _timestamp(),
+            "reason": "host_goal_auto_recreated",
+            "recovery_attempt": attempt,
+        }
+    )
+    next_state["host_goal_binding_history"] = history[-100:]
+    replacement = _new_host_goal_binding(
+        next_state,
+        owner_thread_id=owner_thread_id,
+        previous_binding=previous,
+        resume_gate=(resume_gate if resume_gate and not resume_gate.startswith("host_goal_")
+                     else previous.get("resume_gate")) or _delivery_goal_next_gate(next_state),
+    )
+    replacement["auto_recovery"] = {
+        "status": "pending",
+        "attempt": attempt,
+        "max_attempts": AUTO_RECOVERY_MAX_ATTEMPTS,
+        "reason": reason,
+        "retry_after_seconds": delay,
+        "retry_at": retry_at,
+        "retry_at_epoch": retry_at_epoch,
+        "transition_pending": True,
+        "attempt_id": uuid.uuid4().hex,
+        "recovery_action": "resume_host_goal" if reason == "observed_blocked_transport" else "recreate_host_goal",
+    }
+    replacement["recovery_goal"] = deepcopy(previous.get("recovery_goal") or {
+        key: previous.get(key) for key in
+        ("binding_nonce", "objective", "objective_sha256", "host_identifiers")
+    })
+    for key in ("last_observed_status", "last_observation_sha256", "last_observed_at"):
+        replacement[key] = previous.get(key)
+    next_state["host_goal_binding"] = replacement
+    next_state["next_gate"] = "host_goal_activation"
+    return next_state, host_goal_recovery_response(replacement)
+
+
+def host_goal_auto_recovery_allowed(state: dict[str, Any]) -> bool:
+    """Recheck stop, closure and business blockers on every retry turn."""
+    return not (
+        not state.get("active")
+        or state.get("paused")
+        or state.get("status") in {"closed", "complete", "stopped", "abandoned"}
+        or canonical_closure_passed(state)
+        or (state.get("delivery_goal") or {}).get("status") == "complete"
+        or any(any(marker in str(blocker).lower() for marker in
+                   EXTERNAL_BLOCKER_MARKERS + REPEATED_FAILURE_MARKERS + USER_WAIT_MARKERS)
+               for blocker in state.get("blocked_until") or [])
+        or any(isinstance(item, dict) and item.get("status") == "pending"
+               for item in (state.get("pending_user_decisions") or {}).values())
+        or (state.get("host_goal_binding") or {}).get("status") in {"stopped_by_user", "abandoned_by_user", "complete"}
+        or ((state.get("host_goal_binding") or {}).get("human_wait") or {}).get("status") == "pending"
+    )
+
+
+def _validate_current_recovery_binding(state: dict[str, Any], binding: dict[str, Any]) -> None:
+    """Check canonical identity and journal before issuing recovery tool actions."""
+    if (binding.get("auto_recovery") or {}).get("status") in {"pending", "manual_authorized"} and not host_goal_auto_recovery_allowed(state):
+        raise HostGoalError("Host Goal automatic recovery is no longer allowed")
+    _validate_recovery_identity(state, binding, {
+        "delivery_id": binding.get("delivery_id"),
+        "feature_slug": binding.get("feature_slug"),
+        "binding_generation": binding.get("generation"),
+        "binding_nonce": binding.get("binding_nonce"),
+        "objective_sha256": binding.get("objective_sha256"),
+        "coordinator_thread_id": binding.get("owner_thread_id"),
+    })
+    if journal_integrity_errors(state):
+        raise HostGoalError("Host Goal auto recovery requires an intact journal")
+    recovery_goal = binding.get("recovery_goal")
+    if recovery_goal:
+        archives = [item.get("binding") or {} for item in state.get("host_goal_binding_history") or []
+                    if item.get("reason") == "host_goal_auto_recreated"]
+        events = (state.get("transition_journal") or {}).get("events") or []
+        if not any(
+            all(archive.get(key) == value for key, value in recovery_goal.items())
+            and any(event.get("transition_name") == "host_goal_auto_recreated"
+                    and (event.get("input_artifact_hashes") or {}).get("previous_host_goal_binding") == stable_hash(archive)
+                    for event in events)
+            for archive in archives
+        ):
+            raise HostGoalError("archived recovery Goal does not match journal evidence")
+
+
+def host_goal_recovery_response(binding: dict[str, Any]) -> dict[str, Any]:
+    """Expose the durable retry contract without claiming a scheduled wakeup."""
+    recovery = binding.get("auto_recovery") or {}
+    if not recovery:
+        return {}
+    pending = recovery.get("status") == "pending"
+    remaining = max(0, math.ceil(float(recovery.get("retry_at_epoch") or 0) - time.time())) if pending else 0
+    return {
+        "recovery_action": "recovered" if recovery.get("status") == "resolved" else recovery.get("recovery_action"),
+        "recovery_attempt": recovery.get("attempt"),
+        "recovery_attempt_id": recovery.get("attempt_id"),
+        "retry_after_seconds": remaining,
+        "retry_at": recovery.get("retry_at") if pending else None,
+        "scheduler_required": "host" if pending else None,
+        "reason": recovery.get("reason"),
+    }
 
 
 def _record_human_wait_turn(

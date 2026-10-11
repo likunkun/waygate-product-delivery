@@ -25,3 +25,15 @@ New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_
 | --- | --- | --- | --- |
 
 This gate reviews test case coverage range before implementation. It must prove every UI journey has the required actor role, ordinary entry path, and scenario granularity before implementation starts. Scenario review, prototype review, and generic test review cannot replace it.
+
+## 专家身份与结论
+
+- dispatch_briefs: preserve the canonical seat-scoped naming sidecar
+- 评审席位：<seat_display_name>
+- 专家：<agent_display_name>
+- 语义任务名：<agent_spawn_name>
+- 真实 Agent ID：<host-returned agent_id>
+- 派发来源：<reviewer_spawn_source>
+- 逻辑角色：<role_ids shared by this seat>
+- 职责：<mission>
+- 结论：<status/stance>

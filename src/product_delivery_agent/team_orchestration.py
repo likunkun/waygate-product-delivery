@@ -14,6 +14,7 @@ import os
 import re
 import tempfile
 import uuid
+from product_delivery_agent.agent_naming import producer_dispatch_identity, producer_dispatch_message
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -208,16 +209,40 @@ def save_run(root: Path, state: dict, run: dict, transition: str) -> dict:
     relative = _run_root(state, run["run_id"]) + f"/revisions/{run['revision']}-{stable(run)[:16]}.json"
     path = safe(root, relative)
     atomic_json(path, run)
+    report = safe(root, _run_root(state, run["run_id"]) + "/report.md")
+    atomic_bytes(report, render_team_run_report(run).encode("utf-8"))
     state.setdefault("team_runs", {})[run["run_id"]] = {
         "run_path": relative, "run_sha256": file_hash(path), "stage": run["stage"],
         "status": run["status"], "revision": run["revision"], "task_id": run["task_id"],
-        "work_packages": {k: {f: v.get(f) for f in ("status", "attempt", "agent_id")} for k, v in run["work_packages"].items()},
+        "work_packages": {k: {f: v.get(f) for f in ("status", "attempt", "agent_id", "spawn_source", "agent_display_name", "agent_spawn_name", "role_ids")} for k, v in run["work_packages"].items()},
     }
     updated = append_transition(state, transition, feature_slug=state.get("feature_slug"), runtime_version=PLUGIN_VERSION,
                               output_artifact_hashes={relative: file_hash(path)}, metadata={"run_id": run["run_id"], "revision": run["revision"]})
     state.update(updated)
     _write_state_locked(root, state)
     return copy.deepcopy(run)
+
+
+def render_team_run_report(run: dict) -> str:
+    """Show current and historical identities without changing any producer claim."""
+    lines = ["# Team Production", "", f"Run: {run['run_id']}",
+             f"Stage: {run['stage']}", f"Status: {run['status']}", ""]
+    for key, row in run["work_packages"].items():
+        lines.extend([f"## 工作包：{key}",
+                      f"专家：{row.get('agent_display_name') or '历史成员'}",
+                      f"语义任务名：{row.get('agent_spawn_name') or '历史身份'}",
+                      f"真实 Agent ID：{row.get('agent_id') or '待派发'}",
+                      f"派发来源：{row.get('spawn_source') or '待派发'}",
+                      f"职责角色：{', '.join(row['task']['role_ids'])}",
+                      f"状态：{row['status']}；attempt：{row['attempt']}",
+                      f"职责：{'；'.join(card['mission'] for card in row['task'].get('role_cards', []))}",
+                      f"要求输出：{', '.join(row['task']['required_outputs'])}",
+                      f"返回结论：{(row.get('result') or {}).get('status', '尚未返回')}",
+                      f"整合状态：{row['status']}",
+                      f"已接受输出：{', '.join(artifact['ref'] for artifact in row.get('accepted_artifacts', [])) or '尚未接受'}", ""])
+        for previous in row.get('history') or []:
+            lines.append(f"历史身份：{previous.get('agent_display_name') or '历史成员'} / 语义任务名：{previous.get('agent_spawn_name') or '历史身份'} / {previous.get('agent_id') or '未派发'} / 来源：{previous.get('spawn_source') or 'unavailable'} / attempt {previous.get('attempt')}")
+    return '\n'.join(lines) + '\n'
 
 
 def integrated_outputs(run: dict) -> dict:
@@ -284,8 +309,10 @@ def prepare(root: Path, state: dict, stage: str, packages: list, refs: dict, tas
                 if not (path.startswith(("docs/", "prototypes/")) or ("/" not in path and path.endswith(".md"))):
                     raise TeamError("design stage cannot write implementation paths")
         baseline = {p: file_hash(safe(root, p)) for p in task["allowed_write_paths"]}
+        identity = producer_dispatch_identity(bundle["agent_identities"][task["work_package_id"]], run["run_id"], task["work_package_id"], 1)
         run["work_packages"][task["work_package_id"]] = {"task": task, "baseline": baseline, "attempt": 1,
-             "status": "pending", "recovery_count": 0, "revision_count": 0, "history": [], "agent_id": None}
+             "status": "pending", "recovery_count": 0, "revision_count": 0, "history": [], "agent_id": None,
+             **identity, "dispatch_message": producer_dispatch_message(task, identity)}
     return save_run(root, state, run, "team_run_prepared")
 
 
@@ -352,6 +379,11 @@ def _new_attempt(row: dict, *, recovery: bool) -> None:
     if row[counter] >= 1:
         raise TeamError("work package recovery/remediation limit exhausted")
     row[counter] += 1
+    _advance_attempt(row)
+
+
+def _advance_attempt(row: dict) -> None:
+    """Archive an attempt before clearing its execution identity and workspace."""
     row["history"].append({k: copy.deepcopy(v) for k,v in row.items() if k not in {"task", "history"}})
     row["attempt"] += 1
     row["status"] = "pending"
@@ -368,6 +400,10 @@ def _new_attempt(row: dict, *, recovery: bool) -> None:
         "failure_reason",
     ):
         row.pop(k, None)
+    if row.get("agent_spawn_run_id"):
+        identity = producer_dispatch_identity(row, row["agent_spawn_run_id"], row["task"]["work_package_id"], row["attempt"])
+        row["agent_spawn_name"] = identity["agent_spawn_name"]
+        row["dispatch_message"] = producer_dispatch_message(row["task"], row)
 
 
 def exact_replay(root: Path, state: dict, operation: str, args: tuple) -> dict | None:
@@ -430,6 +466,11 @@ def events(root: Path, state: dict, run_id: str, batch: list, expected_revision:
             raise TeamError("unknown work package")
         row = run["work_packages"][key]
         if kind == "dispatched":
+            for name_field in ("agent_display_name", "agent_spawn_name"):
+                if row.get("naming_version") and name_field not in event:
+                    raise TeamError("dispatch name acknowledgement is required for named work packages")
+                if name_field in event and event[name_field] != row.get(name_field):
+                    raise TeamError("dispatch name must match the canonical role identity")
             if row["status"] != "pending" or event.get("attempt") != row["attempt"]:
                 raise TeamError("dispatch requires current pending attempt")
             if sum(w["status"] == "running" for w in run["work_packages"].values()) >= 2:
@@ -445,6 +486,8 @@ def events(root: Path, state: dict, run_id: str, batch: list, expected_revision:
             if any(w.get("agent_id") == agent and w["status"] == "running" for w in run["work_packages"].values()):
                 raise TeamError("worker identity already running")
             stage_workspace(root, state, run, key)
+            if row.get("agent_display_name"):
+                row["dispatch_message"] = producer_dispatch_message(row["task"], row, staging_root=row["staging_root"])
             row.update(status="running", agent_id=agent, spawn_source=event["spawn_source"], started_at=now(),
                        deadline=(datetime.now(timezone.utc)+timedelta(seconds=1800)).isoformat())
             run["status"] = "running"
@@ -826,10 +869,7 @@ def pause_runs(root: Path,state: dict) -> dict:
             raise TeamError("cannot pause a run with a pending integration intent")
         for row in run["work_packages"].values():
             if row["status"]=="running":
-                row["history"].append({k:copy.deepcopy(v) for k,v in row.items() if k not in {"history","task"}})
-                row["attempt"]+=1
-                row["status"]="pending"
-                row.pop("agent_id",None)
+                _advance_attempt(row)
         run["resume_status"]=run["status"]
         run["status"]="paused"
         run["revision"]+=1

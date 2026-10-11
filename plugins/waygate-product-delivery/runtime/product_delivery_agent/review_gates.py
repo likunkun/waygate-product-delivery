@@ -187,6 +187,10 @@ def _validate_role_contract(
             not seat_mode or review["review_briefs"] != expected_bundle["review_briefs"]
         ):
             raise ReviewGateError("review_briefs must match the bound tasks and frozen role cards")
+        if "dispatch_briefs" in review and (
+            not seat_mode or review["dispatch_briefs"] != expected_bundle["dispatch_briefs"]
+        ):
+            raise ReviewGateError("dispatch_briefs must match canonical expert names and bound briefs")
         validate_role_results(review_type, results,
                               expected_snapshot_hash=snapshot_hash,
                               expected_tasks=expected_tasks)
@@ -295,18 +299,28 @@ def _validate_ui_conformance_review(
 
 def _render_review_experts(review: dict[str, Any]) -> list[str]:
     results = {result["role_id"]: result for result in review.get("role_results") or []}
+    dispatches = {brief["seat_id"]: brief for brief in review.get("dispatch_briefs") or []}
     lines = ["## Review Experts", ""]
     for task in review.get("role_tasks") or []:
         role_id = task["role_id"]
         result = results.get(role_id, {})
+        identity = dispatches.get(task.get("seat_id"), {})
         lines.extend([
             f"### {task['display_name']} ({role_id})",
             "",
             f"Seat: {task.get('seat_display_name') or role_id}",
             f"Mission: {task['mission']}",
+            f"评审席位：{task.get('seat_display_name') or role_id}",
+            f"专家：{identity.get('agent_display_name') or task['display_name']}",
+            f"语义任务名：{identity.get('agent_spawn_name') or '历史身份'}",
+            f"席位角色：{', '.join(identity.get('role_ids') or [role_id])}",
+            f"职责：{task['mission']}",
+            f"结论：{result.get('status') or '尚未返回'}",
+            f"派发来源：{result.get('spawn_source') or 'unavailable'}",
         ])
         if result.get("identity_kind") == "spawned":
             lines.append(f"Agent: {result.get('agent_id') or 'unavailable'}")
+            lines.append(f"真实 Agent ID：{result.get('agent_id') or 'unavailable'}" + ("（历史身份）" if not identity else ""))
         elif result.get("identity_kind") == "simulated":
             lines.append(f"Simulated identity: {result.get('simulated_identity') or 'unavailable'}")
         else:
@@ -392,6 +406,8 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
         )}
         if "review_briefs" in review:
             contract["review_briefs"] = review["review_briefs"]
+        if "dispatch_briefs" in review:
+            contract["dispatch_briefs"] = review["dispatch_briefs"]
         lines.extend([
             "## Role Contract", "", "```json",
             json.dumps(contract, indent=2, sort_keys=True, ensure_ascii=False),

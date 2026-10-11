@@ -16,6 +16,7 @@ from product_delivery_agent.artifact_store import (
 )
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from product_delivery_agent.team_orchestration import TeamError
+from product_delivery_agent.host_goal import host_goal_recovery_response
 
 CONTROL_SCHEMA_VERSION = "v1"
 ABANDON_TOKEN_TTL_MINUTES = 30
@@ -218,6 +219,7 @@ def _response(
         "created_new_delivery": created_new_delivery,
         "production_mode": (state.get("production_policy") or {}).get("mode", "coordinator"),
         "team_runs": state.get("team_runs", {}),
+        "review_agents": {gate: review.get("agent_identities", []) for gate, review in (state.get("multi_agent_reviews") or {}).items()},
         "current_stage": state.get("stage"),
         "next_gate": state.get("next_gate"),
         "current_root": current_root,
@@ -324,6 +326,7 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
             "startup_action": inspection["action"],
             "production_mode": (state.get("production_policy") or {}).get("mode", "coordinator"),
             "team_runs": state.get("team_runs", {}),
+            "review_agents": {gate: review.get("agent_identities", []) for gate, review in (state.get("multi_agent_reviews") or {}).items()},
             "current_feature_slug": inspection.get("current_feature_slug"),
             "current_delivery_id": inspection.get("current_delivery_id"),
             "review_authorization_reusable": inspection.get(
@@ -338,6 +341,7 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
             "next_gate": state.get("next_gate"),
             "warnings": [],
             "progress_map": inspect_progress_map(project_root),
+            "host_goal_recovery": host_goal_recovery_response(state.get("host_goal_binding") or {}),
         }
 
     if action == "status":
@@ -348,7 +352,8 @@ def dispatch(project_root: str | Path, request: dict[str, Any]) -> dict[str, Any
             "reported",
             state,
             warnings=validate_current_artifact_identity(project_root, state),
-            extra={"progress_map": inspect_progress_map(project_root)},
+            extra={"progress_map": inspect_progress_map(project_root),
+                   "host_goal_recovery": host_goal_recovery_response(state.get("host_goal_binding") or {})},
         )
 
     if action == "confirm_input_enrichment":

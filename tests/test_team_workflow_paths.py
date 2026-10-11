@@ -164,6 +164,10 @@ class TeamWorkflowPathsTests(unittest.TestCase):
 
     def event(self, run, event_type, **values):
         event = {"event_id": f"{run['revision']}-{event_type}", "type": event_type, **values}
+        if event_type == "dispatched":
+            row = run["work_packages"][event["work_package_id"]]
+            for field in ("agent_display_name", "agent_spawn_name"):
+                event.setdefault(field, row[field])
         self.reconcile()
         return self.workflow.record_team_events(run["run_id"], [event], expected_revision=run["revision"])
 

@@ -71,6 +71,12 @@ def _packages(root, runs, task_id):
             sources = _refs(root, [{"path": r["ref"], "sha256": r["sha256"]} for r in value.get("accepted_artifacts", [])])
             rows.append({"id": key, "run_id": run["run_id"], "role_ids": value.get("task", {}).get("role_ids", []),
                          "status": value.get("status", "pending"), "agent_id": value.get("agent_id"),
+                         "agent_display_name": value.get("agent_display_name"),
+                         "agent_spawn_name": value.get("agent_spawn_name"), "spawn_source": value.get("spawn_source"),
+                         "identity_status": "current" if value.get("agent_display_name") else "historical",
+                         "identity_history": [{**{field: previous.get(field) for field in (
+                             "agent_display_name", "agent_spawn_name", "agent_id", "spawn_source", "attempt", "status")},
+                             "identity_status": "historical"} for previous in value.get("history", [])],
                          "attempt": value.get("attempt"), "stage": run.get("stage"), "sources": sources,
                          "valid": all(r["status"] == "current" for r in sources)})
     return rows
@@ -101,7 +107,7 @@ def _tasks(root, state, runs):
         status = "verified" if verified else "integrated" if integrated else "produced" if produced else "working" if current else "planned"
         results.append({**task, "status": status, "current": current, "verified": verified, "produced": produced,
             "integrated": integrated, "work_packages": packages, "evidence": evidence,
-            "owner": ", ".join(p["agent_id"] for p in packages if p.get("agent_id") and p["status"] == "running") or "主线程"})
+            "owner": ", ".join((p.get("agent_display_name") or "历史成员") + " (" + p["agent_id"] + ")" for p in packages if p.get("agent_id") and p["status"] == "running") or "主线程"})
     return results
 
 
@@ -120,6 +126,7 @@ def _reviews(root, state):
         if value.get("role_artifact_ref"):
             refs.append({"path": value["role_artifact_ref"].get("ref"), "sha256": value["role_artifact_ref"].get("sha256")})
         rows.append({"gate": gate, "status": status, "sources": _refs(root, refs),
+                     "agent_identities": copy.deepcopy(value.get("agent_identities") or []),
                      "reason": role_review_stale_reason(state, gate, root) if status == "stale" else None})
     return rows
 

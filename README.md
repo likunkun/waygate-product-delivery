@@ -1,7 +1,7 @@
 # Waygate Product Delivery
 
 [![Codex plugin](https://img.shields.io/badge/Codex-plugin-2563eb)](plugins/waygate-product-delivery)
-[![Version](https://img.shields.io/badge/version-1.2.1-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.2.3-0f766e)](plugins/waygate-product-delivery/.codex-plugin/plugin.json)
 [![Tests](https://img.shields.io/badge/tests-full%20suite%20passing-15803d)](#verify)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827)](LICENSE)
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-b91c1c)](README.zh-CN.md)
@@ -128,6 +128,18 @@ The five orchestration APIs are `prepare_team_run`, `inspect_team_run`, `record_
 
 Existing task hashes and reviews without briefs remain compatible. Active 1.2.0 deliveries keep their original cached runtime; 1.2.1 is for new deliveries and does not migrate active state.
 
+## Host Goal Recovery in 1.2.2
+
+Transient Goal loss, early completion and gateway errors produce a durable recovery contract with at most three attempts, delayed by 5/15/30 seconds. `prepare_host_goal_auto_recovery()` returns the next action; record its actual tool result through `record_host_goal_auto_recovery(checkpoint_id, observation, attempt_id=...)`. Matching active Goals are reattached; confirmed missing/completed Goals use a fresh get/create/get handshake. Duplicate callbacks and waiting reads do not rewrite state. Status and inspect expose the attempt, reason and retry time.
+
+The host must schedule the same owner thread at `retry_at`. Waygate adds no timer or sleep. Current Paseo cron scheduling does not provide this second-level wakeup contract, and the exposed Goal tools cannot resume or overwrite a blocked Goal. Transport-classified blocking therefore requests host-native resume and bounded verification; unknown blocking, explicit user waits and business blockers remain manual. Tool absence is permanent unavailability. Pause, abandon and canonical closure prohibit automatic recreation. After the budget is exhausted, explicit Goal recovery authorization is required.
+
+Use 1.2.2 in new threads and deliveries. Preserve the cached 1.2.1 runtime and active delivery evidence; this release does not migrate them in place.
+
+## Readable Expert Agent Names in 1.2.3
+
+Producer and reviewer identities use `角色｜职责｜业务版本` display names and deterministic semantic spawn names such as `product_requirements_v205`. Dispatch messages start with the identity, mission, required checks, permissions and complete bound task/brief. Status, maps, TeamRun and review reports show both the readable name and real Agent ID. Signed role cards, task hashes and historical identities remain compatible. Native host title updates are optional; unsupported hosts retain an explicit semantic-name fallback. Active 1.2.2 deliveries keep their original runtime.
+
 ## Install
 
 The installable plugin is generated under:
@@ -168,7 +180,7 @@ python3 scripts/package_waygate_product_delivery.py
 This creates:
 
 ```text
-dist/waygate-product-delivery-1.2.1.tar.gz
+dist/waygate-product-delivery-1.2.3.tar.gz
 ```
 
 ## Use In Codex

@@ -677,11 +677,14 @@ def build_gate_tasks(review_type: str, context: dict[str, Any]) -> dict[str, Any
             "role_task_hashes": {task["role_id"]: task["task_hash"] for task in final_tasks},
             "seat_task_hash": seat_task_hash,
         })
+    briefs = build_review_briefs(review_type, role_tasks)
+    from product_delivery_agent.agent_naming import review_dispatches
     return {
         "seat_contract_version": SEAT_PROFILE_VERSION,
         "review_seats": review_seats,
         "role_tasks": role_tasks,
-        "review_briefs": build_review_briefs(review_type, role_tasks),
+        "review_briefs": briefs,
+        "dispatch_briefs": review_dispatches(context["feature_slug"], briefs),
     }
 
 

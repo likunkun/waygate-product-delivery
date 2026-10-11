@@ -1,0 +1,110 @@
+{
+  "naming_version": "agent-naming-v1",
+  "producer_roles": {
+    "production.product_requirements": {
+      "expert": "产品专家",
+      "duty": "需求与验收",
+      "spawn_stem": "product_requirements"
+    },
+    "production.architecture_contract": {
+      "expert": "架构专家",
+      "duty": "契约与版本规划",
+      "spawn_stem": "architecture_contracts"
+    },
+    "production.scenario_interaction": {
+      "expert": "交互专家",
+      "duty": "场景与恢复路径",
+      "spawn_stem": "scenario_interaction"
+    },
+    "production.ui_prototype": {
+      "expert": "原型专家",
+      "duty": "界面与可访问性",
+      "spawn_stem": "ui_prototype"
+    },
+    "production.test_design": {
+      "expert": "测试专家",
+      "duty": "测试设计与覆盖",
+      "spawn_stem": "test_design"
+    },
+    "production.frontend": {
+      "expert": "前端专家",
+      "duty": "界面实现",
+      "spawn_stem": "frontend_implementation"
+    },
+    "production.backend": {
+      "expert": "后端专家",
+      "duty": "接口与业务实现",
+      "spawn_stem": "backend_implementation"
+    },
+    "production.test_automation": {
+      "expert": "测试专家",
+      "duty": "自动化验证",
+      "spawn_stem": "test_automation"
+    },
+    "production.integration": {
+      "expert": "集成专家",
+      "duty": "整合与回归",
+      "spawn_stem": "integration"
+    },
+    "production.delivery_evidence": {
+      "expert": "交付专家",
+      "duty": "证据与交付准备",
+      "spawn_stem": "delivery_evidence"
+    },
+    "production.domain_research": {
+      "expert": "领域专家",
+      "duty": "调研与事实核验",
+      "spawn_stem": "domain_research"
+    },
+    "production.data_migration": {
+      "expert": "数据专家",
+      "duty": "迁移与兼容",
+      "spawn_stem": "data_migration"
+    },
+    "production.security_engineering": {
+      "expert": "安全专家",
+      "duty": "权限与安全实现",
+      "spawn_stem": "security_engineering"
+    },
+    "production.performance_reliability": {
+      "expert": "可靠性专家",
+      "duty": "性能与故障恢复",
+      "spawn_stem": "performance_reliability"
+    },
+    "production.build_deployment": {
+      "expert": "发布专家",
+      "duty": "构建与部署准备",
+      "spawn_stem": "build_deployment"
+    }
+  },
+  "review_seats": {
+    "intent_boundary": {
+      "expert": "评审专家",
+      "duty": "产品意图与边界"
+    },
+    "journey_interaction": {
+      "expert": "评审专家",
+      "duty": "用户旅程与交互"
+    },
+    "test_strategy": {
+      "expert": "测试专家",
+      "duty": "测试策略"
+    },
+    "assertion_quality": {
+      "expert": "测试专家",
+      "duty": "断言与假通过"
+    },
+    "coverage_boundary": {
+      "expert": "评审专家",
+      "duty": "覆盖追溯与边界"
+    },
+    "implementation_evidence": {
+      "expert": "评审专家",
+      "duty": "测试实现证据"
+    },
+    "ui_conformance": {
+      "expert": "评审专家",
+      "duty": "UI 一致性"
+    }
+  }
+}
