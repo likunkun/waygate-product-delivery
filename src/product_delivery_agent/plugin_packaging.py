@@ -50,7 +50,6 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     (skills_dir / "SKILL.md").write_text(_skill_markdown(), encoding="utf-8")
     (hooks_dir / "README.md").write_text(_hooks_readme(), encoding="utf-8")
     _write_templates(templates_dir)
-    _write_production_templates(templates_dir)
     validator_path = scripts_dir / "validate-closure-artifact.py"
     validator_path.write_text(
         _validation_script(),
@@ -60,9 +59,6 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
     control_path = scripts_dir / "waygate-control.py"
     control_path.write_text(_control_script(), encoding="utf-8")
     control_path.chmod(0o755)
-    map_path = scripts_dir / "waygate-map.py"
-    map_path.write_text(_map_script(), encoding="utf-8")
-    map_path.chmod(0o755)
     visual_loop_path = scripts_dir / "compare-ui-visual-loop.py"
     visual_loop_path.write_text(_visual_loop_script(), encoding="utf-8")
     visual_loop_path.chmod(0o755)
@@ -126,7 +122,7 @@ def _plugin_manifest() -> dict[str, Any]:
     return {
         "name": PLUGIN_NAME,
         "version": PLUGIN_VERSION,
-        "description": "Codex-native product delivery workflow. Shorthand: start <slug> [team] [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
+        "description": "Codex-native product delivery workflow. Shorthand: start <slug> [multi-agent|role-play], status, pause, resume, close, abandon, inspect",
         "author": {
             "name": "Waygate Product Delivery Maintainers",
             "email": "maintainers@example.com",
@@ -307,8 +303,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- If an older active delivery has unverified or mismatched ownership, open a fresh top-level thread, call `prepare_host_goal_owner_claim('恢复交付主线程，接管当前 Host Goal')`, record that thread's `get_goal`, and continue activation only after the transfer succeeds.\n"
             "- If an owner-claim checkpoint becomes stale after a legal transition, call `recover_stale_host_goal_owner_claim(checkpoint_id)` before recording the new `get_goal`; never delete `pending_claim` manually.\n"
             "- At every post-handoff turn start and stage/review transition, call `prepare_host_goal_reconciliation()` and record the actual Goal tool result with `record_host_goal_observation()`.\n"
-            "- In 1.2.2, transient loss returns a durable recovery contract: use `prepare_host_goal_auto_recovery()` and `record_host_goal_auto_recovery(checkpoint_id, observation, attempt_id=...)`; schedule 5/15/30-second retries in the host, never sleep or loop inside the plugin.\n"
-            "- `wait_for_host_goal_retry` is read-only. Reattach an exact matching still-active Goal; a blocked Goal requires host-native resume and cannot be overwritten. Three failed recovery attempts require manual intervention.\n"
         ),
         "required-skills-checklist.md": _required_skills_checklist(),
         "open-spec-gate.md": (
@@ -498,12 +492,8 @@ def _write_templates(templates_dir: Path) -> None:
         "review-role-task.md": (
             "# Review Role Task\n\n"
             "Generate with `workflow.prepare_review_role_tasks(review_type, input_refs)`; "
-            "dispatch each reviewer seat from its matching `dispatch_briefs` entry using "
-            "its canonical agent_spawn_name and full dispatch_message. Preserve the "
-            "complete seat brief: its `role_tasks` and frozen `role_cards`, including each "
-            "card's quality rubric and five examples. Submit the returned "
-            "role_context/review_seats/role_tasks/review_briefs/dispatch_briefs with role_results through the "
-            "existing review gate. Never hand-author hashes.\n\n"
+            "send each member only its own task. Submit the returned role_context/role_tasks "
+            "with role_results through the existing review gate. Never hand-author hashes.\n\n"
             "Review Type:\n"
             "Role:\n"
             "Role Version:\n"
@@ -511,11 +501,6 @@ def _write_templates(templates_dir: Path) -> None:
             "Seat ID:\n"
             "Seat Display Name:\n"
             "Seat Role IDs:\n"
-            "Review Brief (required): complete generated entry for this seat\n"
-            "Frozen Role Cards (required): original role_cards payload\n"
-            "Quality Rubric (required): role_cards[].quality_rubric\n"
-            "Examples (required): role_cards[].examples with pass, insufficient, "
-            "scope_violation, false_positive, must_block\n"
             "Mission:\n"
             "Current Delivery:\n"
             "Feature Slug:\n"
@@ -563,9 +548,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- global_visual_continuity_findings: []\n"
             "- annotation_separation_findings: []\n"
             "- blocking_findings: []\n"
-            "\nNew reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`. "
-            "Dispatch only the matching brief to each seat; it contains that seat's role tasks and complete "
-            "frozen role cards, including quality rubrics and five examples.\n"
             "\nFor incremental existing-surface UI, `baseline_inheritance_review` must prove "
             "the scenario inherits the previous real entry path and does not replace it "
             "with a parallel page.\n"
@@ -587,8 +569,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- revisions: []\n"
             "- final_adjudication:\n"
             "- blocking_findings: []\n"
-            "\nNew reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`; "
-            "dispatch each seat its matching role tasks and complete role cards.\n"
         ),
         "multi-agent-test-coverage-review.md": (
             "# Multi-Agent Test Coverage Review\n\n"
@@ -607,8 +587,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- role_journey_coverage: []\n"
             "- ordinary_path_coverage: []\n"
             "- scenario_granularity_findings: []\n\n"
-            "New reviews must carry the two seat-scoped `review_briefs` returned by `prepare_review_role_tasks`; "
-            "dispatch each seat its matching role tasks and complete role cards.\n\n"
             "## Collection Coverage\n\n"
             "| collection_id | required_items | covered_items | item_level_assertions |\n"
             "| --- | --- | --- | --- |\n\n"
@@ -628,7 +606,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- status: draft\n"
             "- actual_test_code_paths: []\n"
             "- execution_evidence_paths: []\n"
-            "- review_briefs: two seat-scoped briefs with complete frozen role cards\n"
             "- reviewed_test_ids: []\n"
             "- verified_action_assertions: []\n"
             "- false_positive_risks: []\n"
@@ -669,7 +646,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- structural_findings: []\n"
             "- visual_findings: []\n"
             "- interaction_findings: []\n"
-            "- review_briefs: two seat-scoped briefs with complete frozen role cards\n"
             "- legacy_reuse_findings: []\n"
             "- unmapped_regions: []\n"
             "- accepted_visual_deviations: []\n"
@@ -714,17 +690,6 @@ def _write_templates(templates_dir: Path) -> None:
             "- generated_at:\n\n"
             "| test_id | obligation_id | evidence_strength | primary_actor_role | executed_actor_roles | ordinary_path_observed | execution_segment_id | test_title_or_step | acceptance_url | api_health_url | api_health_identity | business_api_requests | mocked_routes | evidence_path | evidence_sha256 | probe_artifact_path | probe_artifact_sha256 |\n"
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
-        ),
-        "executed-behavior-evidence.md": (
-            "# Executed Behavior Evidence\n\n"
-            "- feature_slug:\n"
-            "- artifact_version:\n"
-            "- generated_at:\n\n"
-            "| test_id | obligation_id | command | exit_code | execution_segment_id | test_title_or_step | semantic_assertions | evidence_path | evidence_sha256 | trace_path | trace_path_sha256 | optional_output_paths |\n"
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n\n"
-            "Use this template for non-UI CLI/API/service execution evidence. "
-            "Do not add browser-only fields such as screenshots, acceptance_url, "
-            "browser evidence_strength, network probes, mocked_routes, or probe_artifact_path.\n"
         ),
         "closure-validator-result.md": (
             "# Closure Validator Result\n\n"
@@ -776,29 +741,10 @@ def _write_templates(templates_dir: Path) -> None:
         ),
     }
     for filename, content in templates.items():
-        if filename.startswith("multi-agent-") and filename.endswith("-review.md"):
-            content += ("\n## 专家身份与结论\n\n"
-                        "- dispatch_briefs: preserve the canonical seat-scoped naming sidecar\n"
-                        "- 评审席位：<seat_display_name>\n"
-                        "- 专家：<agent_display_name>\n"
-                        "- 语义任务名：<agent_spawn_name>\n"
-                        "- 真实 Agent ID：<host-returned agent_id>\n"
-                        "- 派发来源：<reviewer_spawn_source>\n"
-                        "- 逻辑角色：<role_ids shared by this seat>\n"
-                        "- 职责：<mission>\n"
-                        "- 结论：<status/stance>\n")
         (templates_dir / filename).write_text(content, encoding="utf-8")
-    (templates_dir / "team-run-report.md").write_text(
-        "# 团队生产报告\n\nUse the canonical TeamRun report.md; do not invent Agent IDs or outcomes.\n\n"
-        "- 工作包：<work_package_id>\n- 专家：<agent_display_name>\n"
-        "- 语义任务名：<agent_spawn_name>\n- 真实 Agent ID：<agent_id or 待派发>\n"
-        "- 派发来源：<spawn_source>\n- 职责角色：<role_ids>\n"
-        "- 输出：<accepted artifacts>\n- 整合状态：<status>\n- 历史身份：<preserved attempt identities>\n",
-        encoding="utf-8",
-    )
 
 
-def _base_skill_markdown() -> str:
+def _skill_markdown() -> str:
     return (
         "---\n"
         f"name: {PLUGIN_NAME}\n"
@@ -1072,37 +1018,8 @@ def _base_skill_markdown() -> str:
         "handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；"
         "确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 "
         "`record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、"
-        "stale observation 都必须 fail closed。非恢复 checkpoint 重放必须拒绝；恢复回调只有输入、"
-        "attempt ID 和 delivery identity 完全相同时才允许无写入幂等返回。Goal 工具不可用时记录 "
-        "unavailable observation；瞬时故障按下述恢复契约处理，工具未暴露或权限不足时阻塞。\n\n"
-        "### V1.2.2 Host Goal 自动恢复\n\n"
-        "`missing`、提前 `complete` 和瞬时 unavailable 不再要求每次人工授权。runtime 归档旧 binding、"
-        "保留 delivery/feature/launch package/owner/当前 gate 与 TASK 证据，签发新的 generation、nonce "
-        "和 objective，并写入 hash-linked `host_goal_auto_recreated`。最多三个恢复 attempt，退避依次 "
-        "5、15、30 秒；初始故障不是恢复 attempt。每个 attempt 包含稳定 `attempt_id`、原因、retry_at "
-        "与诊断历史，第三次恢复失败后记录 `host_goal_auto_recovery_exhausted` 并等待人工授权。"
-        "成功后保留本交付已消耗的自动恢复预算，防止频繁成功/断线绕过上限。\n\n"
-        "故障 observation response、status/inspect 与 Stop guard 暴露 `recovery_action`、"
-        "`recovery_attempt`、`recovery_attempt_id`、`retry_after_seconds`、`retry_at`。主线程调用 "
-        "`prepare_host_goal_auto_recovery()`；若 `operation=wait_for_retry`，由支持该契约的宿主按 "
-        "`retry_at` 调度同一 owner thread，等待期间不得写 canonical state、调用 Goal 工具或忙轮询。"
-        "到期取得 checkpoint 后执行指定 Goal 工具，并调用 "
-        "`record_host_goal_auto_recovery(checkpoint_id, observation, attempt_id=recovery_attempt_id)`。"
-        "prepare 和 record 在 workspace lock 中重新加载 state；checkpoint projection、identity "
-        "与 journal 必须匹配，重复回调不得重复创建 Goal 或重复追加 transition。\n\n"
-        "网关错误按实际 error_type 记录，例如 `connection_error`、`gateway_restart`、`timeout`、"
-        "`transport_error`、`service_unavailable`、`rate_limit`、`thread_unavailable`、`host_goal_lost`。"
-        "恢复探测先 get_goal；旧 Goal 仍 active 时只重绑精确 archived objective/thread/identifier，"
-        "不能创建重复 Goal；missing 或绑定的旧 Goal 已 complete 才能进入 create/get 验证。"
-        "observed blocked 只有明确瞬时 error_type 或 Goal blockedReason 才进入 `resume_host_goal` "
-        "契约；宿主使用其原生恢复能力后再次 get_goal 验证。Goal 仍 blocked 时只能有限重试，"
-        "不能伪造 active、覆盖未完成 Goal 或为换 Goal 提前标记 complete。未知原因 blocked、"
-        "human_wait、真实外部阻塞和显式 update_goal(blocked) 保留人工语义。\n\n"
-        "插件没有计时器或内部 sleep。当前 Paseo CLI 的 schedule 是 cron 周期调度，不能证明 "
-        "5/15/30 秒同线程唤醒已经接通；若宿主没有延迟重试或 Goal Resume 能力，须明确说明 "
-        "scheduler_required=host，并保留恢复契约，不能宣称无人值守自动恢复已生效。"
-        "用户 pause/stop/abandon、终态交付或 canonical closure 后禁止自动重建。"
-        "1.2.2 只用于新线程和新 runtime，不原位迁移 1.2.1 活跃交付；安装时备份并保留旧缓存。\n\n"
+        "checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时"
+        "记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。\n\n"
         "每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，"
         "调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 "
         "`get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。"
@@ -1114,7 +1031,7 @@ def _base_skill_markdown() -> str:
         "只有三个不同 `host_turn_id` 连续观察到相同 blocker，才允许调用 `update_goal(status=blocked)`。\n\n"
         "canonical closure 通过前禁止 `update_goal(status=complete)`；closure 后先 `pre_complete` 对账，"
         "再调用 `update_goal(status=complete)`，最后用 `get_goal` 验证 complete，之后才允许正式 final。"
-        "Goal 曾经 active 后若 missing 或提前 complete，1.2.2 按自动恢复契约处理；预算耗尽后调用 "
+        "Goal 曾经 active 后若 missing 或提前 complete，禁止静默创建 replacement，必须调用 "
         "`authorize_host_goal_reactivation()` 取得新的用户授权。`action=abandon` 需要 `stop_delivery` 对账，"
         "停止后 binding 标记为 `stopped_by_user`，不得自动恢复。\n\n"
         "V1.0.25 起，Goal 尚未 ever active 且 activation checkpoint 因后续合法 transition 过期时，"
@@ -1178,9 +1095,7 @@ def _base_skill_markdown() -> str:
         "Agent 只能细化标题、描述、验证说明和更窄绑定，不能合并、删除或转移 E2E。"
         "派生后回写 coverage `task` 列，并把 `task_queue_hash` 纳入 test_coverage 评审和确认。"
         "当前 TASK 必须先通过本切片 `record_task_executed_evidence()` 和原型一致性才能完成。"
-        "全部切片通过后，UI 交付的 `record_executed_browser_evidence()` 和 non-UI 交付的 "
-        "`record_executed_behavior_evidence()` 只接受切片证据并集加回归；non-UI 行为证据绑定真实 "
-        "`evidence_path` 和 `trace_path` 文件 hash，不使用 browser-only probe 或 strength 字段。"
+        "全部切片通过后，`record_executed_browser_evidence()` 只接受切片证据并集加回归。"
         "新 delivery 强制生效；已确认 `test_coverage_plan` 的活跃 delivery 保持 grandfathered，"
         "直到测试覆盖被重开。\n\n"
         "V1.0.30 起，执行期 `test_implementation` 和 `ui_conformance` multi-agent review "
@@ -1272,127 +1187,6 @@ def _base_skill_markdown() -> str:
     )
 
 
-def _write_production_templates(directory: Path) -> None:
-    from product_delivery_agent.agent_naming import PRODUCER_NAMES, REVIEW_SEAT_NAMES
-    from product_delivery_agent.production_profiles import ROLE_IDS, STAGES, get_production_role_card, get_stage_profile
-    (directory / "production-role-catalog.json").write_text(json.dumps([get_production_role_card(role) for role in ROLE_IDS], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (directory / "production-stage-profiles.json").write_text(json.dumps({branch: [get_stage_profile(stage, branch) for stage in STAGES] for branch in ("ui", "non_ui")}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (directory / "agent-identity-catalog.json").write_text(json.dumps({"naming_version": "agent-naming-v1", "producer_roles": {role: {"expert": values[0], "duty": values[1], "spawn_stem": values[2]} for role, values in PRODUCER_NAMES.items()}, "review_seats": {seat: {"expert": values[0], "duty": values[1]} for seat, values in REVIEW_SEAT_NAMES.items()}}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (directory / "team-production-workflow.md").write_text(_team_workflow_markdown(), encoding="utf-8")
-
-
-def _skill_markdown() -> str:
-    text = _base_skill_markdown()
-    text = text.replace("`abandon` 和 `close`。", "`abandon`、`close` 和 `set_production_mode`。", 1)
-    text = text.replace("control.py 仍然只接受 v1 严格 JSON，不做任何改动。", "control.py 只接受 v1 严格 JSON，团队参数也必须通过其校验。", 1)
-    marker = "| `status` |"
-    rows = ('| `start <slug> team "<request>"` | start JSON 增加 `production_mode_if_created=team`；评审模式仍为 `pending_selection`。 |\n'
-            '| `start <slug> team multi-agent "<request>"` | 同时设置 `production_mode_if_created=team` 和 `review_mode_if_created=spawned_subagents_authorized`。 |\n'
-            '| `start <slug> team role-play "<request>"` | 生产仍使用真实成员；仅评审显式降级为 `role_simulation_allowed`。 |\n')
-    text = text.replace(marker, rows + marker, 1)
-    return text + "\n" + _review_workflow_markdown() + "\n" + _team_workflow_markdown() + "\n" + _progress_map_markdown()
-
-
-def _review_workflow_markdown() -> str:
-    return """## V1.2.3 专家 Agent 可识别命名
-
-生产者和评审者必须使用 runtime 生成的稳定身份：`agent_display_name` 是“角色｜职责｜业务版本”，`agent_spawn_name` 是 Paseo/Codex 可接受的 `lower_snake_case` 语义任务名。名称来自 `role_id`、席位和当前 `feature_slug`，模型不得临时自造；`role_id`、task/seat/role definition hash 和真实 `agent_id` 继续保留。宿主支持时可对真实 thread/Agent ID 调用 `thread/name/set` 或等价 title API；不支持时必须显示语义任务名并标记 semantic fallback，不能声称中文标题已被宿主设置。
-
-派发前把“可读专家名 → 语义任务名 → 席位/工作包 → 待派发”展示给用户。创建子 Agent 时使用对应 `agent_spawn_name`，首条消息必须以 `【agent_display_name】` 开头，并包含角色使命、必查项、允许写入、禁止事项和完整绑定任务/brief。宿主返回后立即记录真实 `agent_id`、`spawn_source`、显示名和语义名；状态、地图、TeamRun/Review 报告同时展示可读名和真实 ID。历史身份保留原值并标记为历史，不覆盖旧结果。
-
-## V1.2.1 评审专家派发与展示
-
-这套规则适用于 coordinator/team 两种生产模式，以及 scenario、test、test_coverage、test_implementation、ui_conformance 五类评审。八个逻辑角色由每门两个固定席位承担，同席的每个角色分别返回结构化结果。
-
-1. 主线程调用 `prepare_review_role_tasks(review_type, input_refs)`，取得冻结的 `role_context`、`review_seats`、`role_tasks`、按席分组的 `review_briefs` 和命名侧车 `dispatch_briefs`。每个 brief 包含 `seat_id/display_name/role_ids/seat_task_hash/role_tasks/role_cards`；卡内含 mission、task_steps、must_check、quality_rubric 和五类 examples。输入不足或绑定失效时先解决准备错误。
-2. 根据 seat_id 选择对应 `dispatch_briefs`：`spawn_agent(task_name=dispatch_brief.agent_spawn_name, message=dispatch_brief.dispatch_message, fork_turns=none)` 或宿主等价调用。完整派发消息以身份头开始，原样包含该席完整 review brief 和只读评审指令。以任务书的 input_refs、must_check、permissions 和当前 gate 为证据与权限边界，角色卡的质量标准和案例用于判断方法。其他席任务、peer 结果和主线程预设结论不进入首轮消息；同席多个逻辑角色共享同一 Agent，逐角色返回结果。
-3. 派发前展示“席位名称 → 各专家名称/role_id → 可读 Agent 名称 → 语义 task_name → 使命 → 必查项 → 待派发”；宿主返回真实 Agent ID 后，将该 ID 与席位、角色和“已派发”状态一起展示。技术 task_name 不能代替专家职责。显示已派发必须有实际宿主返回，显式 role_simulation 则显示模拟身份与弱证据。
-4. 收齐同轮结果后，按角色展示真实 Agent ID 或模拟身份、独立立场、逐项检查、证据引用、发现、阻断项和未解决问题；再汇总处理结论。无发现仍返回完整 check_records/completion_evidence。准备、派发、完成检查和通过门禁是不同状态，只有 canonical validator 接纳后才显示评审通过。
-5. 提交原始 `role_context/review_seats/role_tasks/role_results`、`review_briefs` 和 `dispatch_briefs` 给现有 `record_multi_agent_review`，填写真实 `reviewer_agent_ids/reviewer_spawn_source`，不要重写角色卡、输入或哈希。结果继续遵循每张任务书原有 output_schema；无需新增声称“人设已生效”的字段。runtime 校验身份和内容绑定，实际提示投递及独立性由宿主执行，不以 JSON 证明模型内部行为。
-
-历史评审可以没有 review_briefs，原任务、席位哈希与既有角色目录版本保持不变。旧 active delivery 使用启动时的原缓存 runtime；1.2.1 不能热替换其 runtime receipt。team 模式还遵守下述评审批次屏障和生产者不能评审自己的规则。
-
-生产派发名包含 run/工作包/attempt 的稳定后缀；新 attempt 重新读取行中的名字和消息，禁止沿用旧 staging_root 或旧真实 ID。评审派发名包含 gate/快照绑定的席位哈希后缀，避免不同 gate 或新输入快照覆盖旧子 Agent；同一快照的挑战/修订阶段复用该席真实 Agent。展示名保持“角色｜职责｜业务版本”，不把后缀当作专家职责。
-"""
-
-
-def _progress_map_markdown() -> str:
-    return """## V1.2 可开关的产品交付地图
-
-地图默认关闭，适用 team/coordinator 和 UI/non-UI。地图只生成静态 HTML，使用用户已有 HTTP 服务；禁止为地图启动 HTTP 服务、端口或后台进程。
-
-以下简写交给 `scripts/waygate-map.py --project-root <repo>`（不是 lifecycle control JSON）：
-
-| 简写 | 脚本参数与行为 |
-| --- | --- |
-| `map` | 无子命令；显示状态，开启时重新生成 HTML。 |
-| `map on` / `map off` | 先只读 inspect 获取当前 delivery ID，再传 `on/off --delivery-id <id>`；竞态切换必须拒绝，不能猜测新 ID。 |
-| `map default on` / `map default off` | `default on/off`；只影响以后创建的交付，当前交付保持原值。 |
-| `map export` | `export`；开启时生成独立离线快照，关闭时提示先开启。 |
-
-开关存储独立于 canonical state。恢复沿用该交付选择，不能重新应用项目默认值；旧 delivery 无配置保持关闭。开启不改变 Goal、TASK、评审或确认。关闭冻结已有页面并停止刷新，历史快照保留。
-
-实时入口 `.product-delivery/maps/index.html` 每 1 分钟刷新，保留选择、筛选、滚动位置。`status/inspect` 的 `progress_map` 显示有效值、来源、生成时间、新鲜度和错误。只提供路径或用户配置的静态服务 URL，不编造服务地址。HTML 不依赖 CDN。快照断网可展开节点和查看变化，外部日志/trace 不会自动嵌入。
-
-### 地图开启时的角色交接
-
-主线程检查 `progress_map.enabled`。产品专家补充目标、成功标准、能力和版本边界；架构专家补充组件、接口与依赖；测试设计专家把已有 scenario/obligation 与 runtime TASK 关联；生产专家解释实现细化；评审问题和已批准变更必须引用真实依据。专家只交付关联建议，主线程通过 `record_progress_map_plan(plan, expected_revision=...)` 登记，不能由成员改写地图开关或权威进度。
-
-完整 v1 计划字段：`schema_version/delivery_id/title/objective/success_criteria/current_version/versions/goals/components/capabilities/edges/task_bindings/changes/sources`。节点有稳定 id/title；组件有 goal_ids；能力有 goal_ids/component_ids/version_ids，可绑定 scenario_ids/obligation_ids；接口有 from/to/kind(dependency|interface)/label。来源必须为 `{path,sha256}`，从真实字节计算。TASK 关联为 `{delivery_id,task_id,planned_task_hash,capability_ids}`，只接受当前交付和现有任务哈希。不得按文件名或关键词推断目标已实现。
-
-变更 kind 为 planned/implementation_detail/review_gap/approved_change/unexplained，包含 id/title/reason/impact/owner/next_action/sources，可用 affected_ids 精确关联差异。批准引用 `approval={target,artifact_hash}` 必须匹配现有当前确认，不能将成员自报 approved 当作批准。记录计划修订可使用 Python facade 或 `record - --expected-revision N` 从 stdin 读取 JSON。
-
-地图是解释层，不是审批入口。不关联或不确定时显示未知，不新增硬门禁；范围或测试覆盖语义变化沿用既有确认规则。展示生产完成、整合、验证、评审、交付分别来自各自的 canonical 证据。中途补建无法还原原始历史时保留 history_incomplete，不得伪造初始计划。关闭时不要求任何额外地图产物。
-"""
-
-
-def _map_script() -> str:
-    return (
-        "#!/usr/bin/env python3\n"
-        '"""Generate optional static progress maps using the packaged runtime."""\n'
-        "from pathlib import Path\nimport sys\n"
-        "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'runtime'))\n"
-        "from product_delivery_agent.progress_map import run_map_cli\n"
-        "if __name__ == '__main__':\n    raise SystemExit(run_map_cli())\n"
-    )
-
-
-def _team_workflow_markdown() -> str:
-    return """## V1.2 Team Production
-
-只有当前 delivery 的 `production_policy.mode=team` 才允许派发生产专家；`multi-agent` 本身只授权评审。新 start 可设 `production_mode_if_created=team`，默认 coordinator。恢复始终沿用原策略。显式切换使用严格 JSON `{"schema_version":"v1","action":"set_production_mode","delivery_id":"<current>","mode":"team"}`，仅同版安全阶段边界可用；旧 active delivery 不迁移。
-
-使用当前插件 runtime 的 ProductDeliveryWorkflow；主线程独占全部下述 API 和 Host Goal。成员不得调用这些 API。复用既有 input enrichment、product_baseline、test_coverage_plan 确认，不新增团队审批。
-
-### 生产步骤
-
-1. 从 `production_profiles.get_stage_profile(stage, project_type)` 和 `get_production_role_card(role_id)` 获取角色方法；完整目录在 `templates/production-role-catalog.json`。六阶段依次为 product_definition、architecture_version_planning、open_spec_product_surface、test_design、implementation_execution、delivery_preparation。产品基线确认在产品表面 scenario review 后；详细测试设计在该确认后。实现期只能绑定当前权威 TASK。
-2. 主线程准备输入引用 `{logical_input:{ref,sha256}}` 和工作包 `{work_package_id,role_ids,depends_on,allowed_write_paths}`。路径必须逐文件明确；需要的新文件也必须列出。调用 `prepare_team_run(stage, work_packages, input_refs=..., task_id=..., condition_flags=...)`，返回行中的 `agent_display_name/agent_spawn_name/dispatch_message` 是唯一命名来源；创建子 Agent 时使用 `agent_spawn_name`，并把完整 `dispatch_message` 作为首条消息（先等待 coordinator 提供真实 `staging_root`）。可用 implementation_roles 裁剪 frontend/backend/test_automation；integration 仍必需。条件角色不能突破当前阶段权限。
-3. 读取 run.work_packages 内任务，只把该任务、角色方法、输入及分配目录交给真实子 Agent。使用 `task_name=row.agent_spawn_name`、`message=row.dispatch_message` 和 `fork_turns=none`。宿主创建 Agent 后，用实际返回身份记录 `dispatched` 事件：event_id/type/work_package_id/agent_id/spawn_source/attempt；新命名工作包必须同时提交行内 agent_display_name/agent_spawn_name 以校验，历史无命名行保持旧事件兼容。事件返回后发送该行重新生成的完整 dispatch_message，其中真实 staging_root 是唯一工作目录，成员此时才允许写入。不得注入评审预设结论。一次至多两个 running 成员，依赖必须已整合，同文件任务串行。
-4. 成员编辑任务副本并返回 ProductionResult：task_hash/input_snapshot_hash/role_ids/status/artifacts/changes/check_records/completion_evidence/risks/blockers/unresolved_questions/handoff。artifacts 的 path 相对 staging_root；changes 包含 path、operation、base_sha256、result_sha256、staged_path。不得编造哈希，读取真实字节计算。结果为 ready_for_integration、needs_input、needs_rework 或 failed，绝不能把提交称作评审通过。
-5. 主线程使用 `record_team_events(run_id, events, expected_revision=...)` 登记 result，事件带真实 agent_id 和 attempt。调用 `integrate_team_run(run_id, expected_revision=...)` 合并已接受结果。下游 dispatch 绑定已整合的依赖字节及新 task_hash。结果工件被保存到 owner 管理的 accepted 目录，验证实际文件与当前版本。
-6. 主线程通过既有 API 登记场景、原型、测试计划、TASK 执行证据等；运行真实集成验证。`finalize_team_run` 只检查阶段出口，不替代产品确认、TASK completion、Host Goal 或 closure。
-
-non-UI 交付完成真实 CLI/API/service 旅程后，必须调用 `ProductDeliveryWorkflow.record_executed_behavior_evidence(records)` 写入 `executed_behavior_evidence`；该入口绑定 planned obligations、命令退出码、`evidence_path` 与 `trace_path` 的真实文件 hash，以及后续 `test_implementation` review。行为证据不得使用 browser-only 的 screenshot、acceptance_url、browser evidence_strength、network probe、mocked_routes 或 probe_artifact_path 字段。只写 TASK slice evidence 不能解除 non-UI closure blocker。
-
-### 独立评审步骤
-
-团队在既有五类 gate 使用 V1.1 评审契约和上述完整 review_briefs 派发规则。生产者和主线程不能担任独立 reviewer。材料整合及确定性检查完成后，只读准备 brief 并创建两个真实 reviewer；登记 `review_started`（review_type、两个实际 reviewer_agent_ids）后再开始输入读取。冻结期间禁止整合生产补丁或重写 canonical 生产工件。
-
-每位 reviewer 每阶段返回后，登记 `review_member`：review_type、agent_id、phase（independent/challenge/revision）以及 artifact `{ref,sha256}`。同阶段全员返回后才能进入下一阶段。原始意见须保存为真实工件；不得用无证据的完成标记补屏障。
-
-所有屏障完成后，将完整 V1.1 structured review 交给 `record_multi_agent_review`，通过后解除该 gate 的锁。需要修复时，用 `review_rejected` 记录 reason 和 work_package_ids，等待所有评审批次结清后再派发修复。修复使用新 attempt，新的输入或范围变化走既有变更流程。产品范围、测试义务及确定性门禁不能被多数意见豁免。
-
-### 失败与恢复
-
-每工作包默认1800秒。failed/timeout 必须有原因，timeout 由实际 deadline 判定；retry 最多一次，revise 最多一次；暂停后旧 attempt 结果拒绝。新输入需要重建快照，不能扩大当前任务权限。取消 run 前必须先由宿主停止成员并通过 failed 事件收束运行身份。不得无限重开相同失败输入。
-
-status/inspect 查看进度；inspect_team_run 为只读。合并回执丢失时使用原 run_id/revision 重试，不能手改 state、删除 intent 或还原整份状态。未完成 merge intent 必须先恢复，不能通过取消、暂停或换模式丢弃。外部修改造成冲突时保留现有字节并报告。暂停时宿主需终止或中断实际成员；runtime 使旧结果失效，但不声称可以瞬时终止宿主进程。
-
-角色与目录限制是契约及接纳检查，保护等级为 shared_fs，不是 OS 沙箱。用量由宿主实际提供；未提供时为 unavailable。新生产模式不改变既有模型选择、不复活已退役的模型编排接口，不宣称完整 PanelRun 已实现。
-"""
-
-
 def _required_skills_checklist() -> str:
     lines = [
         "# Required Skills Checklist",
@@ -1433,9 +1227,6 @@ def _hooks_readme() -> str:
         "paused until a matching user response is recorded. The Host Goal owner is "
         "the top-level delivery coordinator captured from `CODEX_THREAD_ID`; hooks "
         "and spawned review subagents must never claim or transfer that ownership.\n"
-        "In 1.2.2, Stop guard exposes a durable retry_contract when continuation is "
-        "wait_for_host_goal_retry. The host must schedule the same owner thread at "
-        "retry_at; this packaged hook asset is not a timer or an installed Paseo scheduler.\n"
     )
 
 

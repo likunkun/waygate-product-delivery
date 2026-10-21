@@ -1,43 +1,5 @@
 # Changelog
 
-## 1.2.3
-
-- Adds stable readable producer and reviewer identities in the form `角色｜职责｜业务版本`, with deterministic semantic `agent_spawn_name` fallbacks for Paseo/Codex listings.
-- Includes complete identity headers in dispatch messages and records display name, semantic name, seat/role IDs, real Agent ID and spawn source in TeamRun, review, status, map and report projections.
-- Adds a separate `agent-identity-catalog.json` presentation catalog without changing signed role cards, task hashes, seat hashes or historical identities.
-- Keeps optional host title updates honest: unsupported or failed `thread/name/set` and Paseo updates remain marked `semantic_fallback`.
-- Releases runtime, generated Skill/templates and distribution as 1.2.3. Existing 1.2.2 active deliveries remain on their original cached runtime; installation must retain old caches.
-
-## 1.2.2
-
-- Adds bounded Host Goal recovery for missing/prematurely completed Goals and transient gateway unavailability, with three host-scheduled attempts after 5/15/30 seconds. Initial failure is separate from these attempts; consumed budget persists after recovery to bound churn.
-- Archives bindings, preserves delivery/feature/launch package/owner/current gate and TASK evidence, regenerates binding identity, and records hash-linked recreation, resolution and exhaustion transitions.
-- Adds canonical recovery prepare/record facades, attempt identities, locked checkpoint validation and exact-input callback receipts. Waiting and duplicate callbacks are read-only; foreign Goals, owner changes, launch changes and stale observations fail closed.
-- Reattaches exact matching live Goals after transport timeouts. Only missing or completed Goals can be recreated. Transport-classified blocking requests host-native resume; unknown blocking, explicit blocked updates, user waits, permanent tool absence, paused/stopped deliveries and canonical closure retain their semantics.
-- Exposes recovery action, attempt, retry time and host scheduling requirement in observation responses, continuation, status/inspect and Stop guard. The plugin does not sleep or install a timer; current Paseo cron/Goal APIs do not establish second-level wakeup or automatic blocked-Goal Resume support.
-- Releases runtime, generated Skill/templates and distribution as 1.2.2. Existing 1.2.1 active deliveries remain on their original cached runtime; installation must retain old caches.
-
-## 1.2.1
-
-- Changes live progress-map refresh from five seconds to one minute, preserving the selected view, filters and reading position.
-- Adds seat-scoped `review_briefs` containing the unchanged bound role tasks and complete frozen role cards, including quality rubrics and all five examples.
-- Validates role-card/task/seat hashes and rejects altered brief content when submitted, while keeping earlier reviews without briefs valid and preserving existing task identities.
-- Requires complete briefs in both coordinator and team review dispatch, with visible expert responsibilities, checks and actual reviewer identities.
-- Adds readable per-expert methods, positions, check evidence, findings and unresolved questions to review reports while retaining the full audit contract.
-- Keeps review and production role catalog versions unchanged. Active 1.2.0 deliveries continue using their original cached runtime; this release does not migrate them.
-
-## 1.2.0
-
-- Adds an optional, default-off product progress map: project defaults, delivery overrides, source-bound architecture/task relationships, advisory plan changes, and separate production/integration/verification/review/delivery milestones.
-- Generates self-contained HTML that refreshes every five seconds on an existing static host, plus offline milestone snapshots. No HTTP service or daemon is added; map failures never roll back canonical workflow transitions.
-- Adds `map on/off`, `map default on/off`, `map export` and map freshness in `status/inspect`, without changing Goal, task, baseline or review authority.
-- Adds explicitly authorized six-stage team production with 15 versioned producer roles, bounded work packages and owner-controlled integration.
-- Separates production authorization from review authorization; same-version safe-boundary switching preserves confirmations and Host Goal ownership.
-- Adds immutable TeamRun revisions, event idempotency, staged output validation, recoverable hash-bound merge intents and pause/resume handling.
-- Freezes review inputs through independent/challenge/revision barriers and excludes producers from independent review.
-- Adds canonical `record_executed_behavior_evidence()` for non-UI CLI/API closure evidence, keeping it separate from UI browser evidence while preserving the same TASK/review/closure authority.
-- Preserves existing TASK evidence and formal closure authority. Full PanelRun orchestration remains outside this release.
-
 ## 1.1.0
 
 - Promotes the V1.1 review expert panel implementation: versioned role cards, structured task/result contracts, evidence-bound validation, and composite reviewer seats.

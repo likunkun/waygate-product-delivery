@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 from product_delivery_agent.artifact_protocol import load_state, write_state
 from product_delivery_agent.artifact_protocol import current_runtime_provenance
-from product_delivery_agent.gatekeeper import PLUGIN_VERSION
 from product_delivery_agent.transition_journal import journal_integrity_errors
 from product_delivery_agent.workflow import ProductDeliveryWorkflow, WorkflowError
 from tests.test_host_goal_continuation_v1024 import (
@@ -18,9 +17,7 @@ from tests.test_host_goal_continuation_v1024 import (
 
 
 OWNER_THREAD_ID = "thread-v110-orphaned-recovery"
-AUTHORIZATION_MESSAGE = (
-    f"授权执行可审计的 Waygate {PLUGIN_VERSION} orphaned blocked-binding 恢复"
-)
+AUTHORIZATION_MESSAGE = "授权执行可审计的 Waygate 1.1.0 orphaned blocked-binding 恢复"
 PUBLISHED_1100_RECEIPT = {
     "plugin_name": "waygate-product-delivery",
     "plugin_version": "1.1.0",
