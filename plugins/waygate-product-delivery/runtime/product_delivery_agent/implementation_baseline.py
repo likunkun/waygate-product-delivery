@@ -1402,21 +1402,35 @@ def _assess_geometry(
         "vertical_px": vertical_tolerance,
     }
     empty_overflow = {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+    prototype_bounds = _normalized_geometry_box(prototype)
+    production_bounds = _normalized_geometry_box(production)
     base = {
-        "prototype_bounds": _normalized_geometry_box(prototype),
-        "production_bounds": _normalized_geometry_box(production),
+        "prototype_bounds": prototype_bounds,
+        "production_bounds": production_bounds,
         "delta": {"x": None, "y": None, "width": None, "height": None},
         "tolerance": tolerance,
+        "prototype_viewport_overflow": dict(empty_overflow),
         "viewport_overflow": empty_overflow,
     }
     if not isinstance(prototype, dict) or any(
-        value is None for value in base["prototype_bounds"].values()
+        value is None for value in prototype_bounds.values()
     ):
         return {
             **base,
             "classification": "hard_invalid",
             "failure_class": HARD_BLOCKING,
             "classification_reason": "prototype_bounds_invalid",
+        }
+    prototype_x, prototype_y, prototype_width, prototype_height = (
+        float(prototype_bounds[field])
+        for field in ("x", "y", "width", "height")
+    )
+    if prototype_width <= 0 or prototype_height <= 0:
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "prototype_non_positive_size",
         }
     if not isinstance(production, dict):
         return {
@@ -1459,37 +1473,65 @@ def _assess_geometry(
             "classification_reason": "region_not_visible",
         }
 
-    prototype_values = base["prototype_bounds"]
+    viewport_width = float(viewport["width"])
+    viewport_height = float(viewport["height"])
+
+    def overflow_vector(
+        box_x: float,
+        box_y: float,
+        box_width: float,
+        box_height: float,
+    ) -> dict[str, float]:
+        return {
+            "left": max(0.0, -box_x),
+            "top": max(0.0, -box_y),
+            "right": max(0.0, box_x + box_width - viewport_width),
+            "bottom": max(0.0, box_y + box_height - viewport_height),
+        }
+
+    def intersects_viewport(
+        box_x: float,
+        box_y: float,
+        box_width: float,
+        box_height: float,
+    ) -> bool:
+        return bool(
+            min(box_x + box_width, viewport_width) - max(box_x, 0.0) > 0
+            and min(box_y + box_height, viewport_height) - max(box_y, 0.0) > 0
+        )
+
+    prototype_overflow = overflow_vector(
+        prototype_x,
+        prototype_y,
+        prototype_width,
+        prototype_height,
+    )
+    if not intersects_viewport(
+        prototype_x,
+        prototype_y,
+        prototype_width,
+        prototype_height,
+    ):
+        return {
+            **base,
+            "prototype_viewport_overflow": prototype_overflow,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "prototype_outside_viewport",
+        }
+
     delta = {
-        field: float(production[field]) - float(prototype_values[field])
+        field: float(production_bounds[field]) - float(prototype_bounds[field])
         for field in ("x", "y", "width", "height")
     }
-    overflow = {
-        "left": max(0.0, -x),
-        "top": max(0.0, -y),
-        "right": max(0.0, x + width - float(viewport["width"])),
-        "bottom": max(0.0, y + height - float(viewport["height"])),
+    overflow = overflow_vector(x, y, width, height)
+    base = {
+        **base,
+        "delta": delta,
+        "prototype_viewport_overflow": prototype_overflow,
+        "viewport_overflow": overflow,
     }
-    base = {**base, "delta": delta, "viewport_overflow": overflow}
-    has_overflow = any(value > 0 for value in overflow.values())
-    if has_overflow:
-        intersects_viewport = bool(
-            min(x + width, float(viewport["width"])) - max(x, 0.0) > 0
-            and min(y + height, float(viewport["height"])) - max(y, 0.0) > 0
-        )
-        within_tolerance = bool(
-            overflow["left"] <= horizontal_tolerance
-            and overflow["right"] <= horizontal_tolerance
-            and overflow["top"] <= vertical_tolerance
-            and overflow["bottom"] <= vertical_tolerance
-        )
-        if intersects_viewport and within_tolerance:
-            return {
-                **base,
-                "classification": "soft_invalid",
-                "failure_class": VISUAL_ADJUDICABLE,
-                "classification_reason": "viewport_boundary_overflow_within_tolerance",
-            }
+    if not intersects_viewport(x, y, width, height):
         return {
             **base,
             "classification": "hard_invalid",
@@ -1503,6 +1545,65 @@ def _assess_geometry(
         and abs(delta["y"]) <= vertical_tolerance
         and abs(delta["height"]) <= vertical_tolerance
     )
+    prototype_directions = {
+        direction for direction, value in prototype_overflow.items() if value > 0
+    }
+    production_directions = {
+        direction for direction, value in overflow.items() if value > 0
+    }
+    if prototype_directions:
+        if prototype_directions != production_directions:
+            return {
+                **base,
+                "classification": "hard_invalid",
+                "failure_class": HARD_BLOCKING,
+                "classification_reason": "viewport_overflow_direction_mismatch",
+            }
+        overflow_matches = all(
+            abs(overflow[direction] - prototype_overflow[direction])
+            <= (
+                horizontal_tolerance
+                if direction in {"left", "right"}
+                else vertical_tolerance
+            )
+            for direction in prototype_directions
+        )
+        if matches and overflow_matches:
+            return {
+                **base,
+                "classification": "exact",
+                "failure_class": None,
+                "classification_reason": "shared_viewport_overflow_within_tolerance",
+            }
+        return {
+            **base,
+            "classification": "mismatch",
+            "failure_class": VISUAL_ADJUDICABLE,
+            "classification_reason": "geometry_delta_exceeds_tolerance",
+        }
+
+    has_overflow = any(value > 0 for value in overflow.values())
+    if has_overflow:
+        within_tolerance = bool(
+            overflow["left"] <= horizontal_tolerance
+            and overflow["right"] <= horizontal_tolerance
+            and overflow["top"] <= vertical_tolerance
+            and overflow["bottom"] <= vertical_tolerance
+        )
+        if within_tolerance:
+            return {
+                **base,
+                "classification": "soft_invalid",
+                "failure_class": VISUAL_ADJUDICABLE,
+                "classification_reason": "viewport_boundary_overflow_within_tolerance",
+            }
+        return {
+            **base,
+            "classification": "hard_invalid",
+            "failure_class": HARD_BLOCKING,
+            "classification_reason": "outside_viewport_tolerance",
+        }
+
     if matches:
         return {
             **base,

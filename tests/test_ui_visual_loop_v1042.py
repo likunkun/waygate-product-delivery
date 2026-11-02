@@ -128,6 +128,48 @@ def _plan_and_unit(root: Path, *, proto_color=(255, 255, 255, 255), prod_color=(
 
 
 class VisualLoopCompareV1042Tests(unittest.TestCase):
+    def test_shared_long_page_overflow_passes_full_bound_chrome_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan, manifest, snap = _plan_and_unit(root, prod_height=10)
+            plan["region_ids"] = ["nav"]
+            plan["regions"] = [
+                {
+                    "region_id": "nav",
+                    "content_kind": "chrome",
+                    "semantic_role": "navigation",
+                    "display_order": 1,
+                    "bounds": {"x": 0, "y": 0, "width": 20, "height": 20},
+                }
+            ]
+            payload = json.loads(snap.read_text(encoding="utf-8"))
+            payload["regions"] = [
+                {
+                    "region_id": "nav",
+                    "matched_count": 1,
+                    "visible": True,
+                    "role": "navigation",
+                    "accessible_name": "Main nav",
+                    "parent_region_id": None,
+                    "display_order": 1,
+                    "bounding_box": {"x": 0, "y": 0, "width": 20, "height": 21},
+                }
+            ]
+            snap.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            evidence = compare_visual_loop(
+                root, plan, manifest, visual_policy=DEFAULT_VISUAL_POLICY
+            )
+
+            self.assertEqual(evidence["status"], "passed")
+            self.assertEqual(evidence["failure_codes"], [])
+            geometry = evidence["region_results"][0]["geometry"]
+            self.assertEqual(geometry["classification"], "exact")
+            self.assertEqual(
+                geometry["classification_reason"],
+                "shared_viewport_overflow_within_tolerance",
+            )
+
     def test_data_growth_and_pixel_gap_do_not_fail_chrome_loop(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

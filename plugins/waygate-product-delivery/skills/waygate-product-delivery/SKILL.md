@@ -133,6 +133,10 @@ V1.0.24 起，内部 `delivery_goal` 只表示 TASK 计划，不得冒充 Codex 
 
 当 active implementation delivery 的 Host Goal binding 为 `blocked`，且 `human_wait`、pending checkpoint 与 authorized transition 都为空时，使用 `scripts/recover-orphaned-blocked-host-goal-v110.py --project-root <repo>`。恢复请求通过 stdin 提供严格 JSON，必须包含冻结 state SHA-256、精确授权语、owner host turn、fresh `get_goal=active` observation 与 `dry_run`。必须先 dry-run 并确认 state 字节不变，再用相同 observation 正式恢复。入口只恢复当前 TASK，校验 runtime provenance、objective、threadId 与 journal，追加 `host_goal_orphaned_binding_recovered`，并签发一次性 `user_resume` transition；不得用于 human decision、终态 delivery 或任意 gate 跳转。
 
+### V1.1.0 CR006 Shared-Overflow Runtime Recovery
+
+仅 delivery `06ebce38bc2d49458e0c61ab5c40e75a` 可使用 `scripts/recover-shared-overflow-runtime-receipt-v111.py --project-root <repo>` 从冻结的 1.1.0 source receipt 迁移到包含 shared-overflow comparator 修复的当前 1.1.0 runtime。请求通过 stdin 提交严格 v1 JSON，必须精确包含用户授权语、delivery、feature、owner thread、binding nonce、objective hash、冻结 state SHA-256、journal count/last hash 和 `dry_run`。必须先用 `dry_run=true` 验证 state 字节不变，再只把同一请求的 `dry_run` 改为 `false` 执行一次。恢复器只替换 runtime receipt、追加 hash-linked `runtime_receipt_recovered` event 并刷新 canonical layout mirrors；产品/测试确认、35 个 TASK completion、launch package、binding、失败证据和 Host Goal objective 必须保持不变。未知 receipt、stale snapshot、journal/identity 不匹配、外来线程、重复执行或非精确授权全部 fail closed。不得手改 state、安装 cache、冻结原型、阈值或 mask。
+
 handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 `record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、checkpoint 重放、stale observation 或 Goal 工具不可用都必须 fail closed。Goal 工具不可用时记录 unavailable observation 并阻塞，不能声称自动续跑已经生效。
 
 每个 post-handoff turn 开始，以及 TASK/stage、review、closure、final、stop 和 Goal 状态更新前，调用 `prepare_host_goal_reconciliation(operation, target_gate, host_turn_id=...)`，再使用 `get_goal` 或该 checkpoint 指定的 `update_goal`，最后调用 `record_host_goal_observation()`。同一 stage 内低层文件写入不需要重复查询，但任何 canonical gate 写入都必须消费一条新鲜、目标 gate 匹配的一次性 observation。

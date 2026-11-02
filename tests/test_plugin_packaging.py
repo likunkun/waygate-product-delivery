@@ -157,6 +157,7 @@ print("8 roles and 5 profiles usable from packaged runtime")
                 "scripts/waygate-control.py",
                 "scripts/compare-ui-visual-loop.py",
                 "scripts/recover-runtime-receipt-v1036-to-v1037.py",
+                "scripts/recover-shared-overflow-runtime-receipt-v111.py",
                 "scripts/recover-orphaned-blocked-host-goal-v110.py",
                 "scripts/formal-gate-validation-plan.md",
                 "agents/openai.yaml",
@@ -600,6 +601,11 @@ print("8 roles and 5 profiles usable from packaged runtime")
                     "recover-runtime-receipt-v1036-to-v1037.py",
                     names,
                 )
+                self.assertIn(
+                    "waygate-product-delivery/scripts/"
+                    "recover-shared-overflow-runtime-receipt-v111.py",
+                    names,
+                )
                 self.assertFalse(
                     any("__pycache__" in name or name.endswith(".pyc") for name in names)
                 )
@@ -611,6 +617,10 @@ print("8 roles and 5 profiles usable from packaged runtime")
                 skill_markdown = skill_file.read().decode("utf-8")
                 self.assertNotIn("host_goal_user_guidance", skill_markdown)
                 self.assertIn("recover_runtime_receipt", skill_markdown)
+                self.assertIn(
+                    "recover-shared-overflow-runtime-receipt-v111.py",
+                    skill_markdown,
+                )
 
     def test_lifecycle_is_dormant_by_default_and_start_stop_scoped(self):
         with tempfile.TemporaryDirectory() as tmp:

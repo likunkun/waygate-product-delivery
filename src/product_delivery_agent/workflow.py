@@ -236,6 +236,55 @@ RUNTIME_RECEIPT_RECOVERY_TARGET_JOURNAL_EVENT_COUNT = 415
 RUNTIME_RECEIPT_RECOVERY_TARGET_JOURNAL_LAST_HASH = (
     "9ffe608896eb6d9d946ad50bda40cf17ad83a650d0d3a5896515d903531bca66"
 )
+SHARED_OVERFLOW_RUNTIME_RECOVERY_MESSAGE = (
+    "授权发起 CR006：修复 Waygate shared-overflow comparator，"
+    "并按修复版 runtime 的受支持迁移入口恢复当前 delivery"
+)
+SHARED_OVERFLOW_RECOVERY_SOURCE_RECEIPT = {
+    "plugin_name": "waygate-product-delivery",
+    "plugin_version": "1.1.0",
+    "package_root_sha256": (
+        "849fb019ae3ca643ca7e93aa6e51acf8e263861ba611422c478a3d7a61e3df5b"
+    ),
+}
+SHARED_OVERFLOW_RECOVERY_TARGET_DELIVERY_ID = (
+    "06ebce38bc2d49458e0c61ab5c40e75a"
+)
+SHARED_OVERFLOW_RECOVERY_TARGET_FEATURE_SLUG = (
+    "v2.1-classroom-quiz-ai-analysis"
+)
+SHARED_OVERFLOW_RECOVERY_TARGET_OWNER_THREAD_ID = (
+    "01a19354-2aa6-7740-89f7-d948727f61c4"
+)
+SHARED_OVERFLOW_RECOVERY_TARGET_BINDING_NONCE = (
+    "39b691b33a8b4d9d96ac4adecf692c18"
+)
+SHARED_OVERFLOW_RECOVERY_TARGET_OBJECTIVE_SHA256 = (
+    "b290c658109f0c48be1af104bdb68b0f2a6c45d6d2aca47f86ad0fc008dd7ba1"
+)
+SHARED_OVERFLOW_RECOVERY_TARGET_STATE_SHA256 = (
+    "ae4c5d8405504da6edabfb7e7764c33171300453dee44c0b0d02a7e42ff65495"
+)
+SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_EVENT_COUNT = 2188
+SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_LAST_HASH = (
+    "746c23e43979fa3678f5fcb4d07dc69b36d69c36bd4f13cf5252a77880b7ae0d"
+)
+SHARED_OVERFLOW_RECOVERY_REQUEST_FIELDS = frozenset(
+    {
+        "schema_version",
+        "action",
+        "authorization_message",
+        "delivery_id",
+        "feature_slug",
+        "owner_thread_id",
+        "binding_nonce",
+        "expected_objective_sha256",
+        "expected_state_sha256",
+        "expected_journal_event_count",
+        "expected_journal_last_hash",
+        "dry_run",
+    }
+)
 AT_FDCWD = -100
 RENAME_EXCHANGE = 2
 
@@ -532,6 +581,256 @@ class ProductDeliveryWorkflow:
             previous_state=raw_state,
         )
 
+    def recover_shared_overflow_runtime_receipt(
+        self,
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Migrate the pinned V2.1 delivery to the shared-overflow runtime."""
+        normalized = self._normalize_shared_overflow_recovery_request(request)
+        state_path = self.project_root / ARTIFACT_ROOT / "state.json"
+        try:
+            with state_write_lock(self.project_root):
+                return self._recover_shared_overflow_runtime_receipt_locked(
+                    state_path,
+                    normalized,
+                )
+        except WorkflowError:
+            raise
+        except OSError as error:
+            raise WorkflowError(
+                f"Waygate state workspace cannot be locked: {error}"
+            ) from error
+
+    @staticmethod
+    def _normalize_shared_overflow_recovery_request(
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not isinstance(request, dict):
+            raise WorkflowError("shared-overflow recovery request must be an object")
+        extras = sorted(set(request) - SHARED_OVERFLOW_RECOVERY_REQUEST_FIELDS)
+        missing = sorted(SHARED_OVERFLOW_RECOVERY_REQUEST_FIELDS - set(request))
+        if extras or missing:
+            raise WorkflowError(
+                "shared-overflow recovery request fields mismatch: "
+                f"missing={missing}, extras={extras}"
+            )
+        if request.get("schema_version") != "v1":
+            raise WorkflowError("shared-overflow recovery schema_version must be v1")
+        if request.get("action") != "recover_shared_overflow_runtime_receipt":
+            raise WorkflowError("shared-overflow recovery action mismatch")
+        if request.get("authorization_message") != SHARED_OVERFLOW_RUNTIME_RECOVERY_MESSAGE:
+            raise WorkflowError(
+                "exact explicit user authorization is required for shared-overflow "
+                "runtime receipt recovery"
+            )
+        if not isinstance(request.get("dry_run"), bool):
+            raise WorkflowError("shared-overflow recovery dry_run must be boolean")
+        if not isinstance(request.get("expected_journal_event_count"), int) or isinstance(
+            request.get("expected_journal_event_count"), bool
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery expected_journal_event_count must be integer"
+            )
+        string_fields = SHARED_OVERFLOW_RECOVERY_REQUEST_FIELDS - {
+            "expected_journal_event_count",
+            "dry_run",
+        }
+        if any(
+            not isinstance(request.get(field), str) or not request[field].strip()
+            for field in string_fields
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery string fields must be non-empty"
+            )
+        return deepcopy(request)
+
+    def _recover_shared_overflow_runtime_receipt_locked(
+        self,
+        state_path: Path,
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        state_file_sha256 = hashlib.sha256(state_path.read_bytes()).hexdigest()
+        if (
+            state_file_sha256 != SHARED_OVERFLOW_RECOVERY_TARGET_STATE_SHA256
+            or request["expected_state_sha256"]
+            != SHARED_OVERFLOW_RECOVERY_TARGET_STATE_SHA256
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery state snapshot does not match the frozen target"
+            )
+
+        raw_state = self._load_raw_state()
+        state = self._state()
+        lifecycle_status = (state.get("delivery_lifecycle") or {}).get("status")
+        if (
+            not raw_state.get("active")
+            or raw_state.get("status") in (TERMINAL_STATUSES | {"abandoned"})
+            or lifecycle_status in {"closed", "abandoned"}
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery requires an active nonterminal delivery"
+            )
+        if runtime_status(state, raw_state) != "invalid_runtime":
+            raise WorkflowError(
+                "shared-overflow recovery requires an active invalid_runtime delivery"
+            )
+        if raw_state.get("runtime_provenance") != SHARED_OVERFLOW_RECOVERY_SOURCE_RECEIPT:
+            raise WorkflowError(
+                "shared-overflow recovery source runtime receipt is unsupported or mismatched"
+            )
+        integrity_errors = journal_integrity_errors(raw_state)
+        if integrity_errors:
+            raise WorkflowError(
+                "shared-overflow recovery requires an intact journal: "
+                + ", ".join(integrity_errors)
+            )
+
+        self._validate_shared_overflow_recovery_identity(state, request)
+        self._validate_shared_overflow_recovery_position(state, request)
+        try:
+            assert_host_goal_owner(state)
+        except HostGoalError as error:
+            raise WorkflowError(str(error)) from error
+
+        current_receipt = current_runtime_provenance()
+        if (
+            current_receipt.get("plugin_name") != "waygate-product-delivery"
+            or current_receipt.get("plugin_version") != "1.1.0"
+            or current_receipt == SHARED_OVERFLOW_RECOVERY_SOURCE_RECEIPT
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery requires the distinct fixed Waygate 1.1.0 runtime"
+            )
+        if request["dry_run"]:
+            return {
+                "result": "dry_run_passed",
+                "delivery_id": state["delivery_id"],
+                "feature_slug": state["feature_slug"],
+                "source_runtime_provenance": deepcopy(
+                    SHARED_OVERFLOW_RECOVERY_SOURCE_RECEIPT
+                ),
+                "target_runtime_provenance": deepcopy(current_receipt),
+                "state_sha256": state_file_sha256,
+                "journal_event_count": SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_EVENT_COUNT,
+                "journal_last_hash": SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_LAST_HASH,
+            }
+
+        state["runtime_provenance"] = current_receipt
+        state = append_transition(
+            state,
+            "runtime_receipt_recovered",
+            feature_slug=state.get("feature_slug"),
+            runtime_version=PLUGIN_VERSION,
+            input_artifact_hashes={
+                "runtime_receipt": host_goal_stable_hash(
+                    SHARED_OVERFLOW_RECOVERY_SOURCE_RECEIPT
+                )
+            },
+            output_artifact_hashes={
+                "runtime_receipt": host_goal_stable_hash(current_receipt)
+            },
+            metadata={
+                "from_plugin_version": "1.1.0",
+                "to_plugin_version": "1.1.0",
+                "recovery_scope": "shared_overflow_comparator_v111",
+                "authorization_sha256": host_goal_stable_hash(
+                    SHARED_OVERFLOW_RUNTIME_RECOVERY_MESSAGE
+                ),
+            },
+        )
+        return self._commit_pinned_runtime_receipt_recovery(
+            state_path,
+            state,
+            expected_state_sha256=SHARED_OVERFLOW_RECOVERY_TARGET_STATE_SHA256,
+            candidate_filename="state.json.shared-overflow-v111-candidate.tmp",
+        )
+
+    @staticmethod
+    def _validate_shared_overflow_recovery_identity(
+        state: dict[str, Any],
+        request: dict[str, Any],
+    ) -> None:
+        expected = {
+            "delivery_id": SHARED_OVERFLOW_RECOVERY_TARGET_DELIVERY_ID,
+            "feature_slug": SHARED_OVERFLOW_RECOVERY_TARGET_FEATURE_SLUG,
+            "owner_thread_id": SHARED_OVERFLOW_RECOVERY_TARGET_OWNER_THREAD_ID,
+            "binding_nonce": SHARED_OVERFLOW_RECOVERY_TARGET_BINDING_NONCE,
+            "expected_objective_sha256": SHARED_OVERFLOW_RECOVERY_TARGET_OBJECTIVE_SHA256,
+        }
+        for field, value in expected.items():
+            if request.get(field) != value:
+                raise WorkflowError(f"shared-overflow recovery {field} mismatch")
+        binding = state.get("host_goal_binding") or {}
+        if (
+            state.get("delivery_id") != expected["delivery_id"]
+            or state.get("feature_slug") != expected["feature_slug"]
+            or (state.get("host_goal_owner") or {}).get("coordinator_thread_id")
+            != expected["owner_thread_id"]
+            or binding.get("owner_thread_id") != expected["owner_thread_id"]
+            or binding.get("binding_nonce") != expected["binding_nonce"]
+            or binding.get("objective_sha256")
+            != expected["expected_objective_sha256"]
+            or host_goal_stable_hash(binding.get("objective"))
+            != expected["expected_objective_sha256"]
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery delivery, owner, binding, or objective identity mismatch"
+            )
+        if (
+            binding.get("status") != "active"
+            or binding.get("resume_gate") != "TASK-036"
+            or binding.get("human_wait")
+            or binding.get("pending_checkpoint")
+            or binding.get("authorized_transition")
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery requires the active unblocked TASK-036 binding"
+            )
+        policy = state.get("multi_agent_policy") or {}
+        if (
+            policy.get("execution_authorization")
+            not in {"authorized", "degradation_authorized"}
+            or policy.get("authorization_scope") != "current_delivery"
+            or policy.get("authorization_delivery_id") != state.get("delivery_id")
+            or policy.get("authorization_feature_slug") != state.get("feature_slug")
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery requires current-delivery multi-agent authorization"
+            )
+
+    @staticmethod
+    def _validate_shared_overflow_recovery_position(
+        state: dict[str, Any],
+        request: dict[str, Any],
+    ) -> None:
+        journal = state.get("transition_journal") or {}
+        events = journal.get("events") or []
+        if (
+            len(events) != SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_EVENT_COUNT
+            or journal.get("last_event_hash")
+            != SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_LAST_HASH
+            or request["expected_journal_event_count"]
+            != SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_EVENT_COUNT
+            or request["expected_journal_last_hash"]
+            != SHARED_OVERFLOW_RECOVERY_TARGET_JOURNAL_LAST_HASH
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery journal anchor mismatch"
+            )
+        completed = [f"TASK-{index:03d}" for index in range(1, 36)]
+        delivery_goal = state.get("delivery_goal") or {}
+        implementation = state.get("implementation") or {}
+        if (
+            delivery_goal.get("status") != "implementation_in_progress"
+            or delivery_goal.get("current_task_cursor") != "TASK-036"
+            or delivery_goal.get("completed_tasks") != completed
+            or implementation.get("current_task") != "TASK-036"
+            or implementation.get("completed_tasks") != completed
+        ):
+            raise WorkflowError(
+                "shared-overflow recovery requires the frozen TASK-036 delivery position"
+            )
+
     def recover_runtime_receipt(self, user_message: str) -> dict[str, Any]:
         """Upgrade the one known 1.0.36 receipt while preserving the delivery."""
         if str(user_message or "").strip() != RUNTIME_RECEIPT_RECOVERY_MESSAGE:
@@ -718,16 +1017,32 @@ class ProductDeliveryWorkflow:
         state_path: Path,
         next_state: dict[str, Any],
     ) -> dict[str, Any]:
+        return self._commit_pinned_runtime_receipt_recovery(
+            state_path,
+            next_state,
+            expected_state_sha256=RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256,
+            candidate_filename="state.json.runtime-receipt-v1037-candidate.tmp",
+        )
+
+    def _commit_pinned_runtime_receipt_recovery(
+        self,
+        state_path: Path,
+        next_state: dict[str, Any],
+        *,
+        expected_state_sha256: str,
+        candidate_filename: str,
+    ) -> dict[str, Any]:
         if (
             hashlib.sha256(state_path.read_bytes()).hexdigest()
-            != RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256
+            != expected_state_sha256
         ):
             raise WorkflowError(
                 "frozen Classroom delivery state changed before commit"
             )
-        snapshot = self._capture_runtime_recovery_snapshot(next_state)
-        candidate_path = state_path.with_name(
-            "state.json.runtime-receipt-v1037-candidate.tmp"
+        candidate_path = state_path.with_name(candidate_filename)
+        snapshot = self._capture_runtime_recovery_snapshot(
+            next_state,
+            candidate_paths={candidate_path},
         )
         exchanged = False
         concurrent_change_detected = False
@@ -757,7 +1072,7 @@ class ProductDeliveryWorkflow:
             ).hexdigest()
             if (
                 displaced_sha256
-                != RUNTIME_RECEIPT_RECOVERY_TARGET_STATE_SHA256
+                != expected_state_sha256
             ):
                 concurrent_change_detected = True
                 self._atomic_exchange(candidate_path, state_path)
@@ -832,6 +1147,8 @@ class ProductDeliveryWorkflow:
     def _capture_runtime_recovery_snapshot(
         self,
         state: dict[str, Any],
+        *,
+        candidate_paths: set[Path] | None = None,
     ) -> dict[Path, tuple[str, bytes | str, int] | None]:
         workspace = self.project_root / ARTIFACT_ROOT
         delivery_root = (
@@ -848,6 +1165,7 @@ class ProductDeliveryWorkflow:
             workspace / "current",
             workspace / "state.json.runtime-receipt-v1037-candidate.tmp",
         ]
+        paths.extend(sorted(candidate_paths or set()))
         paths.extend(
             path.with_suffix(path.suffix + ".tmp")
             for path in paths

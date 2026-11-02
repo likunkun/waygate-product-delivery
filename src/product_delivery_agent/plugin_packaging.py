@@ -69,6 +69,13 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
         _runtime_receipt_recovery_script(), encoding="utf-8"
     )
     receipt_recovery_path.chmod(0o755)
+    shared_overflow_recovery_path = (
+        scripts_dir / "recover-shared-overflow-runtime-receipt-v111.py"
+    )
+    shared_overflow_recovery_path.write_text(
+        _shared_overflow_runtime_receipt_recovery_script(), encoding="utf-8"
+    )
+    shared_overflow_recovery_path.chmod(0o755)
     orphaned_recovery_path = (
         scripts_dir / "recover-orphaned-blocked-host-goal-v110.py"
     )
@@ -1015,6 +1022,18 @@ def _skill_markdown() -> str:
         "字节不变，再用相同 observation 正式恢复。入口只恢复当前 TASK，校验 runtime provenance、"
         "objective、threadId 与 journal，追加 `host_goal_orphaned_binding_recovered`，并签发一次性 "
         "`user_resume` transition；不得用于 human decision、终态 delivery 或任意 gate 跳转。\n\n"
+        "### V1.1.0 CR006 Shared-Overflow Runtime Recovery\n\n"
+        "仅 delivery `06ebce38bc2d49458e0c61ab5c40e75a` 可使用 "
+        "`scripts/recover-shared-overflow-runtime-receipt-v111.py --project-root <repo>` "
+        "从冻结的 1.1.0 source receipt 迁移到包含 shared-overflow comparator 修复的当前 "
+        "1.1.0 runtime。请求通过 stdin 提交严格 v1 JSON，必须精确包含用户授权语、delivery、"
+        "feature、owner thread、binding nonce、objective hash、冻结 state SHA-256、journal count/"
+        "last hash 和 `dry_run`。必须先用 `dry_run=true` 验证 state 字节不变，再只把同一请求的 "
+        "`dry_run` 改为 `false` 执行一次。恢复器只替换 runtime receipt、追加 hash-linked "
+        "`runtime_receipt_recovered` event 并刷新 canonical layout mirrors；产品/测试确认、35 个 "
+        "TASK completion、launch package、binding、失败证据和 Host Goal objective 必须保持不变。"
+        "未知 receipt、stale snapshot、journal/identity 不匹配、外来线程、重复执行或非精确授权全部 "
+        "fail closed。不得手改 state、安装 cache、冻结原型、阈值或 mask。\n\n"
         "handoff 后必须按顺序执行：先调用 `prepare_host_goal_activation()`，再调用宿主 `get_goal`；"
         "确认不存在 Goal 后才调用 `create_goal`；创建后再次调用 `get_goal`。每次结果都必须通过 "
         "`record_host_goal_observation(checkpoint_id, observation)` 落盘。其他未完成 Goal、objective 不匹配、"
@@ -1292,6 +1311,51 @@ def _runtime_receipt_recovery_script() -> str:
         "    'runtime_provenance': state.get('runtime_provenance'),\n"
         "    'required_authorization': RUNTIME_RECEIPT_RECOVERY_MESSAGE,\n"
         "}, ensure_ascii=False, sort_keys=True))\n"
+    )
+
+
+def _shared_overflow_runtime_receipt_recovery_script() -> str:
+    return (
+        "#!/usr/bin/env python3\n"
+        '"""One-shot audited CR006 shared-overflow runtime receipt recovery."""\n\n'
+        "import argparse\n"
+        "import json\n"
+        "from pathlib import Path\n"
+        "import sys\n\n"
+        "RUNTIME_DIR = Path(__file__).resolve().parents[1] / 'runtime'\n"
+        "sys.path.insert(0, str(RUNTIME_DIR))\n\n"
+        "from product_delivery_agent.workflow import (\n"
+        "    ProductDeliveryWorkflow,\n"
+        "    WorkflowError,\n"
+        ")\n\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--project-root', default='.')\n"
+        "args = parser.parse_args()\n"
+        "try:\n"
+        "    request = json.load(sys.stdin)\n"
+        "except json.JSONDecodeError as error:\n"
+        "    print(f'recovery rejected: invalid JSON: {error}', file=sys.stderr)\n"
+        "    raise SystemExit(2)\n"
+        "try:\n"
+        "    result = ProductDeliveryWorkflow(\n"
+        "        args.project_root\n"
+        "    ).recover_shared_overflow_runtime_receipt(request)\n"
+        "except WorkflowError as error:\n"
+        "    print(f'recovery rejected: {error}', file=sys.stderr)\n"
+        "    raise SystemExit(2)\n"
+        "if request.get('dry_run'):\n"
+        "    output = result\n"
+        "else:\n"
+        "    output = {\n"
+        "        'result': 'runtime_receipt_recovered',\n"
+        "        'delivery_id': result.get('delivery_id'),\n"
+        "        'feature_slug': result.get('feature_slug'),\n"
+        "        'runtime_provenance': result.get('runtime_provenance'),\n"
+        "        'journal_last_hash': (\n"
+        "            result.get('transition_journal') or {}\n"
+        "        ).get('last_event_hash'),\n"
+        "    }\n"
+        "print(json.dumps(output, ensure_ascii=False, sort_keys=True))\n"
     )
 
 
