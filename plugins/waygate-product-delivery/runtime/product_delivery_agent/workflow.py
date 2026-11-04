@@ -197,12 +197,25 @@ RUNTIME_RECEIPT_RECOVERY_MESSAGE = (
 ORPHANED_BLOCKED_RECOVERY_MESSAGE = (
     f"授权执行可审计的 Waygate {PLUGIN_VERSION} orphaned blocked-binding 恢复"
 )
+CR007_STALE_AUTHORIZED_TRANSITION_RECOVERY_MESSAGE = (
+    "授权发起 CR007：修复 Waygate blocked observation 遗留 stale "
+    "authorized_transition，并按修复版 runtime 的受支持迁移入口恢复当前 delivery。"
+)
 ORPHANED_BLOCKED_RECOVERY_SOURCE_RECEIPTS = (
     {
         "plugin_name": "waygate-product-delivery",
         "plugin_version": "1.1.0",
         "package_root_sha256": (
             "dde3c69c8dd26b0ada675e914f01d75cf062f3ff1c99a3b0e4882b4c9836f50f"
+        ),
+    },
+)
+CR007_STALE_AUTHORIZED_TRANSITION_SOURCE_RECEIPTS = (
+    {
+        "plugin_name": "waygate-product-delivery",
+        "plugin_version": "1.1.0",
+        "package_root_sha256": (
+            "1102adcf787c5ae42d52e1daa718692e29a4acf5e94ca3d8ed7651aa87e278b0"
         ),
     },
 )
@@ -4297,7 +4310,10 @@ class ProductDeliveryWorkflow:
         dry_run: bool,
     ) -> dict[str, Any]:
         """Recover a blocked current-TASK binding that has no human decision."""
-        if authorization_message != ORPHANED_BLOCKED_RECOVERY_MESSAGE:
+        if authorization_message not in {
+            ORPHANED_BLOCKED_RECOVERY_MESSAGE,
+            CR007_STALE_AUTHORIZED_TRANSITION_RECOVERY_MESSAGE,
+        }:
             raise WorkflowError(
                 "exact orphaned blocked-binding recovery authorization is required"
             )
@@ -4340,7 +4356,10 @@ class ProductDeliveryWorkflow:
             stored_receipt = raw_state.get("runtime_provenance")
             receipt_migration_required = stored_receipt != current_receipt
             if receipt_migration_required:
-                if stored_receipt not in ORPHANED_BLOCKED_RECOVERY_SOURCE_RECEIPTS:
+                if stored_receipt not in (
+                    ORPHANED_BLOCKED_RECOVERY_SOURCE_RECEIPTS
+                    + CR007_STALE_AUTHORIZED_TRANSITION_SOURCE_RECEIPTS
+                ):
                     raise WorkflowError("unsupported runtime provenance for recovery")
             elif runtime_status(state, raw_state) != "verified_waygate":
                 raise WorkflowError("runtime must remain verified_waygate")
@@ -4384,8 +4403,80 @@ class ProductDeliveryWorkflow:
                 raise WorkflowError("orphaned recovery requires human_wait to be absent")
             if binding.get("pending_checkpoint"):
                 raise WorkflowError("orphaned recovery requires no pending checkpoint")
-            if binding.get("authorized_transition"):
-                raise WorkflowError("orphaned recovery requires no authorized transition")
+            stale_authorized_transition = deepcopy(
+                binding.get("authorized_transition")
+            )
+            stale_authorized_transition_sha256 = None
+            if stale_authorized_transition:
+                expected_stale_fields = {
+                    "checkpoint_id",
+                    "operation",
+                    "target_gate",
+                    "observation_sha256",
+                    "authorized_at",
+                }
+                checkpoint_id = stale_authorized_transition.get("checkpoint_id")
+                observation_sha256 = stale_authorized_transition.get(
+                    "observation_sha256"
+                )
+                try:
+                    authorized_at = datetime.fromisoformat(
+                        stale_authorized_transition.get("authorized_at", "")
+                    )
+                except (TypeError, ValueError):
+                    authorized_at = None
+                if (
+                    binding.get("last_observed_status") != "blocked"
+                    or set(stale_authorized_transition) != expected_stale_fields
+                    or not isinstance(checkpoint_id, str)
+                    or not checkpoint_id
+                    or stale_authorized_transition.get("operation")
+                    != "stage_transition"
+                    or stale_authorized_transition.get("target_gate") != current_task
+                    or not isinstance(observation_sha256, str)
+                    or len(observation_sha256) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in observation_sha256
+                    )
+                    or authorized_at is None
+                    or authorized_at.tzinfo is None
+                ):
+                    raise WorkflowError(
+                        "orphaned recovery rejects authorized transition"
+                    )
+                stale_authorized_transition_sha256 = host_goal_stable_hash(
+                    stale_authorized_transition
+                )
+                if (
+                    authorization_message
+                    != CR007_STALE_AUTHORIZED_TRANSITION_RECOVERY_MESSAGE
+                ):
+                    raise WorkflowError(
+                        "exact CR007 stale authorized-transition recovery "
+                        "authorization is required"
+                    )
+                if (
+                    receipt_migration_required
+                    and stored_receipt
+                    not in CR007_STALE_AUTHORIZED_TRANSITION_SOURCE_RECEIPTS
+                ):
+                    raise WorkflowError(
+                        "unsupported CR007 stale authorized-transition runtime provenance"
+                    )
+            else:
+                if authorization_message != ORPHANED_BLOCKED_RECOVERY_MESSAGE:
+                    raise WorkflowError(
+                        "CR007 recovery requires a stale authorized transition"
+                    )
+                if (
+                    receipt_migration_required
+                    and stored_receipt
+                    not in ORPHANED_BLOCKED_RECOVERY_SOURCE_RECEIPTS
+                ):
+                    raise WorkflowError(
+                        "unsupported generic orphaned-recovery runtime provenance"
+                    )
 
             if goal_observation.get("observation_source") != "codex_goal_tool":
                 raise WorkflowError("goal observation source must be codex_goal_tool")
@@ -4448,6 +4539,9 @@ class ProductDeliveryWorkflow:
                         "authorization_sha256": authorization_sha256,
                         "observation_sha256": observation_sha256,
                         "restored_gate": current_task,
+                        "stale_authorized_transition_sha256": (
+                            stale_authorized_transition_sha256
+                        ),
                     },
                     "authorized_transition": {
                         "checkpoint_id": recovery_id,
@@ -4481,6 +4575,9 @@ class ProductDeliveryWorkflow:
                     "archived_at": recovered_at,
                     "reason": "orphaned_blocked_binding_recovery_v110",
                     "recovery_id": recovery_id,
+                    "stale_authorized_transition_sha256": (
+                        stale_authorized_transition_sha256
+                    ),
                 }
             )
             next_state["host_goal_binding_history"] = history
@@ -4510,6 +4607,15 @@ class ProductDeliveryWorkflow:
                 "host_goal_orphaned_binding_recovered",
                 feature_slug=next_state.get("feature_slug"),
                 runtime_version=PLUGIN_VERSION,
+                input_artifact_hashes=(
+                    {
+                        "stale_authorized_transition": (
+                            stale_authorized_transition_sha256
+                        )
+                    }
+                    if stale_authorized_transition_sha256
+                    else None
+                ),
                 metadata={
                     "recovery_id": recovery_id,
                     "authorization_sha256": authorization_sha256,
@@ -4520,6 +4626,9 @@ class ProductDeliveryWorkflow:
                     "restored_status": "active",
                     "restored_gate": current_task,
                     "state_hash_before": state_hash_before,
+                    "stale_authorized_transition_archived": bool(
+                        stale_authorized_transition_sha256
+                    ),
                 },
             )
             response = {

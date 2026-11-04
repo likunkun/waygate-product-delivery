@@ -876,6 +876,9 @@ def apply_host_goal_observation(
                 "authorized_at": _timestamp(),
             }
 
+    if binding.get("status") == "blocked":
+        binding["authorized_transition"] = None
+
     next_state["host_goal_binding"] = binding
     if binding.get("status") == "active" and operation in {
         "inspect_before_activation",

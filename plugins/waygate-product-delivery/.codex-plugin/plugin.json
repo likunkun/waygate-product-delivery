@@ -41,5 +41,5 @@
   "name": "waygate-product-delivery",
   "repository": "https://example.com/waygate-product-delivery.git",
   "skills": "./skills/",
-  "version": "1.1.0+codex.20261102120517"
+  "version": "1.1.0+codex.20261104063623"
 }
