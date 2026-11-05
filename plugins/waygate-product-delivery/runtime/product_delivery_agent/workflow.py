@@ -4023,7 +4023,14 @@ class ProductDeliveryWorkflow:
             "task_queue_path": "artifacts/task-queue.md",
         }
         state["implementation"] = {
-            "current_task": delivery_goal["current_task_cursor"],
+            "current_task": (
+                delivery_goal["current_task_cursor"]
+                or (
+                    "TASKS_COMPLETE"
+                    if delivery_goal["status"] == "implementation_tasks_complete"
+                    else None
+                )
+            ),
             "completed_tasks": list(delivery_goal["completed_tasks"]),
         }
         state["codex_goal_prompt"] = handoff["codex_goal_prompt"]

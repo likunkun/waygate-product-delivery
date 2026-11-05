@@ -76,6 +76,18 @@ def package_codex_plugin(repo_root: str | Path) -> dict[str, Path]:
         _shared_overflow_runtime_receipt_recovery_script(), encoding="utf-8"
     )
     shared_overflow_recovery_path.chmod(0o755)
+    completed_handoff_recovery_source = (
+        root / "scripts" / "recover-completed-handoff-mirror-v111.py"
+    )
+    if completed_handoff_recovery_source.is_file():
+        completed_handoff_recovery_path = (
+            scripts_dir / "recover-completed-handoff-mirror-v111.py"
+        )
+        completed_handoff_recovery_path.write_text(
+            completed_handoff_recovery_source.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        completed_handoff_recovery_path.chmod(0o755)
     orphaned_recovery_path = (
         scripts_dir / "recover-orphaned-blocked-host-goal-v110.py"
     )

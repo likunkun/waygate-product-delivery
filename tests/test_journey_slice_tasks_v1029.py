@@ -330,6 +330,15 @@ class JourneySliceWorkflowV1029Tests(unittest.TestCase):
             )
             self.assertEqual(completed["delivery_goal"]["completed_tasks"], ["TASK-001"])
             self.assertIsNone(completed["delivery_goal"]["current_task_cursor"])
+            self.assertEqual(completed["implementation"]["current_task"], "TASKS_COMPLETE")
+
+            reconcile_host_goal(workflow)
+            replayed = workflow.generate_codex_goal_handoff(
+                scope="Implement classroom dashboard",
+                verification_commands=["pytest"],
+            )
+            self.assertEqual(replayed["delivery_goal"]["status"], "implementation_tasks_complete")
+            self.assertEqual(replayed["implementation"]["current_task"], "TASKS_COMPLETE")
 
     def test_full_evidence_requires_recorded_slice_union(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -370,4 +379,3 @@ class JourneySliceWorkflowV1029Tests(unittest.TestCase):
             rebuilt = workflow.status()["journey_slice_task_queue"]
             self.assertNotEqual(rebuilt["task_queue_hash"], first_hash)
             self.assertEqual(len(rebuilt["tasks"]), 2)
-
