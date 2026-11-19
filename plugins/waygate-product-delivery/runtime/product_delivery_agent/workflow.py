@@ -153,6 +153,11 @@ from product_delivery_agent.prototype_design import (
     PrototypeDesignError,
     build_prototype_design_bundle,
 )
+from product_delivery_agent.existing_ui import (
+    EXISTING_UI_TYPES,
+    MISSING_BASELINE,
+    validate_existing_ui_roles,
+)
 from product_delivery_agent.review_gates import (
     ReviewGateError,
     render_multi_agent_review,
@@ -1615,12 +1620,24 @@ class ProductDeliveryWorkflow:
             raise ReviewGateError(str(error)) from error
         if state.get("project_type") not in {"ui", "non_ui"}:
             raise ReviewGateError("current project_type is required for role tasks")
+        input_refs = deepcopy(input_refs)
+        if review_type == "scenario" and state.get("project_type") == "ui":
+            design = state.get("prototype_design_bundle") or {}
+            if not self._prototype_design_is_grandfathered(state):
+                self._rebuild_current_prototype_design_bundle(state, error_type=ReviewGateError)
+            continuity = design.get("existing_ui_continuity")
+            if continuity and isinstance(input_refs, dict):
+                input_refs["existing_ui_comparison"] = {
+                    "ref": continuity["report_path"],
+                    "sha256": design["artifact_sha256"],
+                    "project_type": "ui",
+                }
         context = {
             "feature_slug": state.get("feature_slug"),
             "delivery_id": state.get("delivery_id"),
             "project_type": state.get("project_type"),
             "input_snapshot_hash": review_input_hash(state, review_type),
-            "input_refs": deepcopy(input_refs),
+            "input_refs": input_refs,
         }
         try:
             bundle = build_gate_tasks(review_type, context)
@@ -1690,6 +1707,9 @@ class ProductDeliveryWorkflow:
                         raise ReviewGateError(
                             "prototype_design_audit_hash must match the current bundle"
                         )
+                    continuity = current_prototype_design.get("existing_ui_continuity")
+                    if continuity:
+                        self._validate_existing_ui_review(review, continuity)
                 if not state.get("ui_prototype", {}).get("generated"):
                     raise ReviewGateError(
                         "UI prototype draft is required before scenario review"
@@ -2027,6 +2047,11 @@ class ProductDeliveryWorkflow:
             pending["prototype_design_product_hash"] = bundle[
                 "product_domain_sha256"
             ]
+            continuity = bundle.get("existing_ui_continuity")
+            if continuity:
+                pending["existing_ui_continuity"] = state["prototype_design_bundle"][
+                    "existing_ui_continuity"
+                ]
         state.setdefault("pending_confirmations", {}).pop("ui_prototype", None)
         state["pending_confirmations"]["product_baseline"] = pending
         state.setdefault("confirmation_readiness", {})[
@@ -3278,12 +3303,18 @@ class ProductDeliveryWorkflow:
                 payload,
                 prototype_contract=prototype_contract,
             )
-        except (UIPrototypeError, PrototypeDesignError) as cause:
+            continuity = bundle.get("existing_ui_continuity")
+            if continuity:
+                validate_existing_ui_roles(continuity, (state.get("scenario_matrix") or {}).get("rows", []))
+        except (UIPrototypeError, PrototypeDesignError, ValueError) as cause:
             raise WorkflowError(str(cause)) from cause
 
         old_bundle = state.get("prototype_design_bundle") or {}
         old_product_hash = old_bundle.get("product_domain_sha256")
         product_changed = old_product_hash != bundle["product_domain_sha256"]
+        if bundle["ui_change_type"] in EXISTING_UI_TYPES and not continuity:
+            if product_changed or not self._product_baseline_is_confirmed(state):
+                raise WorkflowError(MISSING_BASELINE)
         if product_changed and (
             self._product_baseline_is_confirmed(state)
             or old_bundle.get("status") == "legacy_grandfathered"
@@ -3326,6 +3357,16 @@ class ProductDeliveryWorkflow:
             ]["sha256"],
             "prototype_contract_sha256": prototype_contract["contract_sha256"],
         }
+        if continuity:
+            state["prototype_design_bundle"]["existing_ui_continuity"] = {
+                "sha256": continuity["sha256"],
+                "build_id": continuity["build_id"],
+                "baseline_path": continuity["baseline"]["path"],
+                "change_ids": continuity["change_ids"],
+                "report_path": str(Path(ARTIFACT_ROOT) / state["artifact_refs"][
+                    "prototype_design_bundle"
+                ]["canonical_path"]),
+            }
         state["prototype_contract"] = {
             **prototype_contract,
             "artifact_path": "artifacts/ui-prototype-contract.json",
@@ -6342,6 +6383,18 @@ class ProductDeliveryWorkflow:
             assert_prototype_annotation_review_current(state)
         except GatekeeperError as cause:
             raise WorkflowError(str(cause)) from cause
+
+    @staticmethod
+    def _validate_existing_ui_review(review, continuity) -> None:
+        disposition = review.get("existing_ui_continuity_review") or {}
+        if not isinstance(disposition, dict) or (
+            disposition.get("comparison_sha256") != continuity["sha256"]
+            or disposition.get("baseline_identity_verified") is not True
+            or disposition.get("reviewed_change_ids") != continuity["change_ids"]
+        ):
+            raise ReviewGateError(
+                "scenario review must verify the current real product baseline and all observed UI changes"
+            )
 
     @staticmethod
     def _validate_spawned_reviewer_agents(review: dict[str, Any]) -> None:

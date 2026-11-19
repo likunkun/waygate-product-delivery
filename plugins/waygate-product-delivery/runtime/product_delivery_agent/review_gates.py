@@ -382,6 +382,7 @@ def render_multi_agent_review(review: dict[str, Any]) -> str:
 
 def _scenario_review_evidence(review: dict[str, Any]) -> dict[str, Any]:
     keys = (
+        "existing_ui_continuity_review",
         "baseline_inheritance_review",
         "ui_continuity_findings",
         "prototype_design_bundle_hash",

@@ -19,6 +19,12 @@
     ],
     "semantic_snapshot_path": ".product-delivery/artifacts/prototype-design/<surface>-semantic.json"
   },
+  "existing_ui_continuity": {
+    "baseline_path": ".product-delivery/artifacts/prototype-design/existing-product.json",
+    "changes": [],
+    "prototype_capture_path": ".product-delivery/artifacts/prototype-design/interactive-prototype.json",
+    "requirements_path": null
+  },
   "intended_product_ui_callouts": [],
   "product_context_contract": {
     "baseline_identity": {

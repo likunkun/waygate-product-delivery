@@ -176,6 +176,8 @@ The key rule is simple: artifacts and state are authoritative; chat summaries ar
 
 ### Prototype Gate And Review
 
+For existing products, capture the running product through the ordinary journey before creating a prototype. Compare both versions in the same actor role, state, and viewport, and link intended changes to requirements. Waygate rejects unexplained differences and supplies the same comparison to reviewers and implementers. [Capture and submission guide](docs/existing-ui-continuity.md)
+
 For UI work, `record_ui_prototype_design_bundle()` runs before multi-agent product/scenario review. The deterministic gate rebuilds fixed-schema semantic snapshots and browser-preflight probe artifacts, verifies their snapshot/screenshot/region hashes for every required state and viewport, and ignores caller-reported pass flags. Each global shell, navigation, visual language, information density, component system, and responsive behavior row must bind a structured, hashed design-evidence artifact.
 
 UI review uses `ui-ux-pro-max` for design judgment and `webapp-testing` for browser-visible behavior. Accessibility and interaction claims should prefer repository-native lint and axe checks where available, keyboard-path verification, and browser E2E evidence instead of a generic review-only Skill.

@@ -174,6 +174,8 @@ flowchart LR
 
 ### 原型门禁与评审分工
 
+对已有产品，先用真实角色走完受影响的普通路径，采集运行构建的页面和交互，再制作可点击原型。在同角色、同业务状态、同视口下对照原有控件、导航和布局，把有意变动关联到需求。Waygate 在产品设计阶段拒绝未声明的差异，并把同一份对照报告交给场景评审和实现 Agent。[采集与提交流程](docs/existing-ui-continuity.md)
+
 UI 原型生成后，先调用 `record_ui_prototype_design_bundle()`，再进入多 Agent 产品/场景评审。确定性门禁会重建固定 schema 的 semantic snapshot 与 browser-preflight probe artifact，逐个关键 state/viewport 校验 snapshot、截图和 region identity hash，不接受调用方自报 pass flag。全局框架、导航、视觉语言、信息密度、组件体系和响应式行为六个维度都必须绑定结构化、带 hash 的设计证据 artifact。
 
 UI 设计判断继续使用 `ui-ux-pro-max`，浏览器可见行为使用 `webapp-testing`。可访问性与交互结论优先采用仓库已有 lint、可用时的 axe 检查、键盘路径验证和浏览器 E2E 证据，不再依赖通用的只读评审 Skill。

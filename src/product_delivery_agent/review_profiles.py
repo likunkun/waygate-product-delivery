@@ -594,6 +594,11 @@ def build_role_task(
         required += ["test_source", "execution_evidence"]
     if review_type == "ui_conformance" and role_id == "scenario.journey_reviewer":
         required += ["browser_evidence"]
+    review_existing_ui = (
+        review_type == "scenario" and branch == "ui" and "existing_ui_comparison" in refs
+    )
+    if review_existing_ui:
+        required.append("existing_ui_comparison")
     missing = set(required) - set(refs)
     if missing:
         raise RoleProfileError("missing required inputs: " + ", ".join(sorted(missing)))
@@ -619,6 +624,11 @@ def build_role_task(
     task.update(review_type=review_type, role_definition_hash=card["definition_hash"],
                 task_template_hash=card["template_hash"], required_inputs=required,
                 input_refs=selected)
+    if review_existing_ui:
+        task["must_check"].append("existing_ui_continuity")
+        task["task_steps"].append(
+            "核对对照报告的真实产品构建、普通入口与浏览器记录，并逐项核对有意改动与需求。"
+        )
     effective_seat_id = seat_id or context.get("seat_id")
     effective_seat_roles = tuple(seat_role_ids or context.get("seat_role_ids") or ())
     if effective_seat_id:
@@ -773,6 +783,12 @@ def validate_role_result(review_type: str, result: dict[str, Any], *,
         _evidence(row["evidence_refs"], allowed, empty=blocked and row["outcome"] == "blocked")
         if result["status"] == "passed" and row["outcome"] not in {"satisfied", "not_applicable"}:
             raise RoleProfileError("passed result cannot contain failed or blocked checks")
+        if row["check_id"] == "existing_ui_continuity" and result["status"] == "passed":
+            comparison = task["input_refs"]["existing_ui_comparison"]["ref"]
+            if row["outcome"] != "satisfied" or comparison not in {
+                ref.partition("#")[0] for ref in row["evidence_refs"]
+            }:
+                raise RoleProfileError("existing UI review must cite the frozen comparison")
     completion = result["completion_evidence"]
     criteria = set(task["completion_criteria"])
     if set(completion) - criteria or (complete and set(completion) != criteria):

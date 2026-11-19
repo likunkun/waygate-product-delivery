@@ -23,6 +23,11 @@ from product_delivery_agent.prototype_design import (
     PrototypeDesignError,
     build_prototype_design_bundle,
 )
+from product_delivery_agent.existing_ui import (
+    EXISTING_UI_TYPES,
+    MISSING_BASELINE,
+    validate_existing_ui_roles,
+)
 from product_delivery_agent.ui_prototype import UIPrototypeError, build_prototype_contract
 from product_delivery_agent.transition_journal import (
     has_transition,
@@ -822,6 +827,22 @@ def assert_current_prototype_design_integrity(
         raise GatekeeperError(
             f"prototype design bundle is stale: {cause}"
         ) from cause
+
+    continuity = rebuilt.get("existing_ui_continuity")
+    if rebuilt["ui_change_type"] in EXISTING_UI_TYPES and not continuity:
+        confirmation = (state.get("user_confirmations") or {}).get("product_baseline") or {}
+        if confirmation.get("artifact_hash") != product_baseline_hash(state):
+            raise GatekeeperError(MISSING_BASELINE)
+    if continuity and (
+        canonical.get("existing_ui_continuity") != continuity
+        or (bundle.get("existing_ui_continuity") or {}).get("sha256") != continuity["sha256"]
+    ):
+        raise GatekeeperError("existing UI continuity report is stale")
+    if continuity:
+        try:
+            validate_existing_ui_roles(continuity, (state.get("scenario_matrix") or {}).get("rows", []))
+        except ValueError as cause:
+            raise GatekeeperError(str(cause)) from cause
 
     design_audit_sha256 = stable_state_hash(rebuilt["design_audit"])
     comparisons = {

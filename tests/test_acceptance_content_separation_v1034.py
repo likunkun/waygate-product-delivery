@@ -20,6 +20,7 @@ from tests.test_prototype_design_integrity_v1023 import (
 from tests.test_prototype_design_workflow_v1023 import (
     start_ui_workflow,
 )
+from tests.conformance_fixtures import write_existing_ui_captures
 
 
 SCAN_VERSION = "prototype-acceptance-content-scan-v1"
@@ -504,6 +505,7 @@ class AcceptanceContentSeparationV1034Tests(unittest.TestCase):
             upgraded["clean_surface"]["prototype_contract"] = (
                 semantic_prototype_contract()
             )
+            upgraded["existing_ui_continuity"] = write_existing_ui_captures(root, upgraded)
             state = workflow.record_ui_prototype_design_bundle(upgraded)
             self.assertEqual(state["prototype_design_bundle"]["bundle_version"], "v2")
 

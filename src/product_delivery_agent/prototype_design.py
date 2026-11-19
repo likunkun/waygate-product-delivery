@@ -18,6 +18,10 @@ from product_delivery_agent.evidence_artifacts import (
     stable_json_hash,
     validate_png,
 )
+from product_delivery_agent.existing_ui import (
+    EXISTING_UI_TYPES,
+    build_existing_ui_continuity,
+)
 
 
 BUNDLE_VERSION = "v2"
@@ -185,6 +189,21 @@ def _build_prototype_design_bundle(
         payload.get("intended_product_ui_callouts"),
         contract,
     )
+    continuity_input = payload.get("existing_ui_continuity")
+    continuity = None
+    if continuity_input is not None:
+        if ui_change_type not in EXISTING_UI_TYPES or bundle_version != "v2":
+            raise PrototypeDesignError("existing UI continuity requires an existing-product bundle v2")
+        continuity = build_existing_ui_continuity(
+            project_root,
+            continuity_input,
+            prototype=clean_artifacts["clean_prototype"],
+            contract=prototype_contract,
+            screenshots={
+                (item["surface_id"], item["state_id"], item["viewport"]): item
+                for item in clean_artifacts["clean_screenshots"]
+            },
+        )
     acceptance_separation = None
     acceptance_artifact = None
     if bundle_version == "v2":
@@ -225,6 +244,8 @@ def _build_prototype_design_bundle(
         normalized_payload["acceptance_content_separation"] = (
             acceptance_separation
         )
+    if continuity is not None:
+        normalized_payload["existing_ui_continuity"] = continuity_input
     artifact_metadata = {
         "clean_prototype": clean_artifacts["clean_prototype"],
         "semantic_snapshot": clean_artifacts["semantic_snapshot"],
@@ -243,6 +264,8 @@ def _build_prototype_design_bundle(
         artifact_metadata["acceptance_content_scan_report"] = (
             acceptance_artifact
         )
+    if continuity is not None:
+        artifact_metadata["existing_ui_continuity_sha256"] = continuity["sha256"]
     required_coverage_matrix = _build_coverage_matrix(
         contract,
         clean_surface,
@@ -317,6 +340,8 @@ def _build_prototype_design_bundle(
         result["acceptance_content_separation"] = deepcopy(
             acceptance_separation
         )
+    if continuity is not None:
+        result["existing_ui_continuity"] = continuity
     return result
 
 

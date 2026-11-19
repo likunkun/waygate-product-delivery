@@ -87,6 +87,9 @@ def build_codex_goal_handoff(
         ],
         "closure_required_after_implementation": True,
     }
+    continuity = (state.get("prototype_design_bundle") or {}).get("existing_ui_continuity")
+    if continuity:
+        handoff["existing_ui_continuity"] = continuity
     handoff["codex_goal_prompt"] = render_codex_goal_prompt(handoff)
     return handoff
 
@@ -184,6 +187,14 @@ def render_codex_goal_prompt(handoff: dict[str, Any]) -> str:
                 + str(handoff["current_task_prompt_path"]),
             ]
         )
+    continuity = handoff.get("existing_ui_continuity")
+    if continuity:
+        lines.extend([
+            "Open the frozen existing UI comparison before changing the product.",
+            "Use its ordinary entry, inherited regions/controls/actions, and requirement-linked differences.",
+            "Existing UI comparison: " + continuity["report_path"],
+            "Existing UI comparison SHA-256: " + continuity["sha256"],
+        ])
     return "\n".join(lines)
 
 

@@ -380,6 +380,12 @@ def _write_templates(templates_dir: Path) -> None:
             {
                 "bundle_version": "v2",
                 "ui_change_type": "incremental_existing_surface",
+                "existing_ui_continuity": {
+                    "baseline_path": ".product-delivery/artifacts/prototype-design/existing-product.json",
+                    "prototype_capture_path": ".product-delivery/artifacts/prototype-design/interactive-prototype.json",
+                    "requirements_path": None,
+                    "changes": [],
+                },
                 "clean_surface": {
                     "prototype_path": "docs/prototypes/<feature-slug>-prototype.html",
                     "prototype_contract": {},
@@ -882,6 +888,16 @@ def _skill_markdown() -> str:
         "`new_surface_justification`，并随 `product_baseline` 一起确认，不增加第三次确认。"
         "用户明确要求修改 prototype 后，旧 product baseline、test coverage plan、相关 review 和"
         "实现授权必须 stale；重新 review 前不得进入实现。\n\n"
+        "改动现有产品 UI 或接入新页面时，先用真实角色从普通入口走完受影响路径，"
+        "在当前发布构建或同源运行构建采集基线，再制作可点击原型。"
+        "使用 `product_delivery_agent.existing_ui_capture` 的 `observe_action`、`capture_unit` 和 "
+        "`write_capture` 生成两侧证据，并在 v2 bundle 的 `existing_ui_continuity` 提交两份引用。"
+        "比较必须覆盖相同角色、业务状态和视口，保留导航、常用控件、工具栏及其父层级。"
+        "具体变更必须引用需求 ID；旧截图或只打开独立演示的浏览器记录不能作为产品基线。"
+        "场景评审必须读取对照报告，在 `existing_ui_continuity_review` 记录 `comparison_sha256`、"
+        "`baseline_identity_verified: true` 及排序后的 `reviewed_change_ids`。"
+        "在原有产品基线确认里展示有意变化，并在实现移交中使用同一份对照报告。"
+        "全新产品从 v2 模板中移除 `existing_ui_continuity`，按设计体系校验。\n\n"
         "V1.0.23 起，UI 原型生成后、multi-Agent 产品/场景评审前必须调用 "
         "`record_ui_prototype_design_bundle()`。bundle 的 `clean_surface` 绑定产品 HTML、"
         "prototype contract、纯净 PNG、semantic snapshot，以及全部关键 state/viewport 的 "

@@ -5,7 +5,7 @@ import zlib
 from copy import deepcopy
 from pathlib import Path
 
-from product_delivery_agent.evidence_artifacts import sha256_file, stable_json_hash
+from product_delivery_agent.evidence_artifacts import sha256_file, stable_json_hash, validate_png
 from product_delivery_agent.ui_visual_loop import ui_visual_loop_required
 
 
@@ -115,6 +115,7 @@ def prototype_design_bundle_payload(
     ui_change_type: str = "incremental_existing_surface",
     include_review_companion: bool = True,
     annotation_text: str = "Confirm the inherited product context.",
+    baseline_actor_role: str = "teacher",
 ) -> dict:
     contract = deepcopy(contract or prototype_contract())
     prototype = project_root / prototype_path
@@ -438,6 +439,10 @@ def prototype_design_bundle_payload(
         },
         "review_annotation_set": None,
     }
+    if ui_change_type != "greenfield_ui":
+        payload["existing_ui_continuity"] = write_existing_ui_captures(
+            project_root, payload, actor_role=baseline_actor_role
+        )
     if include_review_companion:
         review_path = (
             ".product-delivery/artifacts/review-only/prototype-review.html"
@@ -468,6 +473,64 @@ def prototype_design_bundle_payload(
     return payload
 
 
+def write_existing_ui_captures(project_root: Path, payload: dict, *, actor_role="teacher") -> dict:
+    clean = payload["clean_surface"]
+    directory = Path(".product-delivery/artifacts/prototype-design")
+    baseline_path = directory / "live-product.json"
+    candidate_path = directory / "prototype-capture.json"
+    prototype = project_root / clean["prototype_path"]
+    origin = "https://classroom.example.test"
+    surfaces = {(s["surface_id"], s["state_id"]): s for s in clean["prototype_contract"]["surfaces"]}
+    baseline_rows = []
+    candidate_rows = []
+    for index, item in enumerate(clean["runtime_checks"]):
+        key = [item["surface_id"], item["state_id"], item["viewport"], actor_role]
+        surface = surfaces[tuple(key[:2])]
+        route = surface["route"]
+        screenshot = item["clean_screenshot_path"]
+        baseline_image = directory / f"live-{index}.png"
+        (project_root / baseline_image).write_bytes((project_root / screenshot).read_bytes())
+        image = validate_png(project_root, screenshot)
+        regions = [{"id": region["region_id"], "parent_id": region.get("parent_region_id") or "product-root",
+                    "kind": "region", "role": region.get("semantic_role") or "region",
+                    "name": region["region_id"], "visible": True, "enabled": True,
+                    "layout": "block/static", "dynamic_text": False}
+                   for region in surface["critical_regions"]]
+        row = {
+            "surface_id": key[0], "state_id": key[1], "viewport": key[2], "actor_role": key[3],
+            "context_id": key[1], "actual_url": origin + route, "route": route, "entry_route": route,
+            "screenshot": {"path": str(baseline_image), "sha256": sha256_file(project_root / baseline_image)},
+            "width": image["width"], "height": image["height"],
+            "elements": [
+                {"id": "product-root", "parent_id": None, "kind": "region", "role": "region", "name": "",
+                 "visible": True, "enabled": True, "layout": "block/static", "dynamic_text": False},
+                *regions,
+                {"id": "open", "parent_id": regions[0]["id"], "kind": "control", "role": "button", "name": "Open",
+                 "visible": True, "enabled": True, "layout": "block/static", "dynamic_text": False},
+            ],
+            "actions": [{"id": "arrive", "control_id": "open", "before_route": route,
+                         "after_route": route, "outcome": "Classroom opened"}],
+        }
+        baseline_rows.append(row)
+        candidate_rows.append({
+            **row, "actual_url": prototype.as_uri(), "baseline_unit": key,
+            "screenshot": {"path": screenshot, "sha256": sha256_file(project_root / screenshot)},
+        })
+    _write_json(project_root / baseline_path, {
+        "schema_version": "existing-ui-browser-capture-v1", "source": "product_runtime",
+        "captured_at": "2026-11-19T09:00:00+08:00", "browser_engine": "chromium",
+        "origin": origin, "build_id": "classroom-fixture-001", "observations": baseline_rows,
+    })
+    _write_json(project_root / candidate_path, {
+        "schema_version": "existing-ui-browser-capture-v1", "source": "interactive_prototype",
+        "captured_at": "2026-11-19T10:00:00+08:00", "browser_engine": "chromium",
+        "baseline_sha256": sha256_file(project_root / baseline_path),
+        "prototype_sha256": sha256_file(prototype), "observations": candidate_rows,
+    })
+    return {"baseline_path": str(baseline_path), "prototype_capture_path": str(candidate_path),
+            "requirements_path": None, "changes": []}
+
+
 def record_prototype_design_bundle(
     workflow,
     project_root: Path,
@@ -475,6 +538,9 @@ def record_prototype_design_bundle(
     **payload_options,
 ) -> dict:
     review_payload = review_payload if review_payload is not None else {}
+    rows = (workflow.status().get("scenario_matrix") or {}).get("rows", [])
+    if rows:
+        payload_options.setdefault("baseline_actor_role", rows[0]["role"])
     payload = prototype_design_bundle_payload(
         project_root,
         prototype_path=review_payload.get("prototype_path", "prototype/index.html"),
@@ -495,6 +561,13 @@ def bind_prototype_design_review(workflow, review: dict) -> dict:
     bundle = workflow.status()["prototype_design_bundle"]
     bound["prototype_design_bundle_hash"] = bundle["bundle_sha256"]
     bound["prototype_design_audit_hash"] = bundle["design_audit_sha256"]
+    continuity = bundle.get("existing_ui_continuity")
+    if continuity and bound.get("review_type") == "scenario":
+        bound["existing_ui_continuity_review"] = {
+            "comparison_sha256": continuity["sha256"],
+            "baseline_identity_verified": True,
+            "reviewed_change_ids": continuity["change_ids"],
+        }
     bound.setdefault(
         "reviewed_design_dimensions", list(PROTOTYPE_DESIGN_DIMENSIONS)
     )

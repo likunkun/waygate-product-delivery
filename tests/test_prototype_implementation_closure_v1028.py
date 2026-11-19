@@ -1229,6 +1229,7 @@ class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
                 prototype_path=prototype_path,
                 contract=prototype_contract(),
                 annotation_text="Review the changed product surface.",
+                baseline_actor_role=state["scenario_matrix"]["rows"][0]["role"],
             )
             reconcile_host_goal(workflow)
             changed = workflow.record_ui_prototype_design_bundle(changed_payload)
@@ -1266,6 +1267,7 @@ class PrototypeImplementationStalenessV1028Tests(unittest.TestCase):
                 prototype_path=original_baseline["prototype_path"],
                 contract=prototype_contract(),
                 annotation_text="Review annotation revision only.",
+                baseline_actor_role=original["scenario_matrix"]["rows"][0]["role"],
             )
 
             reconcile_host_goal(workflow)
